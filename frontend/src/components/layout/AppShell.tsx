@@ -1,5 +1,13 @@
 import { Maximize2 } from 'lucide-react';
-import { Suspense, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -15,6 +23,7 @@ import { InsightsRail } from '@/features/insights/InsightsRail';
 import { CommandPalette } from '@/features/palette/CommandPalette';
 import { useElementWidth } from '@/hooks/useElementWidth';
 import { useHotkeys } from '@/hooks/useHotkeys';
+import { useIsMobile } from '@/hooks/useMediaQuery';
 import { useProgressTask } from '@/hooks/useProgressTask';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { cn } from '@/lib/utils';
@@ -26,7 +35,10 @@ import { useSyncStore } from '@/store/sync.store';
 import { useToastStore } from '@/store/toast.store';
 import { useUiStore } from '@/store/ui.store';
 
+import { BottomNav } from './BottomNav';
 import { BrandMark } from './BrandMark';
+import { MobileNavDrawer } from './MobileNavDrawer';
+import { MobileTopbar } from './MobileTopbar';
 import { RailNav } from './RailNav';
 import { TitleBar } from './TitleBar';
 import { Topbar } from './Topbar';
@@ -49,6 +61,19 @@ export function AppShell(): ReactNode {
   const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
+
+  /**
+   * Below 768px the window metaphor is dropped entirely.
+   *
+   * Docking, minimising and the floating-panel look all describe a panel
+   * inside a host page — on a phone there is no host page and no room to float
+   * in, so the app fills the viewport and the chrome becomes a header, a tab
+   * bar and a navigation sheet. This is the one layout decision that reads the
+   * *viewport* rather than the measured window: at this size they are the same
+   * thing, and the window's own width has not been measured yet on first paint.
+   */
+  const isMobile = useIsMobile();
+  const [navOpen, setNavOpen] = useState(false);
 
   const windowState = useUiStore((state) => state.windowState);
   const setWindowState = useUiStore((state) => state.setWindowState);
@@ -73,6 +98,7 @@ export function AppShell(): ReactNode {
   const showInsights =
     insightsOpen &&
     !chatOpen &&
+    !isMobile &&
     contentWidth > WINDOW.insightsMinAvailable &&
     INSIGHT_ROUTES.some((route) => location.pathname.startsWith(route));
 
@@ -140,6 +166,56 @@ export function AppShell(): ReactNode {
   );
   useHotkeys(hotkeys);
 
+  /* Keyed on the path so navigating away clears a caught error instead of
+     stranding the user on it. Shared by both shells — the route content does
+     not know or care which chrome is wrapped around it. */
+  const routeOutlet = (
+    <ErrorBoundary
+      key={location.pathname}
+      fallback={(error, reset) => (
+        <StateBlock
+          state="error"
+          meta={error.message}
+          onPrimaryAction={reset}
+          secondaryLabel={t('blInitC')}
+          onSecondaryAction={() => void navigate('/settings')}
+        />
+      )}
+    >
+      <Suspense fallback={<RouteFallback />}>
+        <Outlet />
+      </Suspense>
+    </ErrorBoundary>
+  );
+
+  if (isMobile) {
+    return (
+      <div className="relative flex h-full w-full flex-col overflow-hidden bg-ground text-base leading-[1.45]">
+        <MobileTopbar
+          onOpenMenu={() => setNavOpen(true)}
+          onSync={handleSync}
+          onCancelSync={sync.cancel}
+        />
+
+        {/* `overscroll-contain` keeps a fling inside the screen instead of
+            handing the momentum to the document underneath it. */}
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
+          {routeOutlet}
+        </main>
+
+        <BottomNav onOpenMenu={() => setNavOpen(true)} />
+
+        <MobileNavDrawer open={navOpen} onOpenChange={setNavOpen} onSync={handleSync} />
+        {chatOpen && <CopilotPanel />}
+
+        <ProgressOverlay onCancel={progress.cancel} />
+        <Toaster />
+        <CommandPalette />
+        <ConfirmDialog />
+      </div>
+    );
+  }
+
   if (windowState === 'closed') {
     return <ClosedLauncher onOpen={() => setWindowState('open')} label={t('reopen')} />;
   }
@@ -162,7 +238,9 @@ export function AppShell(): ReactNode {
     <div
       className={cn(
         'flex h-full overflow-hidden bg-backdrop',
-        !fullscreen && 'items-center justify-center p-24',
+        /* The floating-panel inset is a desktop luxury: on a tablet the 24px
+           gutter costs 48px of a 768px screen for decoration. */
+        !fullscreen && 'items-center justify-center p-12 lg:p-24',
       )}
     >
       <div
@@ -175,8 +253,8 @@ export function AppShell(): ReactNode {
             : cn(
                 'rounded-14 shadow-[0_0_0_1px_var(--s-line-2),var(--shadow-window)]',
                 docked
-                  ? 'ml-auto h-[94vh] w-470'
-                  : 'h-[min(900px,90vh)] w-[min(1420px,100%-56px)]',
+                  ? 'ml-auto h-[94vh] w-[min(470px,100%)]'
+                  : 'h-[min(900px,90vh)] w-[min(1420px,100%)]',
               ),
         )}
       >
@@ -194,26 +272,7 @@ export function AppShell(): ReactNode {
             />
 
             <div className="flex min-h-0 flex-1">
-              <main className="min-w-0 flex-1 overflow-auto">
-                {/* Keyed on the path so navigating away clears a caught error
-                    instead of stranding the user on it. */}
-                <ErrorBoundary
-                  key={location.pathname}
-                  fallback={(error, reset) => (
-                    <StateBlock
-                      state="error"
-                      meta={error.message}
-                      onPrimaryAction={reset}
-                      secondaryLabel={t('blInitC')}
-                      onSecondaryAction={() => void navigate('/settings')}
-                    />
-                  )}
-                >
-                  <Suspense fallback={<RouteFallback />}>
-                    <Outlet />
-                  </Suspense>
-                </ErrorBoundary>
-              </main>
+              <main className="min-w-0 flex-1 overflow-auto">{routeOutlet}</main>
 
               {showInsights && <InsightsRail />}
             </div>

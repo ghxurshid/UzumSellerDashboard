@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { useNavigate } from 'react-router-dom';
 
 import { IconButton } from '@/components/ui/IconButton';
+import { useIsTouch } from '@/hooks/useMediaQuery';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/store/chat.store';
@@ -21,6 +22,7 @@ import { useCopilotAnswers } from './useCopilotAnswers';
 export function CopilotPanel(): ReactNode {
   const { t } = useTranslation();
   const modelLabel = useAiModelLabel();
+  const isTouch = useIsTouch();
 
   const chatOpen = useUiStore((state) => state.chatOpen);
   const toggleChat = useUiStore((state) => state.toggleChat);
@@ -49,27 +51,50 @@ export function CopilotPanel(): ReactNode {
   };
 
   return (
+    /**
+     * A column beside the content on a desktop, the whole screen on a phone.
+     *
+     * There is no room to put a 433px panel next to anything below 768px, and
+     * a chat transcript is not a glance-at-it surface — it is where the user
+     * goes to read and type, so it takes the screen while it is open and the
+     * close button hands it back.
+     */
     <aside
       aria-label={t('askCopilot')}
-      className="flex w-433 shrink-0 animate-[slide-panel_0.26s_var(--ease-out-soft)] flex-col border-l border-line bg-chrome"
+      className={cn(
+        'fixed inset-0 z-40 flex animate-[sheet_0.24s_var(--ease-out-soft)] flex-col bg-chrome',
+        'md:static md:z-auto md:w-433 md:shrink-0 md:animate-[slide-panel_0.26s_var(--ease-out-soft)]',
+        'md:border-l md:border-line',
+      )}
     >
-      <header className="flex h-46 shrink-0 items-center gap-9 border-b border-line px-12">
-        <Sparkles aria-hidden className="size-14 text-acc-dim" />
-        <span className="text-sm font-medium">{t('askCopilot')}</span>
-        <span className="truncate text-mini text-faint">{modelLabel}</span>
+      <header className="flex h-52 shrink-0 items-center gap-9 border-b border-line px-12 pt-safe md:h-46">
+        <Sparkles aria-hidden className="size-14 shrink-0 text-acc-dim" />
+        <span className="shrink-0 text-sm font-medium">{t('askCopilot')}</span>
+        <span className="min-w-0 truncate text-mini text-faint">{modelLabel}</span>
         <div className="flex-1" />
-        <IconButton label={t('copilotClear')} size="xs" onClick={reset} disabled={messages.length === 0}>
-          <Trash2 aria-hidden className="size-12" />
+        <IconButton
+          label={t('copilotClear')}
+          size="md"
+          className="md:size-22 md:rounded-5"
+          onClick={reset}
+          disabled={messages.length === 0}
+        >
+          <Trash2 aria-hidden className="size-14 md:size-12" />
         </IconButton>
-        <IconButton label={t('mClose')} size="xs" onClick={toggleChat}>
-          <X aria-hidden className="size-12" />
+        <IconButton
+          label={t('mClose')}
+          size="md"
+          className="md:size-22 md:rounded-5"
+          onClick={toggleChat}
+        >
+          <X aria-hidden className="size-16 md:size-12" />
         </IconButton>
       </header>
 
       <div
         ref={logRef}
         aria-live="polite"
-        className="flex min-h-0 flex-1 flex-col gap-11 overflow-auto px-12 py-12"
+        className="flex min-h-0 flex-1 flex-col gap-11 overflow-auto overscroll-contain px-12 py-12"
       >
         {unconfigured && (
           <div className="flex flex-col items-start gap-9 rounded-9 border border-warn-line bg-warn-soft p-11">
@@ -80,7 +105,7 @@ export function CopilotPanel(): ReactNode {
             <button
               type="button"
               onClick={() => void navigate('/settings')}
-              className="flex h-24 cursor-pointer items-center gap-5 rounded-6 border border-acc bg-acc-soft px-9 text-xs text-acc-dim hover:bg-acc-strong"
+              className="tap flex h-32 cursor-pointer items-center gap-5 rounded-6 border border-acc bg-acc-soft px-10 text-xs text-acc-dim hover:bg-acc-strong md:h-24 md:px-9"
             >
               <Settings2 aria-hidden className="size-11" />
               {t('sAi')}
@@ -107,7 +132,7 @@ export function CopilotPanel(): ReactNode {
                   type="button"
                   disabled={unconfigured}
                   onClick={() => ask(suggestion.text)}
-                  className="cursor-pointer rounded-8 border border-line px-10 py-8 text-left text-xs-plus text-dim transition-colors hover:border-acc-line hover:text-acc-dim"
+                  className="min-h-44 cursor-pointer rounded-8 border border-line px-11 py-9 text-left text-xs-plus text-dim transition-colors hover:border-acc-line hover:text-acc-dim md:min-h-0 md:px-10 md:py-8"
                 >
                   {suggestion.text}
                 </button>
@@ -132,7 +157,7 @@ export function CopilotPanel(): ReactNode {
                   <button
                     type="button"
                     onClick={cancel}
-                    className="cursor-pointer border-0 bg-transparent p-0 text-tiny text-acc-dim underline underline-offset-2"
+                    className="tap cursor-pointer border-0 bg-transparent p-0 text-tiny text-acc-dim underline underline-offset-2"
                   >
                     {t('cancel')}
                   </button>
@@ -146,12 +171,18 @@ export function CopilotPanel(): ReactNode {
         )}
       </div>
 
-      <form onSubmit={submit} className="flex shrink-0 items-end gap-8 border-t border-line p-12">
+      <form
+        onSubmit={submit}
+        className="pb-safe-12 flex shrink-0 items-end gap-8 border-t border-line px-12 pt-12 md:pb-12"
+      >
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
+            /* On a soft keyboard Enter is the newline key and there is no
+               Shift to hold, so the send button is the only way out — the
+               submit-on-Enter shortcut is a hardware-keyboard affordance. */
+            if (event.key === 'Enter' && !event.shiftKey && !isTouch) {
               event.preventDefault();
               submit(event);
             }
@@ -159,15 +190,16 @@ export function CopilotPanel(): ReactNode {
           rows={2}
           placeholder={t('copilotPh')}
           aria-label={t('copilotPh')}
-          className="min-h-44 flex-1 resize-none rounded-8 border border-line-2 bg-panel px-10 py-8 text-sm text-text outline-none placeholder:text-faint focus-visible:border-acc"
+          enterKeyHint="enter"
+          className="min-h-44 min-w-0 flex-1 resize-none rounded-8 border border-line-2 bg-panel px-10 py-8 text-sm text-text outline-none placeholder:text-faint focus-visible:border-acc"
         />
         <button
           type="submit"
           disabled={draft.trim() === '' || pending || unconfigured}
           aria-label={t('copilotSend')}
-          className="flex size-32 shrink-0 cursor-pointer items-center justify-center rounded-8 border border-acc bg-acc-soft text-acc-dim transition-colors hover:bg-acc-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="flex size-44 shrink-0 cursor-pointer items-center justify-center rounded-8 border border-acc bg-acc-soft text-acc-dim transition-colors hover:bg-acc-strong disabled:cursor-not-allowed disabled:opacity-45 md:size-32"
         >
-          <Send aria-hidden className="size-14" />
+          <Send aria-hidden className="size-16 md:size-14" />
         </button>
       </form>
     </aside>

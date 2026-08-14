@@ -29,7 +29,10 @@ export function Dialog({
   description,
   children,
   footer,
-  width = 'w-[min(560px,calc(100vw-48px))]',
+  /* Nearly edge-to-edge on a phone — a 560px modal capped at `100vw-48px`
+     leaves 272px of usable width on a 320px screen, which is not enough for a
+     table or a pair of buttons. The inset returns from `sm` up. */
+  width = 'w-[calc(100vw-20px)] sm:w-[min(560px,calc(100vw-48px))]',
 }: DialogProps): ReactNode {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -43,8 +46,10 @@ export function Dialog({
         <RadixDialog.Content
           className={cn(
             'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
-            'flex max-h-[85vh] flex-col gap-11 rounded-14 border border-line-2',
-            'bg-panel p-16 shadow-[var(--shadow-menu)]',
+            /* `dvh`, so a dialog opened while the browser's address bar is
+               showing does not run its footer underneath it. */
+            'flex max-h-[88dvh] flex-col gap-11 rounded-14 border border-line-2',
+            'bg-panel p-14 shadow-[var(--shadow-menu)] sm:p-16',
             'data-[state=open]:animate-[pop_0.16s_ease]',
             width,
           )}
@@ -62,18 +67,20 @@ export function Dialog({
             </div>
             <RadixDialog.Close
               aria-label="Close"
-              className="ml-auto cursor-pointer rounded-6 border-0 bg-transparent p-4 text-faint hover:bg-acc-soft hover:text-acc-dim"
+              className="tap ml-auto flex size-32 shrink-0 cursor-pointer items-center justify-center rounded-8 border-0 bg-transparent text-faint hover:bg-acc-soft hover:text-acc-dim md:size-22 md:rounded-6"
             >
-              <X aria-hidden className="size-14" />
+              <X aria-hidden className="size-16 md:size-14" />
             </RadixDialog.Close>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto text-sm-plus leading-[1.6] text-dim">
+          <div className="min-h-0 flex-1 overflow-auto overscroll-contain text-sm-plus leading-[1.6] text-dim">
             {children}
           </div>
 
           {footer !== undefined && (
-            <div className="flex justify-end gap-8 border-t border-line pt-11">{footer}</div>
+            <div className="flex flex-wrap justify-end gap-8 border-t border-line pt-11">
+              {footer}
+            </div>
           )}
         </RadixDialog.Content>
       </RadixDialog.Portal>

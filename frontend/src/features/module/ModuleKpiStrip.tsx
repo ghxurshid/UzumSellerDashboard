@@ -24,14 +24,26 @@ export function ModuleKpiStrip({ kpis }: { readonly kpis: readonly Kpi[] }): Rea
 
   return (
     <Tooltip.Provider delayDuration={120}>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-px overflow-hidden rounded-10 border border-line bg-line">
+      {/* Two fixed columns on a phone, `auto-fit` from `xs` up: a 150px floor
+          across a 320px viewport overflows by the width of the grid rules and
+          would set a minimum width for the whole page. The trailing selector
+          lets an odd last tile span the row rather than leaving a blank cell
+          that reads as a metric which failed to load. */}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-10 border border-line bg-line [&>*:last-child:nth-child(odd)]:col-span-2 xs:grid-cols-[repeat(auto-fit,minmax(150px,1fr))] xs:[&>*:last-child:nth-child(odd)]:col-span-1">
         {kpis.map((kpi) => (
-          <div key={kpi.key} className="flex flex-col gap-5 bg-panel px-11 pb-9 pt-10 hover:bg-raise">
+          <div
+            key={kpi.key}
+            className="flex min-w-0 flex-col gap-5 bg-panel px-11 pb-9 pt-10 hover:bg-raise"
+          >
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
+                {/* On a touch screen there is no hover, so this trigger has to
+                    be tappable for the definition behind the metric to be
+                    reachable at all — `.tap` gives it the finger target its
+                    9.5px type cannot. */}
                 <button
                   type="button"
-                  className="flex cursor-help items-center gap-5 self-start border-0 bg-transparent p-0 text-meta uppercase tracking-[0.09em] text-faint"
+                  className="tap flex max-w-full cursor-help items-center gap-5 self-start border-0 bg-transparent p-0 text-meta uppercase tracking-[0.09em] text-faint"
                 >
                   <span className="truncate font-mono normal-case tracking-normal">{kpi.labelKey}</span>
                   <Info aria-hidden className="size-10 opacity-70" />
@@ -50,8 +62,11 @@ export function ModuleKpiStrip({ kpis }: { readonly kpis: readonly Kpi[] }): Rea
               </Tooltip.Portal>
             </Tooltip.Root>
 
-            <span className="flex items-baseline gap-4">
-              <span data-numeric className="text-2xl font-medium tracking-[-0.025em]">
+            <span className="flex flex-wrap items-baseline gap-x-4 gap-y-3">
+              <span
+                data-numeric
+                className="min-w-0 truncate text-xl font-medium tracking-[-0.025em] sm:text-2xl"
+              >
                 {kpi.value}
               </span>
               <span className="text-tiny text-faint">{kpi.unit}</span>

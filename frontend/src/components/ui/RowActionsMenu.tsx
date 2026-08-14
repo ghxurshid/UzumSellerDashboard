@@ -24,7 +24,7 @@ export function RowActionsMenu({ actions, label }: RowActionsMenuProps): ReactNo
           type="button"
           aria-label={label}
           onClick={(event) => event.stopPropagation()}
-          className="flex size-22 cursor-pointer items-center justify-center justify-self-end rounded-5 border-0 bg-transparent text-faint hover:bg-raise hover:text-acc-dim"
+          className="tap flex size-22 cursor-pointer items-center justify-center justify-self-end rounded-5 border-0 bg-transparent text-faint hover:bg-raise hover:text-acc-dim"
         >
           <MoreVertical aria-hidden className="size-13" />
         </button>

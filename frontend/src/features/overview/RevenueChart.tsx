@@ -57,8 +57,8 @@ export function RevenueChart({ points, onDrill }: RevenueChartProps): ReactNode 
   const labels = points.filter((point) => point.label !== '').map((point) => point.label);
 
   return (
-    <Panel className="flex min-w-0 flex-col gap-9 px-14 pb-9 pt-13">
-      <div className="flex items-center gap-10">
+    <Panel className="flex min-w-0 flex-col gap-9 px-11 pb-9 pt-13 sm:px-14">
+      <div className="flex flex-wrap items-center gap-x-10 gap-y-6">
         <span className="text-base font-medium">{t('chartTitle')}</span>
         <span data-numeric className="text-mini text-faint">
           {t('chartBuckets', { n: points.length })}
@@ -68,7 +68,7 @@ export function RevenueChart({ points, onDrill }: RevenueChartProps): ReactNode 
         <button
           type="button"
           onClick={onDrill}
-          className="flex h-24 cursor-pointer items-center gap-5 rounded-7 border border-line-2 bg-transparent px-8 text-xs text-dim transition-colors hover:border-acc-line hover:text-acc-dim"
+          className="tap flex h-34 cursor-pointer items-center gap-6 rounded-7 border border-line-2 bg-transparent px-11 text-xs text-dim transition-colors hover:border-acc-line hover:text-acc-dim lg:h-24 lg:gap-5 lg:px-8"
         >
           <ZoomIn aria-hidden className="size-12" />
           {t('drill')}
@@ -81,7 +81,12 @@ export function RevenueChart({ points, onDrill }: RevenueChartProps): ReactNode 
           preserveAspectRatio="none"
           role="img"
           aria-label={t('chartTitle')}
-          className="block h-206 w-full"
+          /* Shorter on a phone: 206px of chart plus a header, a label row and
+             a legend is most of a 640px-tall screen for one card. The viewBox
+             is unchanged and `preserveAspectRatio="none"` was already
+             stretching the geometry, so nothing about the plot changes but its
+             height. */
+          className="block h-150 w-full sm:h-180 lg:h-206"
         >
           <title>{t('chartTitle')}</title>
           <defs>
@@ -117,13 +122,18 @@ export function RevenueChart({ points, onDrill }: RevenueChartProps): ReactNode 
         </svg>
       </div>
 
-      <div data-numeric className="flex justify-between text-tiny text-faint">
+      <div
+        data-numeric
+        className="flex justify-between gap-4 overflow-hidden text-tiny text-faint"
+      >
         {labels.map((label) => (
-          <span key={label}>{label}</span>
+          <span key={label} className="truncate">
+            {label}
+          </span>
         ))}
       </div>
 
-      <div className="flex items-center gap-16 border-t border-line pb-4 pt-8 text-xs text-dim">
+      <div className="flex flex-wrap items-center gap-x-16 gap-y-5 border-t border-line pb-4 pt-8 text-xs text-dim">
         <span className="flex items-center gap-6">
           <span className="h-2 w-14 rounded-2 bg-acc" />
           {t('kRev')}
@@ -132,8 +142,10 @@ export function RevenueChart({ points, onDrill }: RevenueChartProps): ReactNode 
           <span className="h-2 w-14 rounded-2 bg-pos" />
           {t('kProf')}
         </span>
-        <div className="flex-1" />
-        <span className="font-mono text-tiny text-faint">{t('srcFinOrdersLong')}</span>
+        <div className="hidden flex-1 sm:block" />
+        <span className="min-w-0 truncate font-mono text-tiny text-faint">
+          {t('srcFinOrdersLong')}
+        </span>
       </div>
     </Panel>
   );

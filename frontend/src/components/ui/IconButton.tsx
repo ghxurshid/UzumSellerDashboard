@@ -8,6 +8,11 @@ const iconButtonVariants = cva(
     'inline-flex shrink-0 items-center justify-center cursor-pointer',
     'transition-colors duration-150',
     'disabled:cursor-not-allowed disabled:opacity-45',
+    /* An icon-only control is the smallest thing in this interface and the
+       hardest to hit. `.tap` gives every one of them a 44px finger target on a
+       touch screen while the painted box stays the size the design drew — see
+       the utility in `globals.css`. */
+    'tap',
   ),
   {
     variants: {

@@ -31,7 +31,7 @@ export function ConfirmDialog(): ReactNode {
         if (!open) cancel();
       }}
       title={confirm?.title ?? ''}
-      width="w-[min(440px,calc(100vw-48px))]"
+      width="w-[calc(100vw-20px)] sm:w-[min(440px,calc(100vw-48px))]"
       footer={
         <>
           <Button size="lg" onClick={cancel}>

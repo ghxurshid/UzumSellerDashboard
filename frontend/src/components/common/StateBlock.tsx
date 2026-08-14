@@ -81,8 +81,8 @@ export function StateBlock({
   const Icon = block.icon;
 
   return (
-    <div className="flex h-full items-center justify-center p-40">
-      <div className="flex max-w-430 flex-col items-start gap-12">
+    <div className="flex h-full items-center justify-center p-16 sm:p-28 lg:p-40">
+      <div className="flex w-full max-w-430 flex-col items-start gap-12">
         <span
           className={cn(
             'flex size-44 items-center justify-center rounded-11 border',

@@ -31,7 +31,7 @@ import { RangeMenu } from './RangeMenu';
 import { StoreMenu } from './StoreMenu';
 
 const CHIP = cn(
-  'flex h-28 shrink-0 cursor-pointer items-center gap-7 rounded-7 border px-9 text-sm',
+  'tap flex h-28 shrink-0 cursor-pointer items-center gap-7 rounded-7 border px-9 text-sm',
   'transition-colors duration-150 hover:border-acc-line hover:bg-acc-soft',
 );
 
@@ -109,7 +109,11 @@ export function Topbar({ wide, mid, onSync, onCancelSync }: TopbarProps): ReactN
   })();
 
   return (
-    <div className="relative z-20 flex h-46 shrink-0 items-center gap-8 border-b border-line px-12">
+    /* `overflow-x-auto` is the safety net, not the plan: the `wide`/`mid`
+       props already drop labels as the window narrows, but a long shop name or
+       a translated sync label can still outgrow a docked 470px panel, and a
+       scrolling bar is better than one that pushes the window wider. */
+    <div className="scroll-x relative z-20 flex h-46 shrink-0 items-center gap-8 border-b border-line px-12">
       <StoreMenu
         open={menu === 'store'}
         onOpenChange={() => toggleMenu('store')}
@@ -201,12 +205,13 @@ export function Topbar({ wide, mid, onSync, onCancelSync }: TopbarProps): ReactN
         )}
       </button>
 
-      <div className="flex-1" />
+      <div className="min-w-8 flex-1" />
 
       <button
         type="button"
         onClick={togglePalette}
-        className="flex h-28 min-w-30 shrink basis-260 cursor-text items-center gap-8 overflow-hidden rounded-7 border border-line-2 bg-panel px-9 text-left text-sm text-faint transition-colors hover:border-acc-line"
+        aria-label={t('searchPh')}
+        className="tap flex h-28 min-w-30 shrink basis-260 cursor-text items-center gap-8 overflow-hidden rounded-7 border border-line-2 bg-panel px-9 text-left text-sm text-faint transition-colors hover:border-acc-line"
       >
         <Search aria-hidden className="size-13 shrink-0" />
         {wide && (

@@ -84,7 +84,11 @@ export function CommandPalette(): ReactNode {
         <RadixDialog.Content
           aria-label={t('palPh')}
           className={cn(
-            'fixed left-1/2 top-[14vh] z-50 w-[min(620px,calc(100vw-48px))] -translate-x-1/2',
+            /* Near the top of the screen on a phone so the soft keyboard has
+               somewhere to open into, and nearly edge-to-edge because a
+               command label is a sentence, not a word. */
+            'fixed left-1/2 top-[6vh] z-50 w-[calc(100vw-16px)] -translate-x-1/2',
+            'sm:top-[14vh] sm:w-[min(620px,calc(100vw-48px))]',
             'overflow-hidden rounded-14 border border-line-2 bg-panel shadow-[var(--shadow-menu)]',
             'data-[state=open]:animate-[pop_0.16s_ease]',
           )}
@@ -99,13 +103,21 @@ export function CommandPalette(): ReactNode {
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={t('palPh')}
+              type="search"
+              enterKeyHint="go"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               role="combobox"
               aria-expanded
               aria-controls="command-list"
               aria-activedescendant={items[activeIndex]?.id}
               className="min-w-0 flex-1 border-0 bg-transparent text-md text-text outline-none placeholder:text-faint"
             />
-            <kbd className="shrink-0 rounded-5 border border-line-2 px-6 py-px text-tiny text-faint">
+            {/* There is no Escape key on a phone; the backdrop and the back
+                gesture dismiss it there. */}
+            <kbd className="hidden shrink-0 rounded-5 border border-line-2 px-6 py-px text-tiny text-faint sm:block">
               ESC
             </kbd>
           </div>
@@ -115,7 +127,9 @@ export function CommandPalette(): ReactNode {
             id="command-list"
             role="listbox"
             aria-label={t('palPh')}
-            className="max-h-[46vh] overflow-auto p-6"
+            /* `dvh` and a taller cap: with the keyboard up, `46vh` of a phone
+               is about three rows. */
+            className="max-h-[50dvh] overflow-auto overscroll-contain p-6 sm:max-h-[46vh]"
           >
             {items.length === 0 ? (
               <p className="m-0 px-9 py-14 text-center text-sm text-faint">{t('palNo')}</p>
@@ -141,7 +155,8 @@ export function CommandPalette(): ReactNode {
                         onMouseEnter={() => setActiveIndex(index)}
                         onClick={item.run}
                         className={cn(
-                          'flex cursor-pointer items-center gap-10 rounded-8 px-9 py-7 text-sm-plus',
+                          'flex min-h-44 cursor-pointer items-center gap-10 rounded-8 px-9 py-7 text-sm-plus',
+                          'sm:min-h-0',
                           active ? 'bg-acc-soft text-acc-dim' : 'text-text',
                         )}
                       >
@@ -161,10 +176,10 @@ export function CommandPalette(): ReactNode {
           </div>
 
           <div className="flex items-center gap-12 border-t border-line px-14 py-8 text-tiny text-faint">
-            <span>↑↓ {t('palNav')}</span>
-            <span>↵ {t('palOpen')}</span>
+            <span className="hidden sm:inline">↑↓ {t('palNav')}</span>
+            <span className="hidden sm:inline">↵ {t('palOpen')}</span>
             <div className="flex-1" />
-            <span className="font-mono">{t('palIdxL', { n: indexed })}</span>
+            <span className="truncate font-mono">{t('palIdxL', { n: indexed })}</span>
           </div>
         </RadixDialog.Content>
       </RadixDialog.Portal>

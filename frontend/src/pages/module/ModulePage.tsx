@@ -243,54 +243,61 @@ export default function ModulePage({ moduleKey }: { readonly moduleKey: ModuleKe
       searchQuery={table.search}
       rowsRead={table.totalRows}
       skeleton={
-        <div className="flex flex-col gap-12 px-14 pb-22 pt-12">
+        <div className="flex flex-col gap-12 px-10 pb-22 pt-12 sm:px-14">
           <SkeletonTiles count={5} />
           <SkeletonTable rows={9} />
         </div>
       }
     >
       {definition !== null && (
-        <div className="flex flex-col gap-11 px-14 pb-22 pt-12">
-          <header className="flex items-center gap-9">
-            <span className="flex size-26 shrink-0 items-center justify-center rounded-7 border border-acc-line bg-acc-soft text-acc-dim">
-              <HeaderIcon aria-hidden className="size-14" />
-            </span>
-            <span className="flex min-w-0 flex-col leading-[1.3]">
-              <h1 className="m-0 text-md font-medium tracking-[-0.015em]">
-                {t(definition.titleKey as TranslationKey)}
-              </h1>
-              <span className="truncate font-mono text-mini text-faint">{definition.source}</span>
-            </span>
+        <div className="flex flex-col gap-11 px-10 pb-22 pt-12 sm:px-14">
+          <header className="flex flex-col gap-9 lg:flex-row lg:items-center">
+            <div className="flex min-w-0 items-center gap-9">
+              <span className="flex size-30 shrink-0 items-center justify-center rounded-7 border border-acc-line bg-acc-soft text-acc-dim lg:size-26">
+                <HeaderIcon aria-hidden className="size-15 lg:size-14" />
+              </span>
+              <span className="flex min-w-0 flex-col leading-[1.3]">
+                <h1 className="m-0 text-lg font-medium tracking-[-0.015em] lg:text-md">
+                  {t(definition.titleKey as TranslationKey)}
+                </h1>
+                <span className="truncate font-mono text-mini text-faint">{definition.source}</span>
+              </span>
+            </div>
 
-            <div className="flex-1" />
+            <div className="hidden flex-1 lg:block" />
 
-            <Button
-              size="md"
-              icon={<RefreshCw aria-hidden className={status.refreshing ? 'size-12 animate-spin' : 'size-12'} />}
-              onClick={refetch}
-            >
-              {t('refreshL')}
-            </Button>
-            <Button
-              size="md"
-              icon={<FileSpreadsheet aria-hidden className="size-12" />}
-              onClick={() => runExport(table.rows)}
-            >
-              {t('exportCsv')}
-            </Button>
-            {definition.bulkActions[0] !== undefined && (
+            {/* Three actions of unpredictable label length: they scroll as a
+                row on a phone instead of wrapping under the title and pushing
+                the KPI strip off the first screen. */}
+            <div className="scroll-x -mx-10 flex gap-8 px-10 sm:-mx-14 sm:px-14 lg:mx-0 lg:overflow-visible lg:px-0">
               <Button
-                variant="primary"
                 size="md"
-                disabled={readOnly}
-                icon={<Icon name={definition.bulkActions[0].icon} className="size-12" />}
-                onClick={() => runAction(null, definition.bulkActions[0] as ModuleRowAction, [
-                  ...selection.selectedIds,
-                ])}
+                icon={<RefreshCw aria-hidden className={status.refreshing ? 'size-12 animate-spin' : 'size-12'} />}
+                onClick={refetch}
               >
-                {t(definition.bulkActions[0].labelKey as TranslationKey)}
+                {t('refreshL')}
               </Button>
-            )}
+              <Button
+                size="md"
+                icon={<FileSpreadsheet aria-hidden className="size-12" />}
+                onClick={() => runExport(table.rows)}
+              >
+                {t('exportCsv')}
+              </Button>
+              {definition.bulkActions[0] !== undefined && (
+                <Button
+                  variant="primary"
+                  size="md"
+                  disabled={readOnly}
+                  icon={<Icon name={definition.bulkActions[0].icon} className="size-12" />}
+                  onClick={() => runAction(null, definition.bulkActions[0] as ModuleRowAction, [
+                    ...selection.selectedIds,
+                  ])}
+                >
+                  {t(definition.bulkActions[0].labelKey as TranslationKey)}
+                </Button>
+              )}
+            </div>
           </header>
 
           <ModuleKpiStrip kpis={definition.kpis} />

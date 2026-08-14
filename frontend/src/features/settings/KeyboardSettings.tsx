@@ -36,7 +36,7 @@ export function KeyboardSettings(): ReactNode {
           {SHORTCUTS.map((shortcut) => (
             <div
               key={shortcut.keys.join('+')}
-              className="grid grid-cols-[220px_minmax(0,1fr)] items-center gap-14 border-b border-line px-14 py-11 last:border-b-0 max-[720px]:grid-cols-1"
+              className="grid grid-cols-1 items-center gap-8 border-b border-line px-11 py-11 last:border-b-0 sm:px-14 min-[720px]:grid-cols-[220px_minmax(0,1fr)] min-[720px]:gap-14"
             >
               <dt className="flex gap-4">
                 {shortcut.keys.map((key) => (

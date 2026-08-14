@@ -111,7 +111,7 @@ export function DataSettings({
       <LazySyncPanel />
 
       {named.length === 0 ? (
-        <Panel className="flex items-center gap-9 px-14 py-13 text-xs-plus text-dim">
+        <Panel className="flex items-center gap-9 px-11 py-13 sm:px-14 text-xs-plus text-dim">
           <Database aria-hidden className="size-14 shrink-0 text-faint" />
           {loading ? t('dLoading') : t('dNoStores')}
         </Panel>
@@ -172,7 +172,7 @@ function DatabasePanel(): ReactNode {
   const saturation = estimate?.saturation ?? 0;
 
   return (
-    <Panel className="flex flex-col gap-11 px-14 py-13">
+    <Panel className="flex flex-col gap-11 px-11 py-13 sm:px-14">
       <div className="flex flex-wrap items-center gap-8">
         <Database aria-hidden className="size-14 shrink-0 text-acc-dim" />
         <span className="text-sm-plus font-medium">{t('dbLbl')}</span>
@@ -253,7 +253,7 @@ function BufferPanel(): ReactNode {
   const saturation = usage?.saturation ?? 0;
 
   return (
-    <Panel className="flex flex-col gap-11 px-14 py-13">
+    <Panel className="flex flex-col gap-11 px-11 py-13 sm:px-14">
       <div className="flex flex-wrap items-center gap-8">
         <Layers aria-hidden className="size-14 shrink-0 text-acc-dim" />
         <span className="text-sm-plus font-medium">{t('bufLbl')}</span>
@@ -291,7 +291,7 @@ function BufferPanel(): ReactNode {
                 aria-checked={active}
                 onClick={() => patch({ data: { freshnessMinutes: minutes } })}
                 className={cn(
-                  'h-26 cursor-pointer rounded-7 border px-10 text-xs-plus transition-colors',
+                  'tap h-36 cursor-pointer rounded-7 border px-11 text-xs-plus transition-colors md:h-26 md:px-10',
                   active
                     ? 'border-acc bg-acc-soft text-acc-dim'
                     : 'border-line-2 bg-transparent text-dim hover:border-acc-line',
@@ -318,7 +318,7 @@ function BufferPanel(): ReactNode {
             });
           }}
           className={cn(
-            'flex h-26 cursor-pointer items-center gap-6 rounded-7 border border-line-2 bg-transparent',
+            'tap flex h-36 cursor-pointer items-center gap-6 rounded-7 border border-line-2 bg-transparent md:h-26',
             'px-10 text-xs-plus text-dim transition-colors hover:border-neg hover:text-neg',
           )}
         >
@@ -367,7 +367,7 @@ function StoreCard({
         type="button"
         onClick={onSelect}
         className={cn(
-          'flex w-full cursor-pointer items-center gap-9 border-0 bg-transparent px-14 py-11 text-left',
+          'flex w-full cursor-pointer items-center gap-9 border-0 bg-transparent px-11 py-11 sm:px-14 text-left',
         )}
       >
         <Layers aria-hidden className={cn('size-14 shrink-0', expanded ? 'text-acc-dim' : 'text-faint')} />
@@ -381,7 +381,7 @@ function StoreCard({
         </span>
       </button>
 
-      <div className="flex flex-col gap-11 border-t border-line px-14 py-12">
+      <div className="flex flex-col gap-11 border-t border-line px-11 py-12 sm:px-14">
         <div className="flex flex-col gap-6">
           <div className="flex flex-wrap items-baseline gap-8">
             <span className="text-meta uppercase tracking-[0.09em] text-faint">
@@ -440,7 +440,7 @@ function StoreCard({
               onClick={onBackfill}
               disabled={backfilling}
               className={cn(
-                'flex h-26 cursor-pointer items-center gap-6 rounded-7 border border-acc bg-acc-soft',
+                'tap flex h-36 cursor-pointer items-center gap-6 rounded-7 border border-acc bg-acc-soft md:h-26',
                 'px-10 text-xs-plus font-medium text-acc-dim transition-colors hover:bg-acc-strong',
                 'disabled:cursor-not-allowed disabled:opacity-45',
               )}
@@ -456,7 +456,7 @@ function StoreCard({
             type="button"
             onClick={onClear}
             className={cn(
-              'flex h-26 cursor-pointer items-center gap-6 rounded-7 border border-line-2 bg-transparent',
+              'tap flex h-36 cursor-pointer items-center gap-6 rounded-7 border border-line-2 bg-transparent md:h-26',
               'px-10 text-xs-plus text-dim transition-colors hover:border-neg hover:text-neg',
             )}
           >
@@ -545,7 +545,7 @@ function ChangePanels({ shopId }: { readonly shopId: number }): ReactNode {
 
   return (
     <div className="grid grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-12 max-[980px]:grid-cols-1">
-      <Panel className="flex flex-col gap-9 px-14 py-13">
+      <Panel className="flex flex-col gap-9 px-11 py-13 sm:px-14">
         <div className="flex flex-col gap-3">
           <span className="text-sm-plus font-medium">{t('dImpact')}</span>
           <p className="m-0 text-tiny leading-[1.5] text-faint">{t('dImpactNote')}</p>
@@ -597,7 +597,7 @@ function ChangePanels({ shopId }: { readonly shopId: number }): ReactNode {
         )}
       </Panel>
 
-      <Panel className="flex flex-col gap-8 px-14 py-13">
+      <Panel className="flex flex-col gap-8 px-11 py-13 sm:px-14">
         <div className="flex flex-col gap-3">
           <span className="text-sm-plus font-medium">{t('dJournal')}</span>
           <p className="m-0 text-tiny leading-[1.5] text-faint">{t('dJournalSub')}</p>

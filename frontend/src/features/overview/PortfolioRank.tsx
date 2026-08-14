@@ -31,13 +31,13 @@ export function PortfolioRank({
   const { t } = useTranslation();
 
   return (
-    <Panel className="flex flex-col gap-10 px-14 py-13">
-      <div className="flex items-baseline justify-between">
+    <Panel className="flex min-w-0 flex-col gap-10 px-11 py-13 sm:px-14">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-4">
         <span className="text-base font-medium">{t('rankTitle')}</span>
         <span className="text-tiny text-faint">{total} productList</span>
       </div>
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         {buckets.map((bucket) => {
           const active = activeRank === bucket.code;
           return (
@@ -47,7 +47,7 @@ export function PortfolioRank({
               aria-pressed={active}
               onClick={() => onSelect(bucket.code)}
               className={cn(
-                'flex cursor-pointer items-center gap-9 rounded-8 border px-9 py-7 text-left transition-colors hover:border-acc-line',
+                'flex min-h-40 cursor-pointer items-center gap-9 rounded-8 border px-10 py-7 text-left transition-colors hover:border-acc-line lg:min-h-0 lg:px-9',
                 active ? 'border-acc-line bg-acc-soft' : 'border-line bg-transparent',
               )}
             >

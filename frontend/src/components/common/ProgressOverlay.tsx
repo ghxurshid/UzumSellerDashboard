@@ -29,7 +29,7 @@ export function ProgressOverlay({ onCancel }: ProgressOverlayProps): ReactNode {
   const Icon = progress.kind === 'down' ? Download : Settings2;
 
   return (
-    <div className="absolute bottom-14 left-1/2 z-40 flex w-320 -translate-x-1/2 flex-col gap-8 rounded-11 border border-line-2 bg-raise px-13 py-11 shadow-[var(--shadow-float)]">
+    <div className="bottom-above-nav absolute left-1/2 z-40 flex w-[calc(100vw-16px)] max-w-360 -translate-x-1/2 flex-col gap-8 rounded-11 border border-line-2 bg-raise px-13 py-11 shadow-[var(--shadow-float)] md:bottom-14 md:w-320">
       <div className="flex items-center gap-9">
         <Icon aria-hidden className="size-14 shrink-0 text-acc-dim" />
         <span className="flex min-w-0 flex-col leading-[1.3]">

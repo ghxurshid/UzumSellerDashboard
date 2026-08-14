@@ -40,40 +40,48 @@ export function ModuleBulkBar({
   return (
     <div
       role="status"
-      className="flex animate-[rise_0.14s_ease] items-center gap-8 border-b border-line bg-acc-soft px-14 py-8"
+      className="flex animate-[rise_0.14s_ease] flex-col gap-8 border-b border-line bg-acc-soft px-11 py-9 sm:px-14 lg:flex-row lg:items-center lg:py-8"
     >
-      <span data-numeric className="text-xs-plus font-medium text-acc-dim">
-        {count} {t('selectedL')}
-      </span>
+      <div className="flex items-center gap-9">
+        <span data-numeric className="text-xs-plus font-medium text-acc-dim">
+          {count} {t('selectedL')}
+        </span>
 
-      <button
-        type="button"
-        onClick={onClear}
-        className="cursor-pointer border-0 bg-transparent p-0 text-xs text-faint underline underline-offset-2"
-      >
-        {t('clearAll')}
-      </button>
-
-      <div className="flex-1" />
-
-      {actions.map((action) => (
         <button
-          key={action.key}
           type="button"
-          disabled={disabled}
-          onClick={action.run}
-          className={cn(
-            'flex h-24 cursor-pointer items-center gap-5 rounded-6 border px-9 text-xs transition-colors',
-            'disabled:cursor-not-allowed disabled:opacity-45',
-            action.primary === true
-              ? 'border-acc bg-acc-soft text-acc-dim hover:bg-acc-strong'
-              : 'border-line-2 bg-transparent text-dim hover:border-acc-line hover:text-acc-dim',
-          )}
+          onClick={onClear}
+          className="tap cursor-pointer border-0 bg-transparent p-0 text-xs text-faint underline underline-offset-2"
         >
-          <Icon name={action.icon} className="size-12" />
-          {t(action.labelKey)}
+          {t('clearAll')}
         </button>
-      ))}
+      </div>
+
+      <div className="hidden flex-1 lg:block" />
+
+      {/* The action row scrolls sideways rather than wrapping: a bulk bar that
+          grows to three lines pushes the selected rows off the screen, which
+          is exactly what the user is trying to look at. */}
+      <div className="scroll-x -mx-11 flex gap-7 px-11 sm:-mx-14 sm:px-14 lg:mx-0 lg:overflow-visible lg:px-0">
+        {actions.map((action) => (
+          <button
+            key={action.key}
+            type="button"
+            disabled={disabled}
+            onClick={action.run}
+            className={cn(
+              'tap flex h-36 shrink-0 cursor-pointer items-center gap-6 rounded-7 border px-12 text-xs transition-colors',
+              'lg:h-24 lg:rounded-6 lg:px-9',
+              'disabled:cursor-not-allowed disabled:opacity-45',
+              action.primary === true
+                ? 'border-acc bg-acc-soft text-acc-dim hover:bg-acc-strong'
+                : 'border-line-2 bg-transparent text-dim hover:border-acc-line hover:text-acc-dim',
+            )}
+          >
+            <Icon name={action.icon} className="size-12 shrink-0" />
+            {t(action.labelKey)}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

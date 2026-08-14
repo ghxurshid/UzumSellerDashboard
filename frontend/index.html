@@ -2,8 +2,20 @@
 <html lang="uz" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- `viewport-fit=cover` lets the app paint under the notch and the home
+         indicator; the `env(safe-area-inset-*)` padding in globals.css is what
+         keeps content out from under them. `maximum-scale` is deliberately not
+         set: pinch zoom stays available, and the 16px control type below the
+         tablet breakpoint is what stops iOS zooming on focus. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1119" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#e3e5f0" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta
       name="description"
       content="Savdo Copilot — Uzum sotuvchilari uchun analitika, zaxira, buyurtma va moliya boshqaruvi."

@@ -37,7 +37,9 @@ export function Toaster(): ReactNode {
     <div
       aria-live="polite"
       aria-relevant="additions"
-      className="pointer-events-none absolute bottom-14 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-6"
+      /* Above the phone tab bar, not on top of it; back to the design's 14px
+         gutter from `md` up where there is no tab bar to clear. */
+      className="bottom-above-nav pointer-events-none absolute left-1/2 z-50 flex w-[calc(100vw-16px)] max-w-420 -translate-x-1/2 flex-col items-center gap-6 md:bottom-14 md:w-auto"
     >
       <AnimatePresence initial={false}>
         {toasts.map((toast) => {
@@ -51,20 +53,20 @@ export function Toaster(): ReactNode {
               exit={{ opacity: 0, y: 6, transition: { duration: 0.14 } }}
               transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
               className={cn(
-                'pointer-events-auto flex items-center gap-9 rounded-9 border border-line-2',
-                'bg-raise px-11 py-8 text-xs-plus shadow-[var(--shadow-float)]',
+                'pointer-events-auto flex w-full max-w-full items-center gap-9 rounded-9 border border-line-2',
+                'bg-raise px-11 py-9 text-xs-plus shadow-[var(--shadow-float)] md:w-auto md:py-8',
               )}
             >
               <Icon
                 aria-hidden
                 className={cn('size-14 shrink-0', COLOR_BY_KIND[toast.kind], toast.kind === 'load' && 'animate-spin')}
               />
-              <span className="max-w-320 text-dim">{toast.text}</span>
+              <span className="min-w-0 flex-1 text-dim md:max-w-320 md:flex-none">{toast.text}</span>
               {toast.actionLabel !== undefined && (
                 <button
                   type="button"
                   onClick={() => runAction(toast.id)}
-                  className="cursor-pointer border-0 bg-transparent p-0 text-xs text-acc-dim underline underline-offset-2"
+                  className="tap shrink-0 cursor-pointer border-0 bg-transparent p-0 text-xs text-acc-dim underline underline-offset-2"
                 >
                   {toast.actionLabel}
                 </button>
@@ -73,9 +75,9 @@ export function Toaster(): ReactNode {
                 type="button"
                 aria-label="Close"
                 onClick={() => dismiss(toast.id)}
-                className="cursor-pointer border-0 bg-transparent p-0 text-faint hover:text-text"
+                className="tap shrink-0 cursor-pointer border-0 bg-transparent p-0 text-faint hover:text-text"
               >
-                <X aria-hidden className="size-12" />
+                <X aria-hidden className="size-14 md:size-12" />
               </button>
             </motion.div>
           );

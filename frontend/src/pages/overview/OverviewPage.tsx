@@ -57,9 +57,9 @@ export default function OverviewPage(): ReactNode {
       status={status}
       onRetry={refetch}
       skeleton={
-        <div className="flex flex-col gap-12 px-14 pb-22 pt-12">
+        <div className="flex flex-col gap-12 px-10 pb-22 pt-12 sm:px-14">
           <SkeletonTiles count={7} />
-          <div className="grid grid-cols-[296px_minmax(0,1fr)] gap-12">
+          <div className="grid grid-cols-1 gap-12 min-[900px]:grid-cols-[296px_minmax(0,1fr)]">
             <div className="h-246 rounded-11 border border-line bg-panel" />
             <div className="skeleton h-246 rounded-11 border border-line" />
           </div>
@@ -67,16 +67,19 @@ export default function OverviewPage(): ReactNode {
       }
     >
       {summary !== null && (
-        <div className="flex flex-col gap-12 px-14 pb-22 pt-12">
+        <div className="flex flex-col gap-12 px-10 pb-22 pt-12 sm:px-14">
           <KpiStrip kpis={summary.kpis} />
           <LiveTicker items={summary.ticker} />
 
-          <div className="grid grid-cols-[296px_minmax(0,1fr)] gap-12 max-[900px]:grid-cols-1">
+          {/* Single column below 900px: the 296px side card and the chart are
+              both unreadable at half a phone's width, and stacking keeps each
+              of them at full measure. */}
+          <div className="grid grid-cols-1 gap-12 min-[900px]:grid-cols-[296px_minmax(0,1fr)]">
             <UnitEconomics rows={summary.economics} onOpenMethod={() => setMethodOpen(true)} />
             <RevenueChart points={summary.series} onDrill={() => setDrillOpen(true)} />
           </div>
 
-          <div className="grid grid-cols-[296px_minmax(0,1fr)] gap-12 max-[900px]:grid-cols-1">
+          <div className="grid grid-cols-1 gap-12 min-[900px]:grid-cols-[296px_minmax(0,1fr)]">
             <PortfolioRank
               buckets={summary.ranks}
               total={summary.productTotal}
@@ -110,30 +113,36 @@ export default function OverviewPage(): ReactNode {
               </Button>
             }
           >
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-line text-left text-meta uppercase tracking-[0.08em] text-faint">
-                  <th className="py-6 font-normal">{t('cLine')}</th>
-                  <th className="py-6 text-right font-normal">{t('cThis')}</th>
-                  <th className="py-6 text-right font-normal">{t('cShare')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.economics.map((row) => (
-                  <tr key={row.key} className="border-b border-line">
-                    <td className="py-6">
-                      <span className="font-mono text-mini text-faint">{row.field}</span>
-                    </td>
-                    <td data-numeric className="py-6 text-right">
-                      {row.value}
-                    </td>
-                    <td data-numeric className="py-6 text-right text-dim">
-                      {row.pct}%
-                    </td>
+            {/* Three columns, one of them a raw API field name that cannot be
+                wrapped — the scroller is the honest answer here rather than a
+                card list, since the point of this table is comparing the
+                numbers down each column. */}
+            <div className="scroll-box -mx-2 px-2">
+              <table className="w-full min-w-320 border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left text-meta uppercase tracking-[0.08em] text-faint">
+                    <th className="py-6 font-normal">{t('cLine')}</th>
+                    <th className="py-6 text-right font-normal">{t('cThis')}</th>
+                    <th className="py-6 text-right font-normal">{t('cShare')}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {summary.economics.map((row) => (
+                    <tr key={row.key} className="border-b border-line">
+                      <td className="py-6">
+                        <span className="font-mono text-mini text-faint">{row.field}</span>
+                      </td>
+                      <td data-numeric className="py-6 text-right">
+                        {row.value}
+                      </td>
+                      <td data-numeric className="py-6 text-right text-dim">
+                        {row.pct}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Dialog>
         </div>
       )}

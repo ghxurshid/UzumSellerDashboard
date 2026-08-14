@@ -147,6 +147,19 @@
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, Menlo, Monaco, 'Cascadia Mono', monospace;
 
+  /* — breakpoints —
+     The layout is mobile-first from a 320px floor: no variant at all is the
+     320–374px case, and each step up is one of the device widths the design
+     has to survive. `md` (768px) is the hinge — below it the app is a phone
+     application with a bottom bar and sheets, at or above it the desktop
+     chrome (icon rail, side panels, dense tables) comes back. */
+  --breakpoint-xs: 375px;
+  --breakpoint-sm: 425px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+
   /* — radii, as drawn — */
   --radius-4: 4px;
   --radius-5: 5px;
@@ -176,6 +189,7 @@
   --animate-spin-slow: spin 0.9s linear infinite;
   --animate-pop: pop 0.14s ease both;
   --animate-toast: toast 0.2s ease both;
+  --animate-sheet: sheet 0.28s var(--ease-out-soft) both;
 }
 
 @keyframes shimmer {
@@ -237,12 +251,43 @@
     transform: none;
   }
 }
+/* The mobile counterpart of `slide-panel`: a drawer that is a side panel on a
+   desktop becomes a sheet rising from the bottom edge on a phone, where the
+   top of the screen is the part a thumb cannot reach. */
+@keyframes sheet {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 
 @layer base {
   html,
   body,
   #root {
     height: 100%;
+    /* `100%` measured against the *visual* viewport is what a phone browser
+       shrinks and grows as its address bar slides away; `dvh` tracks that
+       honestly, so a full-height shell does not sit under the browser chrome
+       with its bottom bar cut off. */
+    height: 100dvh;
+  }
+
+  html,
+  body {
+    /* Nothing in this interface is allowed to widen the page. A single
+       overflowing table or an unbroken id string would otherwise let the whole
+       document pan sideways on a phone, which reads as a broken layout even
+       when every screen is correct. */
+    max-width: 100%;
+    overflow-x: clip;
+    /* Rotating the device must not rescale the type. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   body {
@@ -254,6 +299,44 @@
     line-height: 1.45;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* A pull past the end of a scroller should stop at the scroller, not
+       bounce the page or trigger pull-to-refresh mid-drag. */
+    overscroll-behavior-y: none;
+  }
+
+  /* Long ids, endpoints and shop names are everywhere in this UI and none of
+     them contain a space to break at. Without this a single `dropOffPointUuid`
+     sets the minimum width of its column — and therefore of the screen. */
+  h1,
+  h2,
+  h3,
+  p,
+  span,
+  dt,
+  dd,
+  td,
+  th,
+  li,
+  label {
+    overflow-wrap: break-word;
+  }
+
+  /* Removes the 300ms tap delay and the double-tap-to-zoom gesture on
+     controls, without disabling pinch zoom on the page as a whole. */
+  button,
+  a,
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [role='menuitemradio'],
+  [role='option'],
+  [role='radio'],
+  [role='switch'],
+  [role='checkbox'],
+  label,
+  select,
+  summary {
+    touch-action: manipulation;
   }
 
   /* The design system's rule: keyboard focus is always the 2px accent ring,
@@ -304,11 +387,55 @@
     accent-color: var(--s-acc);
     height: 4px;
   }
+  /* A 4px track is a hairline to drag with a finger. The thumb keeps its own
+     size; the element simply claims enough vertical room to be grabbed. */
+  @media (pointer: coarse) {
+    input[type='range'] {
+      height: 28px;
+    }
+  }
 
   /* Numbers in this interface are compared column-to-column; they must not
      jitter as values change. */
   [data-numeric] {
     font-variant-numeric: tabular-nums;
+  }
+
+  /**
+   * Form controls on a phone.
+   *
+   * iOS Safari zooms the viewport whenever a focused control's text is under
+   * 16px, and it never zooms back out — the user is left panning a magnified
+   * page. This interface is drawn at 11–13px, so every control would trigger
+   * it. Raising the *control* type to 16px below the tablet breakpoint is the
+   * only fix that does not disable pinch zoom, and it is also simply the right
+   * size for a thumb: the dense scale stays everywhere text is read rather
+   * than typed.
+   */
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+
+    /* Native pickers and date fields ignore `height` on iOS unless the box is
+       told to size like every other block. */
+    input,
+    textarea {
+      -webkit-appearance: none;
+      appearance: none;
+      border-radius: inherit;
+    }
+  }
+
+  /* On a touch screen a 9px scrollbar is both invisible and unusable; the
+     surfaces that scroll on a phone say so through their own affordances. */
+  @media (pointer: coarse) {
+    ::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+    }
   }
 }
 
@@ -323,6 +450,90 @@
     );
     background-size: 300px 100%;
     animation: var(--animate-shimmer);
+  }
+
+  /**
+   * A 44×44 finger target on a control that is drawn smaller.
+   *
+   * Some controls cannot simply grow: the row kebab lives in a 22px grid
+   * track, the tri-state checkbox is 15px because the row is 30px tall. For
+   * those, the *hit* area is widened with a centred pseudo-element while the
+   * painted box stays the size the design drew. On a mouse the rule does
+   * nothing — a pointer does not need the slack, and the overlap it creates
+   * between neighbours would be a regression there.
+   */
+  @media (pointer: coarse) {
+    .tap {
+      position: relative;
+    }
+    .tap::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 44px;
+      height: 44px;
+      transform: translate(-50%, -50%);
+    }
+  }
+
+  /* A row of chips or tabs that runs off the edge of a phone rather than
+     wrapping into three lines. Momentum scrolling, snap to each item, and no
+     scrollbar gutter eating 9px of a 320px screen. */
+  .scroll-x {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .scroll-x::-webkit-scrollbar {
+    display: none;
+  }
+
+  .snap-x-start {
+    scroll-snap-type: x proximity;
+  }
+  .snap-x-start > * {
+    scroll-snap-align: start;
+  }
+
+  /* Wide content — a table that genuinely cannot become a card — scrolls
+     inside its own box instead of widening the document. */
+  .scroll-box {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  /**
+   * The home-indicator strip and the notch.
+   *
+   * Anything pinned to an edge has to clear them, and the numbered variants
+   * exist because most of those elements already have padding of their own —
+   * a bare `env()` would replace it rather than add to it, and the sheet
+   * footer would lose its 12px gutter on every phone without a home
+   * indicator (where the inset is 0).
+   */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pb-safe-8 {
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .pb-safe-12 {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .bottom-safe-14 {
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  }
+  /* Clears the 52px phone tab bar (plus its own safe-area padding) — used by
+     the floating layers that would otherwise land on top of it. */
+  .bottom-above-nav {
+    bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
   }
 }
 

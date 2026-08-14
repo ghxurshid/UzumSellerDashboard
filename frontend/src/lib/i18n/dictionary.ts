@@ -920,6 +920,19 @@ const TUPLES = {
     "Joriy davrda e'tiborga loyiq narsa yo'q",
   ],
   openRows: ['Show the rows', 'Показать строки', "Qatorlarni ko'rish"],
+
+  /* — mobile chrome — */
+  menuL: ['Menu', 'Меню', 'Menyu'],
+  moreL: ['More', 'Ещё', 'Yana'],
+  navSection: ['Sections', 'Разделы', "Bo'limlar"],
+  scopeSection: ['Scope', 'Область', 'Qamrov'],
+  toolsSection: ['Tools', 'Инструменты', 'Asboblar'],
+  storeL: ['Store', 'Магазин', "Do'kon"],
+  rangeL: ['Period', 'Период', 'Davr'],
+  filtersL: ['Filters', 'Фильтры', 'Filtrlar'],
+  sortL: ['Sort', 'Сортировка', 'Saralash'],
+  detailsL: ['Details', 'Подробнее', 'Batafsil'],
+  pageOf: ['Page {n} of {total}', 'Стр. {n} из {total}', '{total} dan {n}-sahifa'],
 } as const satisfies Record<string, readonly [string, string, string]>;
 
 export type TranslationKey = keyof typeof TUPLES;

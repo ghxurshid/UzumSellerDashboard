@@ -51,7 +51,7 @@ export function InsightsRail(): ReactNode {
   return (
     <aside
       aria-label={t('aiInsights')}
-      className="flex w-320 shrink-0 flex-col border-l border-line bg-chrome"
+      className="flex w-320 min-w-0 shrink-0 flex-col border-l border-line bg-chrome"
     >
       <header className="flex h-46 shrink-0 items-center gap-9 border-b border-line px-12">
         <Sparkles aria-hidden className="size-14 text-acc-dim" />
@@ -175,12 +175,12 @@ function InsightCard({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-5 border-t border-line pt-8">
+      <div className="flex flex-wrap gap-6 border-t border-line pt-8">
         <button
           type="button"
           onClick={onOpen}
           disabled={insight.target === undefined}
-          className="flex h-24 cursor-pointer items-center gap-5 rounded-6 border border-acc bg-acc-soft px-9 text-xs text-acc-dim hover:bg-acc-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="tap flex h-28 cursor-pointer items-center gap-5 rounded-6 border border-acc bg-acc-soft px-9 text-xs text-acc-dim hover:bg-acc-strong disabled:cursor-not-allowed disabled:opacity-45"
         >
           <ListTree aria-hidden className="size-11" />
           {t('openRows')}
@@ -188,14 +188,14 @@ function InsightCard({
         <button
           type="button"
           onClick={onAsk}
-          className="h-24 cursor-pointer rounded-6 border border-line-2 bg-transparent px-9 text-xs text-dim hover:border-acc-line hover:text-acc-dim"
+          className="tap h-28 cursor-pointer rounded-6 border border-line-2 bg-transparent px-9 text-xs text-dim hover:border-acc-line hover:text-acc-dim"
         >
           {t('askWhy')}
         </button>
         <button
           type="button"
           onClick={onDismiss}
-          className="h-24 cursor-pointer rounded-6 border border-line-2 bg-transparent px-9 text-xs text-faint hover:border-neg-line hover:text-neg"
+          className="tap h-28 cursor-pointer rounded-6 border border-line-2 bg-transparent px-9 text-xs text-faint hover:border-neg-line hover:text-neg"
         >
           {t('dismissL')}
         </button>

@@ -62,81 +62,99 @@ export default function ProductDetailPage(): ReactNode {
       onRetry={refetch}
       onClearFilters={() => void navigate('/products')}
       skeleton={
-        <div className="px-14 pb-22 pt-12">
+        <div className="px-10 pb-22 pt-12 sm:px-14">
           <SkeletonTable rows={5} />
         </div>
       }
     >
     {product !== null && (
-    <div className="flex flex-col gap-12 px-14 pb-22 pt-12">
-      <nav aria-label="Breadcrumb" className="flex items-center gap-9 text-xs-plus text-faint">
-        <button
-          type="button"
-          onClick={() => void navigate('/overview')}
-          className="cursor-pointer border-0 bg-transparent p-0 text-inherit hover:text-acc-dim"
-        >
-          {t('nOverview')}
-        </button>
-        <ChevronRight aria-hidden className="size-9" />
-        <button
-          type="button"
-          onClick={() => void navigate('/products')}
-          className="cursor-pointer border-0 bg-transparent p-0 text-inherit hover:text-acc-dim"
-        >
-          {t('nProducts')}
-        </button>
-        <ChevronRight aria-hidden className="size-9" />
-        <span aria-current="page" className="text-text">
-          {product.sku}
-        </span>
+    <div className="flex flex-col gap-12 px-10 pb-22 pt-12 sm:px-14">
+      <nav
+        aria-label="Breadcrumb"
+        className="flex flex-col gap-9 text-xs-plus text-faint lg:flex-row lg:items-center"
+      >
+        <div className="flex min-w-0 items-center gap-8">
+          <button
+            type="button"
+            onClick={() => void navigate('/overview')}
+            className="tap hidden cursor-pointer border-0 bg-transparent p-0 text-inherit hover:text-acc-dim xs:block"
+          >
+            {t('nOverview')}
+          </button>
+          <ChevronRight aria-hidden className="hidden size-9 shrink-0 xs:block" />
+          <button
+            type="button"
+            onClick={() => void navigate('/products')}
+            className="tap cursor-pointer border-0 bg-transparent p-0 text-inherit hover:text-acc-dim"
+          >
+            {t('nProducts')}
+          </button>
+          <ChevronRight aria-hidden className="size-9 shrink-0" />
+          <span aria-current="page" className="min-w-0 truncate text-text">
+            {product.sku}
+          </span>
+        </div>
 
-        <div className="flex-1" />
+        <div className="hidden flex-1 lg:block" />
 
-        <Button
-          variant="primary"
-          size="sm"
-          icon={<ChevronLeft aria-hidden className="size-11" />}
-          onClick={() => void navigate('/products')}
-        >
-          {t('backList')}
-        </Button>
-        <Button size="sm" onClick={() => step(-1)}>
-          {t('prev')}
-        </Button>
-        <Button size="sm" onClick={() => step(1)}>
-          {t('next')}
-        </Button>
+        <div className="flex flex-wrap items-center gap-8">
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<ChevronLeft aria-hidden className="size-11" />}
+            onClick={() => void navigate('/products')}
+          >
+            {t('backList')}
+          </Button>
+          <Button size="sm" onClick={() => step(-1)}>
+            {t('prev')}
+          </Button>
+          <Button size="sm" onClick={() => step(1)}>
+            {t('next')}
+          </Button>
+        </div>
       </nav>
 
-      <Panel className="flex gap-14 p-14">
-        <div className="flex size-82 shrink-0 items-center justify-center rounded-9 border border-dashed border-line-2 bg-grid text-faint">
-          <ImageIcon aria-hidden className="size-24" />
-        </div>
-
-        <div className="flex min-w-0 flex-1 flex-col gap-8">
-          <div className="flex flex-wrap items-center gap-9">
-            <h1 className="text-xl font-medium tracking-[-0.02em]">{product.name}</h1>
-            <span className="rounded-5 border border-line-2 px-6 py-px text-mini text-faint">
-              {product.sku}
-            </span>
-            <Pill tone="accent">{product.rank}</Pill>
-            <Pill tone={product.status === 'ACTIVE' ? 'positive' : 'neutral'}>{product.status}</Pill>
+      {/* Three columns at `lg` — thumbnail, facts, actions — collapsing to a
+          single stack below it. The action column in particular has to move:
+          three full-width buttons at the bottom of the card are reachable,
+          three narrow ones squeezed beside the facts are not. */}
+      <Panel className="flex flex-col gap-12 p-11 sm:p-14 lg:flex-row lg:gap-14">
+        <div className="flex items-start gap-12 lg:contents">
+          <div className="flex size-64 shrink-0 items-center justify-center rounded-9 border border-dashed border-line-2 bg-grid text-faint sm:size-82">
+            <ImageIcon aria-hidden className="size-20 sm:size-24" />
           </div>
 
-          <dl className="flex flex-wrap gap-20">
-            <Fact label={t('cPrice')} value={formatNumber(product.price)} />
-            <Fact label={t('cPurchase')} value={formatNumber(product.purchasePrice)} />
-            <Fact label={t('cTurnover')} value={formatNumber(product.turnover)} />
-            <Fact label={t('cSold')} value={String(product.sold)} />
-            <Fact label={t('cReturns')} value={`${product.returnedPct}%`} />
-            <Fact label={t('cActive')} value={String(product.quantityActive)} />
-          </dl>
+          <div className="flex min-w-0 flex-1 flex-col gap-8">
+            <div className="flex flex-wrap items-center gap-8">
+              <h1 className="m-0 text-lg font-medium tracking-[-0.02em] sm:text-xl">
+                {product.name}
+              </h1>
+              <span className="rounded-5 border border-line-2 px-6 py-px text-mini text-faint">
+                {product.sku}
+              </span>
+              <Pill tone="accent">{product.rank}</Pill>
+              <Pill tone={product.status === 'ACTIVE' ? 'positive' : 'neutral'}>
+                {product.status}
+              </Pill>
+            </div>
+
+            <dl className="m-0 grid grid-cols-2 gap-x-16 gap-y-9 sm:grid-cols-3 lg:flex lg:flex-wrap lg:gap-20">
+              <Fact label={t('cPrice')} value={formatNumber(product.price)} />
+              <Fact label={t('cPurchase')} value={formatNumber(product.purchasePrice)} />
+              <Fact label={t('cTurnover')} value={formatNumber(product.turnover)} />
+              <Fact label={t('cSold')} value={String(product.sold)} />
+              <Fact label={t('cReturns')} value={`${product.returnedPct}%`} />
+              <Fact label={t('cActive')} value={String(product.quantityActive)} />
+            </dl>
+          </div>
         </div>
 
-        <div className="flex shrink-0 flex-col justify-center gap-6">
+        <div className="flex flex-col gap-7 border-t border-line pt-11 sm:flex-row sm:flex-wrap lg:shrink-0 lg:flex-col lg:flex-nowrap lg:justify-center lg:gap-6 lg:border-t-0 lg:pt-0">
           <Button
             variant="primary"
             size="lg"
+            className="w-full sm:w-auto sm:flex-1 lg:w-full lg:flex-none"
             disabled={firstSku === undefined}
             icon={<Zap aria-hidden className="size-12" />}
             onClick={() => setFormKind('price')}
@@ -146,6 +164,7 @@ export default function ProductDetailPage(): ReactNode {
 
           <Button
             size="lg"
+            className="w-full sm:w-auto sm:flex-1 lg:w-full lg:flex-none"
             disabled={firstSku === undefined}
             icon={<Layers aria-hidden className="size-12" />}
             onClick={() => setFormKind('stock')}
@@ -155,6 +174,7 @@ export default function ProductDetailPage(): ReactNode {
 
           <Button
             size="lg"
+            className="w-full sm:w-auto sm:flex-1 lg:w-full lg:flex-none"
             disabled={firstSku === undefined}
             icon={<Barcode aria-hidden className="size-12" />}
             onClick={() => setFormKind('labels')}
@@ -185,15 +205,23 @@ export default function ProductDetailPage(): ReactNode {
 
 function Fact({ label, value }: { readonly label: string; readonly value: string }): ReactNode {
   return (
-    <div className="flex flex-col gap-px">
-      <dt className="text-meta uppercase tracking-[0.09em] text-faint">{label}</dt>
-      <dd data-numeric className="m-0 text-lg">
+    <div className="flex min-w-0 flex-col gap-px">
+      <dt className="truncate text-meta uppercase tracking-[0.09em] text-faint">{label}</dt>
+      <dd data-numeric className="m-0 truncate text-md sm:text-lg">
         {value}
       </dd>
     </div>
   );
 }
 
+/**
+ * The SKU rows.
+ *
+ * Six columns, five of them numeric and one an untruncatable barcode. Below
+ * `lg` each row becomes a card: the SKU title and its identifiers head it, and
+ * the five figures sit underneath as a labelled grid. Either way the row is
+ * the same button and opens the same price form.
+ */
 function SkuTable({
   product,
   onEditSku,
@@ -205,16 +233,16 @@ function SkuTable({
   const columns = 'grid grid-cols-[minmax(0,1.7fr)_repeat(5,minmax(0,1fr))] gap-x-8';
 
   return (
-    <Panel className="flex flex-col gap-9 px-14 py-13">
-      <div className="flex items-center gap-8">
-        <h2 className="text-base font-medium">{t('skuList')}</h2>
-        <span className="font-mono text-tiny text-faint">{t('skuListSub')}</span>
-        <div className="flex-1" />
-        <span className="text-mini text-faint">{product.skus.length} SKU</span>
+    <Panel className="flex flex-col gap-9 px-11 py-13 sm:px-14">
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
+        <h2 className="m-0 text-base font-medium">{t('skuList')}</h2>
+        <span className="min-w-0 truncate font-mono text-tiny text-faint">{t('skuListSub')}</span>
+        <div className="hidden flex-1 sm:block" />
+        <span className="ml-auto text-mini text-faint sm:ml-0">{product.skus.length} SKU</span>
       </div>
 
       <div
-        className={`${columns} border-b border-line pb-6 text-meta uppercase tracking-[0.08em] text-faint`}
+        className={`${columns} hidden border-b border-line pb-6 text-meta uppercase tracking-[0.08em] text-faint lg:grid`}
       >
         <span>{t('cSkuTitle')}</span>
         <span className="text-right">{t('cPrice')}</span>
@@ -224,27 +252,64 @@ function SkuTable({
         <span className="text-right">{t('cSold')}</span>
       </div>
 
-      {product.skus.map((sku) => (
-        <button
-          key={sku.skuId}
-          type="button"
-          onClick={() => onEditSku(sku)}
-          data-numeric
-          className={`${columns} cursor-pointer items-center rounded-6 border-0 border-b border-line bg-transparent py-7 text-left text-xs-plus hover:bg-acc-soft`}
-        >
-          <span className="flex min-w-0 flex-col leading-[1.3]">
-            <span className="truncate">{sku.skuTitle}</span>
-            <span className="font-mono text-tiny text-faint">
-              skuId {sku.skuId} · {sku.barcode}
+      {product.skus.map((sku) => {
+        const facts: ReadonlyArray<{ readonly label: string; readonly value: string }> = [
+          { label: t('cPrice'), value: formatNumber(sku.price) },
+          { label: t('cPurchase'), value: formatNumber(sku.purchasePrice) },
+          { label: t('cActive'), value: String(sku.quantityActive) },
+          { label: t('cFbs'), value: String(sku.quantityFbs) },
+          { label: t('cSold'), value: String(sku.quantitySold) },
+        ];
+
+        return (
+          <button
+            key={sku.skuId}
+            type="button"
+            onClick={() => onEditSku(sku)}
+            data-numeric
+            className="cursor-pointer rounded-8 border-0 border-b border-line bg-transparent text-left text-xs-plus hover:bg-acc-soft"
+          >
+            {/* — card, below `lg` — */}
+            <span className="flex flex-col gap-8 py-10 lg:hidden">
+              <span className="flex min-w-0 flex-col leading-[1.3]">
+                <span className="truncate text-sm-plus">{sku.skuTitle}</span>
+                <span className="truncate font-mono text-tiny text-faint">
+                  skuId {sku.skuId} · {sku.barcode}
+                </span>
+              </span>
+
+              <span className="grid grid-cols-3 gap-x-12 gap-y-7 sm:grid-cols-5">
+                {facts.map((fact) => (
+                  <span key={fact.label} className="flex min-w-0 flex-col gap-px">
+                    <span className="truncate text-meta uppercase tracking-[0.08em] text-faint">
+                      {fact.label}
+                    </span>
+                    <span className="truncate text-sm">{fact.value}</span>
+                  </span>
+                ))}
+              </span>
             </span>
-          </span>
-          <span className="text-right">{formatNumber(sku.price)}</span>
-          <span className="text-right text-dim">{formatNumber(sku.purchasePrice)}</span>
-          <span className="text-right text-dim">{sku.quantityActive}</span>
-          <span className="text-right text-dim">{sku.quantityFbs}</span>
-          <span className="text-right text-dim">{sku.quantitySold}</span>
-        </button>
-      ))}
+
+            {/* — the dense grid, `lg` and up — */}
+            <span className={`${columns} hidden items-center py-7 lg:grid`}>
+              <span className="flex min-w-0 flex-col leading-[1.3]">
+                <span className="truncate">{sku.skuTitle}</span>
+                <span className="truncate font-mono text-tiny text-faint">
+                  skuId {sku.skuId} · {sku.barcode}
+                </span>
+              </span>
+              {facts.map((fact, index) => (
+                <span
+                  key={fact.label}
+                  className={index === 0 ? 'truncate text-right' : 'truncate text-right text-dim'}
+                >
+                  {fact.value}
+                </span>
+              ))}
+            </span>
+          </button>
+        );
+      })}
     </Panel>
   );
 }

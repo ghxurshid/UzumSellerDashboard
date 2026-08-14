@@ -211,12 +211,15 @@ function ScreenBanner({
     <div
       role="status"
       className={cn(
-        'mx-14 mt-12 flex items-center gap-9 rounded-9 border px-11 py-8 text-xs-plus',
+        'mx-10 mt-12 flex items-center gap-9 rounded-9 border px-11 py-9 text-xs-plus sm:mx-14 sm:py-8',
         TONE_CLASS[style.tone],
       )}
     >
       <Icon aria-hidden className="size-13 shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{text}</span>
+      {/* Two lines on a phone rather than an ellipsis: these messages carry a
+          timestamp or a count, and truncating them loses exactly the part that
+          makes the banner worth reading. */}
+      <span className="line-clamp-2 min-w-0 flex-1 sm:truncate">{text}</span>
 
       {actionLabel !== null ? (
         <Button size="sm" onClick={onAction}>
@@ -227,9 +230,9 @@ function ScreenBanner({
           type="button"
           aria-label={t('mClose')}
           onClick={resetSync}
-          className="cursor-pointer border-0 bg-transparent p-0 opacity-70 hover:opacity-100"
+          className="tap shrink-0 cursor-pointer border-0 bg-transparent p-0 opacity-70 hover:opacity-100"
         >
-          <X aria-hidden className="size-12" />
+          <X aria-hidden className="size-14 sm:size-12" />
         </button>
       )}
     </div>

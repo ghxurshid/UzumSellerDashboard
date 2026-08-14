@@ -11,11 +11,22 @@ import {
 import { cn } from '@/lib/utils';
 
 const CONTROL = cn(
-  'w-full rounded-7 border bg-panel px-10 text-sm text-text outline-none',
+  'w-full max-w-full rounded-8 border bg-panel px-11 text-sm text-text outline-none',
   'transition-colors placeholder:text-faint',
   'hover:border-line-2 focus-visible:border-acc',
   'disabled:cursor-not-allowed disabled:bg-grid disabled:text-dim',
+  'md:rounded-7 md:px-10',
 );
+
+/**
+ * Control height.
+ *
+ * 44px on a phone — the target size a thumb needs, and enough room for the
+ * 16px type `globals.css` forces on form controls below the tablet breakpoint
+ * to stop iOS zooming the viewport on focus. Back to the design's 32px from
+ * `md` up, where the pointer is precise and the density is the point.
+ */
+const CONTROL_HEIGHT = 'h-44 md:h-32';
 
 interface FieldShellProps {
   readonly label: string;
@@ -89,7 +100,12 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
         id={id}
         aria-invalid={error !== undefined}
         aria-describedby={describedBy(id, error, hint)}
-        className={cn(CONTROL, 'h-32', error !== undefined ? 'border-neg' : 'border-line-2', className)}
+        className={cn(
+          CONTROL,
+          CONTROL_HEIGHT,
+          error !== undefined ? 'border-neg' : 'border-line-2',
+          className,
+        )}
         {...props}
       />
     </FieldShell>
@@ -125,7 +141,8 @@ export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(funct
         aria-describedby={describedBy(id, error, hint)}
         className={cn(
           CONTROL,
-          'h-32 cursor-pointer pr-26',
+          CONTROL_HEIGHT,
+          'cursor-pointer pr-26',
           error !== undefined ? 'border-neg' : 'border-line-2',
           className,
         )}

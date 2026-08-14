@@ -68,7 +68,7 @@ export function NotificationsMenu({
           <button
             type="button"
             onClick={markAllRead}
-            className="cursor-pointer border-0 bg-transparent p-0 text-xs text-acc-dim"
+            className="tap cursor-pointer border-0 bg-transparent p-0 text-xs text-acc-dim"
           >
             {t('markRead')}
           </button>

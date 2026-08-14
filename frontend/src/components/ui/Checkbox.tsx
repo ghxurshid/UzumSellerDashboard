@@ -38,7 +38,7 @@ export function Checkbox({
       aria-label={label}
       onClick={handleClick}
       className={cn(
-        'flex size-15 shrink-0 cursor-pointer items-center justify-center rounded-4 border p-0 transition-colors',
+        'tap flex size-15 shrink-0 cursor-pointer items-center justify-center rounded-4 border p-0 transition-colors',
         state === 'none'
           ? 'border-line-2 bg-transparent'
           : 'border-acc bg-acc text-white',

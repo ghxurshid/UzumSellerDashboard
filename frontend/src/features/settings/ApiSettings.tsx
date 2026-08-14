@@ -122,8 +122,8 @@ export function ApiSettings({ onSync, syncing }: {
         <p className="m-0 text-xs-plus text-dim">{t('apiSub')}</p>
       </header>
 
-      <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-12 max-[980px]:grid-cols-1">
-        <div className="flex flex-col gap-11 rounded-11 border border-line bg-panel px-14 py-13">
+      <div className="grid grid-cols-1 gap-12 min-[980px]:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-11 rounded-11 border border-line bg-panel px-11 py-13 sm:px-14">
           <div className="flex flex-wrap items-center gap-8">
             <span className={cn('size-7 rounded-full', STATUS_DOT[connection.status])} />
             <span className="text-sm-plus font-medium">{t(STATUS_LABEL[connection.status])}</span>
@@ -138,7 +138,7 @@ export function ApiSettings({ onSync, syncing }: {
               onClick={onSync}
               disabled={syncing || connection.status !== 'connected'}
               className={cn(
-                'flex h-26 shrink-0 cursor-pointer items-center gap-6 rounded-7 border border-acc',
+                'tap flex h-36 shrink-0 cursor-pointer items-center gap-6 rounded-7 border border-acc md:h-26',
                 'bg-acc-soft px-10 text-xs-plus font-medium text-acc-dim transition-colors',
                 'hover:bg-acc-strong disabled:cursor-not-allowed disabled:opacity-45',
               )}
@@ -204,7 +204,7 @@ export function ApiSettings({ onSync, syncing }: {
             onCopy={() => push(t('copied'), { kind: 'ok' })}
           />
 
-          <div className="grid grid-cols-3 gap-px overflow-hidden rounded-9 border border-line bg-line max-[720px]:grid-cols-1">
+          <div className="grid grid-cols-1 gap-px overflow-hidden rounded-9 border border-line bg-line min-[720px]:grid-cols-3">
             <Stat label="Base URL" value={api.baseUrl} meta={t('rateLimit')} />
             <Stat
               label="shops"
@@ -358,12 +358,16 @@ function FlagRow({
         aria-label={label}
         onClick={() => onChange(!value)}
         className={cn(
-          'flex h-20 w-36 shrink-0 cursor-pointer items-center rounded-full border p-0 transition-colors',
+          'tap flex h-24 w-42 shrink-0 cursor-pointer items-center rounded-full border p-0 transition-colors',
+          'md:h-20 md:w-36',
           value ? 'justify-end border-acc bg-acc-soft' : 'justify-start border-line-2 bg-grid',
         )}
       >
         <span
-          className={cn('mx-2 size-14 rounded-full transition-colors', value ? 'bg-acc-dim' : 'bg-faint')}
+          className={cn(
+            'mx-3 size-16 rounded-full transition-colors md:mx-2 md:size-14',
+            value ? 'bg-acc-dim' : 'bg-faint',
+          )}
         />
       </button>
       <div className="min-w-0">

@@ -98,8 +98,8 @@ export function AiSettings(): ReactNode {
 
   return (
     <div className="flex flex-col gap-12">
-      <header className="flex items-end gap-12">
-        <div className="flex flex-1 flex-col gap-3">
+      <header className="flex flex-wrap items-end gap-x-12 gap-y-7">
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
           <h1 className="m-0 text-xl font-medium tracking-[-0.02em]">{t('sAi')}</h1>
           <p className="m-0 max-w-760 text-xs-plus leading-[1.6] text-dim">{t('aiSub')}</p>
         </div>
@@ -161,19 +161,19 @@ export function AiSettings(): ReactNode {
       <div className="grid grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] gap-12 max-[980px]:grid-cols-1">
         {/* active adapter configuration */}
         <div className="overflow-hidden rounded-11 border border-line bg-panel">
-          <div className="flex items-center gap-9 border-b border-line px-14 py-11">
+          <div className="flex flex-wrap items-center gap-x-9 gap-y-7 border-b border-line px-11 py-11 sm:px-14">
             <Icon name={provider.icon} className="size-15 shrink-0 text-acc-dim" />
             <span className="text-base font-medium">
               {t('providerConfig', { name: provider.label })}
             </span>
-            <span className="truncate text-mini text-faint">{t('adapterRegistry')}</span>
-            <div className="flex-1" />
+            <span className="min-w-0 truncate text-mini text-faint">{t('adapterRegistry')}</span>
+            <div className="hidden flex-1 sm:block" />
             <button
               type="button"
               onClick={runTest}
               disabled={test === 'testing'}
               className={cn(
-                'flex h-26 shrink-0 cursor-pointer items-center gap-6 rounded-7 border border-line-2',
+                'tap flex h-36 shrink-0 cursor-pointer items-center gap-6 rounded-7 border border-line-2 md:h-26',
                 'bg-transparent px-10 text-xs-plus text-dim transition-colors',
                 'hover:border-acc-line hover:text-acc-dim disabled:cursor-not-allowed',
               )}
@@ -183,7 +183,7 @@ export function AiSettings(): ReactNode {
             </button>
           </div>
 
-          <div className="flex flex-col gap-11 px-14 py-12">
+          <div className="flex flex-col gap-11 px-11 py-12 sm:px-14">
             <div className="grid grid-cols-2 gap-10 max-[720px]:grid-cols-1">
               <div className="col-span-2 max-[720px]:col-span-1">
                 <CredentialField
@@ -303,7 +303,7 @@ export function AiSettings(): ReactNode {
 
         {/* connection test */}
         <div className="flex flex-col gap-12">
-          <div className="flex flex-col gap-10 rounded-11 border border-line bg-panel px-14 py-13">
+          <div className="flex flex-col gap-10 rounded-11 border border-line bg-panel px-11 py-13 sm:px-14">
             <div className="flex items-center gap-8">
               <span className="text-sm-plus font-medium">{t('testConn')}</span>
               <div className="flex-1" />

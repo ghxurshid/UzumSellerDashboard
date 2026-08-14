@@ -81,13 +81,57 @@ export default function SettingsPage(): ReactNode {
     );
   }, [push, requestConfirm, resetAll, t]);
 
+  /* The per-tab badge — a live sync, a failure count, or the connection state.
+     Identical in both layouts, so it is built once rather than twice. */
+  const badgeFor = (key: SettingsTab): ReactNode => {
+    if (key !== 'api') return null;
+
+    /* While a run is going it supersedes the connection chip: the live
+       operation is the more urgent fact. */
+    if (syncing) {
+      return (
+        <span className="flex shrink-0 items-center gap-4 text-meta text-acc-dim">
+          <Loader2 aria-hidden className="size-11 animate-spin" />
+          <span data-numeric>{Math.round(syncProgress * 100)}%</span>
+        </span>
+      );
+    }
+    if (failedSources.length > 0) {
+      return (
+        <span className="shrink-0 rounded-4 bg-neg-soft px-5 py-px text-meta text-neg">
+          {failedSources.length}
+        </span>
+      );
+    }
+    if (connection.status === 'connected') {
+      return (
+        <span className="shrink-0 rounded-4 bg-pos-soft px-5 py-px text-meta text-pos">
+          {t('live')}
+        </span>
+      );
+    }
+    return null;
+  };
+
   return (
-    <div className="flex h-full min-h-0">
+    /**
+     * A left nav beside the pane at `lg`, a scrolling tab strip above it below.
+     *
+     * A 204px sidebar takes two thirds of a 320px screen, and stacking it as a
+     * full-width list would push the settings themselves off the first screen.
+     * The strip keeps the same five destinations one tap away and lets the
+     * pane start at the top of the viewport.
+     */
+    <div className="flex h-full min-h-0 flex-col lg:flex-row">
       <nav
         aria-label={t('settings')}
-        className="flex w-204 shrink-0 flex-col gap-2 border-r border-line px-9 py-12"
+        className={cn(
+          'flex shrink-0 border-line',
+          'scroll-x snap-x-start gap-7 border-b px-10 py-9',
+          'lg:w-204 lg:flex-col lg:gap-2 lg:overflow-visible lg:border-b-0 lg:border-r lg:px-9 lg:py-12',
+        )}
       >
-        <span className="px-8 pb-6 pt-4 text-meta uppercase tracking-[0.1em] text-faint">
+        <span className="hidden px-8 pb-6 pt-4 text-meta uppercase tracking-[0.1em] text-faint lg:block">
           {t('settings')}
         </span>
 
@@ -101,43 +145,25 @@ export default function SettingsPage(): ReactNode {
               aria-current={active ? 'page' : undefined}
               onClick={() => setTab(item.key)}
               className={cn(
-                'flex h-30 cursor-pointer items-center gap-8 rounded-7 border-0 px-9 text-left text-sm transition-colors hover:bg-acc-soft',
+                'flex h-38 shrink-0 cursor-pointer items-center gap-8 whitespace-nowrap rounded-9 border-0 px-12 text-left text-sm transition-colors hover:bg-acc-soft',
+                'lg:h-30 lg:w-full lg:rounded-7 lg:px-9',
                 active ? 'bg-acc-soft text-acc-dim' : 'bg-transparent text-dim',
               )}
             >
-              <Icon aria-hidden className="size-14" />
+              <Icon aria-hidden className="size-14 shrink-0" />
               {t(item.labelKey)}
-
-              {/* Short indicator: a run started from anywhere shows here, so the
-                  state is legible from a pane that is not the sync log. While
-                  one is going it supersedes the connection chip — the live
-                  operation is the more urgent fact. */}
-              {item.key === 'api' && syncing && (
-                <span className="ml-auto flex items-center gap-4 text-meta text-acc-dim">
-                  <Loader2 aria-hidden className="size-11 animate-spin" />
-                  <span data-numeric>{Math.round(syncProgress * 100)}%</span>
-                </span>
-              )}
-              {item.key === 'api' && !syncing && failedSources.length > 0 && (
-                <span className="ml-auto rounded-4 bg-neg-soft px-5 py-px text-meta text-neg">
-                  {failedSources.length}
-                </span>
-              )}
-              {item.key === 'api' && !syncing && failedSources.length === 0 &&
-                connection.status === 'connected' && (
-                  <span className="ml-auto rounded-4 bg-pos-soft px-5 py-px text-meta text-pos">
-                    {t('live')}
-                  </span>
-                )}
+              <span className="lg:ml-auto">{badgeFor(item.key)}</span>
             </button>
           );
         })}
 
-        <div className="flex-1" />
+        <div className="hidden flex-1 lg:block" />
 
+        {/* On the strip this rides along at the end; in the sidebar it pins to
+            the bottom, where a destructive action belongs. */}
         <Button
           size="lg"
-          className="mt-2 w-full"
+          className="shrink-0 lg:mt-2 lg:w-full"
           icon={<RotateCcw aria-hidden className="size-12" />}
           onClick={handleResetAll}
         >
@@ -145,7 +171,7 @@ export default function SettingsPage(): ReactNode {
         </Button>
       </nav>
 
-      <div className="min-w-0 flex-1 overflow-auto px-16 pb-26 pt-14">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain px-11 pb-26 pt-14 sm:px-16">
         {tab === 'general' && <GeneralSettings />}
         {tab === 'api' && <ApiSettings onSync={handleSync} syncing={sync.isRunning} />}
         {tab === 'data' && (

@@ -59,7 +59,7 @@ export function GeneralSettings(): ReactNode {
 
       <Panel className="overflow-hidden">
         <Row label={t('theme')} hint={t('themeHint')}>
-          <div role="radiogroup" aria-label={t('theme')} className="flex gap-6">
+          <div role="radiogroup" aria-label={t('theme')} className="flex flex-wrap gap-7">
             {THEME_OPTIONS.map((option) => {
               const Icon = option.icon;
               const active = theme === option.value;
@@ -71,7 +71,8 @@ export function GeneralSettings(): ReactNode {
                   aria-checked={active}
                   onClick={() => setTheme(option.value)}
                   className={cn(
-                    'flex h-28 cursor-pointer items-center gap-6 rounded-7 border px-11 text-xs-plus transition-colors hover:border-acc-line',
+                    'tap flex h-36 cursor-pointer items-center gap-6 rounded-7 border px-12 text-xs-plus transition-colors hover:border-acc-line',
+                    'md:h-28 md:px-11',
                     active
                       ? 'border-acc bg-acc-soft text-acc-dim'
                       : 'border-line-2 bg-transparent text-dim',
@@ -86,7 +87,7 @@ export function GeneralSettings(): ReactNode {
         </Row>
 
         <Row label={t('lang')} hint={t('langHint')}>
-          <div className="min-w-206">
+          <div className="w-full sm:min-w-206">
             <SelectField
               label=""
               value={language}
@@ -100,7 +101,7 @@ export function GeneralSettings(): ReactNode {
         </Row>
 
         <Row label={t('curLbl')} hint={t('curHint')}>
-          <div className="min-w-206">
+          <div className="w-full sm:min-w-206">
             <SelectField
               label=""
               value={general.currency}
@@ -116,7 +117,7 @@ export function GeneralSettings(): ReactNode {
         </Row>
 
         <Row label={t('tzLbl')} hint={t('tzHint')}>
-          <div className="min-w-206">
+          <div className="w-full sm:min-w-206">
             <SelectField
               label=""
               value={general.timezone}
@@ -130,7 +131,7 @@ export function GeneralSettings(): ReactNode {
         </Row>
 
         <Row label={t('nfLbl')} hint={t('nfHint')}>
-          <div className="min-w-206">
+          <div className="w-full sm:min-w-206">
             <SelectField
               label=""
               value={general.numberFormat}
@@ -159,13 +160,14 @@ export function GeneralSettings(): ReactNode {
                   aria-label={t(toggle.labelKey)}
                   onClick={() => patchGeneral({ [toggle.key]: !value })}
                   className={cn(
-                    'flex h-20 w-36 shrink-0 cursor-pointer items-center rounded-full border p-0 transition-colors',
+                    'tap flex h-24 w-42 shrink-0 cursor-pointer items-center rounded-full border p-0 transition-colors',
+                    'md:h-20 md:w-36',
                     value ? 'justify-end border-acc bg-acc-soft' : 'justify-start border-line-2',
                   )}
                 >
                   <span
                     className={cn(
-                      'mx-2 size-14 rounded-full transition-colors',
+                      'mx-3 size-16 rounded-full transition-colors md:mx-2 md:size-14',
                       value ? 'bg-acc' : 'bg-faint',
                     )}
                   />
@@ -206,10 +208,10 @@ function Row({
   readonly children: ReactNode;
 }): ReactNode {
   return (
-    <div className="grid grid-cols-[220px_minmax(0,1fr)] items-center gap-14 border-b border-line px-14 py-11 last:border-b-0 max-[720px]:grid-cols-1">
-      <div>
+    <div className="grid grid-cols-1 items-center gap-9 border-b border-line px-11 py-11 last:border-b-0 sm:px-14 min-[720px]:grid-cols-[220px_minmax(0,1fr)] min-[720px]:gap-14">
+      <div className="min-w-0">
         <div className="text-sm-plus">{label}</div>
-        <div className="text-xs text-faint">{hint}</div>
+        <div className="text-xs leading-[1.45] text-faint">{hint}</div>
       </div>
       {children}
     </div>

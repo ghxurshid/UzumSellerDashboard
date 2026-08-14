@@ -37,11 +37,11 @@ export function DemandHeatmap({
   const { t } = useTranslation();
 
   return (
-    <Panel className="flex min-w-0 flex-col gap-10 px-14 py-13">
-      <div className="flex items-baseline gap-10">
+    <Panel className="flex min-w-0 flex-col gap-10 px-11 py-13 sm:px-14">
+      <div className="flex flex-wrap items-baseline gap-x-10 gap-y-5">
         <span className="text-base font-medium">{t('demand')}</span>
         <span className="text-mini text-faint">{t('demandSub', { n: sampleCount })}</span>
-        <div className="flex-1" />
+        <div className="hidden flex-1 sm:block" />
         <span className="flex items-center gap-6 text-mini text-dim">
           {t('low')}
           <span className="flex gap-2">
@@ -58,18 +58,22 @@ export function DemandHeatmap({
       </div>
 
       <div className="flex min-w-0 gap-7">
-        <div className="flex flex-col justify-between py-px text-meta text-faint">
+        <div className="flex w-22 shrink-0 flex-col justify-between py-px text-meta text-faint">
           {WEEKDAY_KEYS.map((key) => (
             <span key={key}>{t(key as TranslationKey)}</span>
           ))}
         </div>
 
+        {/* The grid stretches to whatever width is left — `preserveAspectRatio`
+            is already `none`, so a 300px phone gets the same 24×7 pattern in
+            narrower cells rather than a scrollbar. Only the height steps down,
+            keeping the rows tall enough to read apart. */}
         <svg
           viewBox="0 0 480 112"
           preserveAspectRatio="none"
           role="img"
           aria-label={`${t('demand')} — ${t('demandSub', { n: sampleCount })}`}
-          className="h-104 min-w-0 flex-1"
+          className="h-88 min-w-0 flex-1 sm:h-104"
         >
           <title>{`${t('demand')} — ${t('demandSub', { n: sampleCount })}`}</title>
           {cells.map((cell) => (
@@ -87,7 +91,7 @@ export function DemandHeatmap({
         </svg>
       </div>
 
-      <div className="flex justify-between pl-30 text-meta text-faint">
+      <div className="flex justify-between pl-29 text-meta text-faint">
         {HOUR_LABELS.map((label) => (
           <span key={label}>{label}</span>
         ))}

@@ -38,7 +38,15 @@ export function KpiStrip({ kpis, onSelect }: KpiStripProps): ReactNode {
   const { t } = useTranslation();
 
   return (
-    <div className="grid grid-cols-[repeat(auto-fit,minmax(124px,1fr))] gap-px overflow-hidden rounded-10 border border-line bg-line">
+    /* Two tiles across a 320px screen, then as many as fit from `xs` up.
+       `auto-fit` with a 124px floor would overflow a 320px viewport by the
+       width of the grid rules, so the narrowest case is spelled out.
+
+       The selector on the end handles an odd tile count: the last tile spans
+       both columns rather than leaving a blank cell beside it, which reads as
+       a metric that failed to load. It is reset at `xs`, where `auto-fit`
+       already fills the row. */
+    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-10 border border-line bg-line [&>*:last-child:nth-child(odd)]:col-span-2 xs:grid-cols-[repeat(auto-fit,minmax(124px,1fr))] xs:[&>*:last-child:nth-child(odd)]:col-span-1">
       {kpis.map((kpi) => {
         const style = TREND_STYLE[kpi.trend];
         const TrendIcon = TREND_ICON[kpi.trend];
@@ -48,7 +56,7 @@ export function KpiStrip({ kpis, onSelect }: KpiStripProps): ReactNode {
             key={kpi.key}
             type="button"
             onClick={() => onSelect?.(kpi)}
-            className="flex cursor-pointer flex-col gap-5 border-0 bg-panel px-11 pb-8 pt-10 text-left transition-colors hover:bg-raise"
+            className="flex min-w-0 cursor-pointer flex-col gap-5 border-0 bg-panel px-11 pb-8 pt-10 text-left transition-colors hover:bg-raise"
           >
             <span className="truncate text-meta uppercase tracking-[0.09em] text-faint">
               {t(kpi.labelKey as TranslationKey)}
@@ -57,18 +65,18 @@ export function KpiStrip({ kpis, onSelect }: KpiStripProps): ReactNode {
             <span className="flex items-baseline gap-3">
               <span
                 data-numeric
-                className="text-2xl font-medium tracking-[-0.025em]"
+                className="min-w-0 truncate text-xl font-medium tracking-[-0.025em] sm:text-2xl"
               >
                 {kpi.value}
               </span>
-              <span className="text-tiny text-faint">{kpi.unit}</span>
+              <span className="shrink-0 text-tiny text-faint">{kpi.unit}</span>
             </span>
 
             <span className="flex items-center justify-between gap-5">
               <span
                 data-numeric
                 className={cn(
-                  'inline-flex items-center gap-2 rounded-4 px-5 py-px text-mini',
+                  'inline-flex shrink-0 items-center gap-2 rounded-4 px-5 py-px text-mini',
                   style.text,
                   style.bg,
                 )}
@@ -77,11 +85,14 @@ export function KpiStrip({ kpis, onSelect }: KpiStripProps): ReactNode {
                 {kpi.delta}
               </span>
 
+              {/* The sparkline is the first thing to go when the tile is
+                  narrow: it is a garnish on a figure that is already stated,
+                  and at 46px on a 150px tile it crowds the delta chip. */}
               <svg
                 viewBox="0 0 88 24"
                 preserveAspectRatio="none"
                 aria-hidden
-                className="h-18 w-46 opacity-80"
+                className="hidden h-18 w-46 opacity-80 xs:block"
               >
                 <polyline
                   points={sparkPoints(kpi.spark)}

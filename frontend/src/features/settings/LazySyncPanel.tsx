@@ -60,7 +60,7 @@ export function LazySyncPanel(): ReactNode {
   const settled = tasks.filter((task) => task.status !== 'running').length;
 
   return (
-    <Panel className="flex flex-col gap-10 px-14 py-13">
+    <Panel className="flex flex-col gap-10 px-11 py-13 sm:px-14">
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-8">
           <Download aria-hidden className="size-14 shrink-0 text-acc-dim" />

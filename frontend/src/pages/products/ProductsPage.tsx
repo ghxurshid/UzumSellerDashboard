@@ -38,6 +38,18 @@ import type { Product, ProductSortKey, ProductStatus, Tone } from '@/types/domai
 const GRID =
   'grid grid-cols-[minmax(176px,2fr)_repeat(7,minmax(0,1fr))_58px_96px_20px] gap-x-8';
 
+/**
+ * The eleven-column grid needs roughly 900px to stay readable.
+ *
+ * Below `lg` it is not narrowed, it is replaced: the header row and the row
+ * grid are dropped entirely and each product becomes a card that names its own
+ * figures. Squeezing eleven columns onto a phone would produce eleven
+ * three-character ellipses, and wrapping the table in a horizontal scroller
+ * would mean the product's name — the only column that identifies the row —
+ * scrolls out of sight the moment the user reaches for a number.
+ */
+const DESKTOP_ONLY = 'hidden lg:grid';
+
 const COLUMNS: ReadonlyArray<{
   readonly key: ProductSortKey;
   readonly labelKey: 'cProduct' | 'cPrice' | 'cPurchase' | 'cTurnover' | 'cSold' | 'cReturns' | 'cAvailable' | 'cFbs' | 'cClass' | 'cStatus';
@@ -53,6 +65,28 @@ const COLUMNS: ReadonlyArray<{
   { key: 'ID', labelKey: 'cFbs', align: 'end' },
   { key: 'ID', labelKey: 'cClass', align: 'end' },
   { key: 'ID', labelKey: 'cStatus', align: 'end' },
+];
+
+/**
+ * The sort control the card list uses instead of column headers.
+ *
+ * On the desktop grid the headers *are* the sort UI. Cards have no headers, so
+ * the same `setSort` calls are offered as a select — one entry per distinct
+ * sort key, since three of the columns above share `ID` and would otherwise
+ * appear as three identical options.
+ */
+const SORT_OPTIONS: ReadonlyArray<{
+  readonly key: ProductSortKey;
+  readonly labelKey: 'cProduct' | 'cPrice' | 'cPurchase' | 'cTurnover' | 'cSold' | 'cReturns' | 'cAvailable' | 'cFbs';
+}> = [
+  { key: 'CREATED_AND_TITLE', labelKey: 'cProduct' },
+  { key: 'PRICE', labelKey: 'cPrice' },
+  { key: 'ROI', labelKey: 'cPurchase' },
+  { key: 'DEFAULT', labelKey: 'cTurnover' },
+  { key: 'ORDERS', labelKey: 'cSold' },
+  { key: 'CONVERSION', labelKey: 'cReturns' },
+  { key: 'LEFTOVERS', labelKey: 'cAvailable' },
+  { key: 'ID', labelKey: 'cFbs' },
 ];
 
 const STATUS_TONE: Record<ProductStatus, Tone> = {
@@ -142,26 +176,27 @@ export default function ProductsPage(): ReactNode {
       searchQuery={search}
       rowsRead={products.length}
       skeleton={
-        <div className="px-14 pb-22 pt-12">
+        <div className="px-10 pb-22 pt-12 sm:px-14">
           <SkeletonTable rows={9} />
         </div>
       }
     >
-    <div className="flex flex-col gap-12 px-14 pb-22 pt-12">
+    <div className="flex flex-col gap-12 px-10 pb-22 pt-12 sm:px-14">
       <nav aria-label="Breadcrumb" className="flex items-center gap-9 text-xs-plus text-faint">
         <button
           type="button"
           onClick={() => void navigate('/overview')}
-          className="cursor-pointer border-0 bg-transparent p-0 text-inherit hover:text-acc-dim"
+          className="tap cursor-pointer border-0 bg-transparent p-0 text-inherit hover:text-acc-dim"
         >
           {t('nOverview')}
         </button>
-        <ChevronRight aria-hidden className="size-9" />
-        <span aria-current="page" className="text-text">
+        <ChevronRight aria-hidden className="size-9 shrink-0" />
+        <span aria-current="page" className="truncate text-text">
           {t('nProducts')}
         </span>
         <div className="flex-1" />
-        <span className="flex items-center gap-5">
+        {/* A "right-click a row" hint is meaningless without a right button. */}
+        <span className="hidden items-center gap-5 lg:flex">
           <MousePointerClick aria-hidden className="size-12" />
           {t('pickHint')}
         </span>
@@ -174,70 +209,103 @@ export default function ProductsPage(): ReactNode {
       )}
 
       <div className="overflow-hidden rounded-11 border border-line bg-panel">
-        <div className="flex flex-wrap items-center gap-10 border-b border-line px-14 py-11">
-          <span className="text-base font-medium">{t('prodPerf')}</span>
-          <span className="text-mini text-faint">
-            {t('metaTpl', { n: table.totalCount, m: total })}
-          </span>
+        <div className="flex flex-col gap-9 border-b border-line px-11 py-11 sm:px-14 lg:flex-row lg:flex-wrap lg:items-center lg:gap-10">
+          <div className="flex min-w-0 flex-wrap items-center gap-8">
+            <span className="text-base font-medium">{t('prodPerf')}</span>
+            <span className="text-mini text-faint">
+              {t('metaTpl', { n: table.totalCount, m: total })}
+            </span>
 
-          {rankFilter !== null && (
-            <button
-              type="button"
-              onClick={() => setRankFilter(null)}
-              className="flex h-20 cursor-pointer items-center gap-5 rounded-5 border border-acc-line bg-acc-soft px-7 text-mini text-acc-dim"
-            >
-              status · {rankFilter}
-              <X aria-hidden className="size-9" />
-            </button>
-          )}
+            {rankFilter !== null && (
+              <button
+                type="button"
+                onClick={() => setRankFilter(null)}
+                className="tap flex h-24 cursor-pointer items-center gap-5 rounded-5 border border-acc-line bg-acc-soft px-8 text-mini text-acc-dim lg:h-20 lg:px-7"
+              >
+                status · {rankFilter}
+                <X aria-hidden className="size-11 lg:size-9" />
+              </button>
+            )}
+          </div>
 
-          <div className="flex-1" />
+          <div className="hidden flex-1 lg:block" />
 
-          <div className="flex h-24 w-186 items-center gap-6 rounded-6 border border-line-2 px-8 focus-within:border-acc-line">
-            <Search aria-hidden className="size-11 shrink-0 text-faint" />
+          <div className="flex h-40 w-full items-center gap-7 rounded-8 border border-line-2 px-10 focus-within:border-acc-line lg:h-24 lg:w-186 lg:gap-6 lg:rounded-6 lg:px-8">
+            <Search aria-hidden className="size-13 shrink-0 text-faint lg:size-11" />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={t('searchProdPh')}
               aria-label={t('searchPh')}
-              className="min-w-0 flex-1 border-0 bg-transparent text-xs text-text outline-none"
+              type="search"
+              enterKeyHint="search"
+              autoComplete="off"
+              className="min-w-0 flex-1 border-0 bg-transparent text-sm text-text outline-none lg:text-xs"
             />
             {search !== '' && (
               <button
                 type="button"
                 aria-label={t('blSearchC')}
                 onClick={() => setSearch('')}
-                className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-faint hover:text-text"
+                className="tap shrink-0 cursor-pointer border-0 bg-transparent p-0 text-faint hover:text-text"
               >
-                <XCircle aria-hidden className="size-11" />
+                <XCircle aria-hidden className="size-14 lg:size-11" />
               </button>
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={toggleSortDirection}
-            className="flex h-24 cursor-pointer items-center gap-5 rounded-6 border border-line-2 bg-transparent px-8 text-xs text-dim hover:border-acc-line hover:text-acc-dim"
-          >
-            <ArrowDownUp aria-hidden className="size-11" />
-            {sortDirection === 'asc' ? 'ASC' : 'DESC'}
-          </button>
+          {/* The card list has no column headers to sort by, so the sort key
+              becomes an explicit control. It writes to the same store the
+              headers do — switching to a wide screen shows the same order. */}
+          <label className="flex h-40 items-center gap-7 rounded-8 border border-line-2 px-10 text-xs text-faint focus-within:border-acc-line lg:hidden">
+            <ArrowDownUp aria-hidden className="size-13 shrink-0" />
+            <span className="sr-only">{t('sortL')}</span>
+            {/* `self-stretch`, so the tap target is the full 40px row rather
+                than the 17px the option text happens to occupy. */}
+            <select
+              value={sortBy}
+              onChange={(event) => setSort(event.target.value as ProductSortKey)}
+              className="min-w-0 flex-1 cursor-pointer self-stretch border-0 bg-transparent text-sm text-dim outline-none"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {t(option.labelKey)}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <Button size="sm" icon={<Filter aria-hidden className="size-12" />} onClick={clearFilters}>
-            {t('clearAll')}
-          </Button>
+          <div className="flex flex-wrap items-center gap-8 lg:contents">
+            <button
+              type="button"
+              onClick={toggleSortDirection}
+              aria-label={t('sortL')}
+              className="tap flex h-36 cursor-pointer items-center gap-5 rounded-7 border border-line-2 bg-transparent px-11 text-xs text-dim hover:border-acc-line hover:text-acc-dim lg:h-24 lg:rounded-6 lg:px-8"
+            >
+              <ArrowDownUp aria-hidden className="size-12 lg:size-11" />
+              {sortDirection === 'asc' ? 'ASC' : 'DESC'}
+            </button>
 
-          <Button
-            size="sm"
-            icon={<FileSpreadsheet aria-hidden className="size-12" />}
-            onClick={handleExport}
-          >
-            {t('exportCsv')}
-          </Button>
+            <Button
+              size="sm"
+              icon={<Filter aria-hidden className="size-12" />}
+              onClick={clearFilters}
+            >
+              {t('clearAll')}
+            </Button>
+
+            <Button
+              size="sm"
+              icon={<FileSpreadsheet aria-hidden className="size-12" />}
+              onClick={handleExport}
+            >
+              {t('exportCsv')}
+            </Button>
+          </div>
         </div>
 
         <div role="table" aria-label={t('prodPerf')}>
-          <div role="row" className={cn(GRID, 'border-b border-line px-14')}>
+          <div role="row" className={cn(GRID, DESKTOP_ONLY, 'border-b border-line px-14')}>
             {COLUMNS.map((column, index) => (
               <span
                 key={`${column.labelKey}-${index}`}
@@ -280,7 +348,7 @@ export default function ProductsPage(): ReactNode {
         </div>
 
         {table.totalCount === 0 && (
-          <div className="flex flex-col items-center gap-9 p-32">
+          <div className="flex flex-col items-center gap-9 p-24 text-center sm:p-32">
             <FilterX aria-hidden className="size-22 text-faint" />
             <p className="text-sm-plus text-dim">{t('noMatch')}</p>
             <Button size="md" onClick={clearFilters}>
@@ -289,21 +357,21 @@ export default function ProductsPage(): ReactNode {
           </div>
         )}
 
-        <div className="flex items-center gap-9 border-t border-line px-14 py-8 text-xs text-faint">
+        <div className="flex flex-wrap items-center gap-x-9 gap-y-8 border-t border-line px-11 py-9 text-xs text-faint sm:px-14">
           <span data-numeric>
             {table.rangeLabel} / {formatNumber(table.totalCount)}
           </span>
           <span className="font-mono">
-            page {page + 1} / {table.pageCount}
+            {t('pageOf', { n: page + 1, total: table.pageCount })}
           </span>
-          <div className="flex-1" />
+          <div className="hidden flex-1 sm:block" />
 
-          <label className="flex items-center gap-5">
+          <label className="ml-auto flex items-center gap-6 sm:ml-0">
             <span className="font-mono">size</span>
             <select
               value={pageSize}
               onChange={(event) => setPageSize(Number(event.target.value))}
-              className="h-22 cursor-pointer rounded-6 border border-line-2 bg-panel px-4 text-xs text-dim outline-none"
+              className="h-32 cursor-pointer rounded-6 border border-line-2 bg-panel px-6 text-xs text-dim outline-none lg:h-22 lg:px-4"
             >
               {PRODUCT_PAGE_SIZES.map((size) => (
                 <option key={size} value={size}>
@@ -313,24 +381,28 @@ export default function ProductsPage(): ReactNode {
             </select>
           </label>
 
-          <IconButton
-            label={t('prev')}
-            variant="outline"
-            size="xs"
-            disabled={page === 0}
-            onClick={() => setPage(page - 1)}
-          >
-            <ChevronLeft aria-hidden className="size-10" />
-          </IconButton>
-          <IconButton
-            label={t('next')}
-            variant="outline"
-            size="xs"
-            disabled={page >= table.pageCount - 1}
-            onClick={() => setPage(page + 1)}
-          >
-            <ChevronRight aria-hidden className="size-10" />
-          </IconButton>
+          <span className="flex items-center gap-6">
+            <IconButton
+              label={t('prev')}
+              variant="outline"
+              size="md"
+              className="lg:size-22 lg:rounded-5"
+              disabled={page === 0}
+              onClick={() => setPage(page - 1)}
+            >
+              <ChevronLeft aria-hidden className="size-13 lg:size-10" />
+            </IconButton>
+            <IconButton
+              label={t('next')}
+              variant="outline"
+              size="md"
+              className="lg:size-22 lg:rounded-5"
+              disabled={page >= table.pageCount - 1}
+              onClick={() => setPage(page + 1)}
+            >
+              <ChevronRight aria-hidden className="size-13 lg:size-10" />
+            </IconButton>
+          </span>
         </div>
       </div>
     </div>
@@ -338,6 +410,14 @@ export default function ProductsPage(): ReactNode {
   );
 }
 
+/**
+ * One product, in whichever of the two shapes the viewport can carry.
+ *
+ * Both are rendered from the same data and both are the same interactive row —
+ * the outer element owns the click, the focus ring and the keyboard handler,
+ * so the two layouts cannot drift apart in behaviour. Only the arrangement of
+ * the cells differs, and CSS alone decides which one is painted.
+ */
 function ProductRow({
   product,
   onOpen,
@@ -345,6 +425,26 @@ function ProductRow({
   readonly product: Product;
   readonly onOpen: () => void;
 }): ReactNode {
+  const { t } = useTranslation();
+
+  const facts: ReadonlyArray<{
+    readonly label: string;
+    readonly value: string;
+    readonly tone?: string;
+  }> = [
+    { label: t('cPrice'), value: formatNumber(product.price) },
+    { label: t('cPurchase'), value: formatNumber(product.purchasePrice) },
+    { label: t('cTurnover'), value: formatNumber(product.turnover) },
+    { label: t('cSold'), value: String(product.sold) },
+    {
+      label: t('cReturns'),
+      value: `${product.returnedPct}%`,
+      ...(product.returnedPct > 10 ? { tone: 'text-neg' } : {}),
+    },
+    { label: t('cAvailable'), value: String(product.quantityAvailable) },
+    { label: t('cFbs'), value: String(product.quantityFbs) },
+  ];
+
   return (
     <div
       role="row"
@@ -357,48 +457,86 @@ function ProductRow({
         }
       }}
       data-numeric
-      className={cn(
-        GRID,
-        'cursor-pointer items-center border-b border-line px-14 py-7 text-sm outline-offset-[-2px] hover:bg-acc-soft',
-      )}
+      className="cursor-pointer border-b border-line text-sm outline-offset-[-2px] hover:bg-acc-soft"
     >
-      <span className="flex min-w-0 items-center gap-9">
-        <span className="flex size-26 shrink-0 items-center justify-center rounded-6 bg-grid text-faint">
-          <Package aria-hidden className="size-12" />
+      {/* — card, below `lg` — */}
+      <div className="flex flex-col gap-9 px-11 py-11 sm:px-14 lg:hidden">
+        <div className="flex items-start gap-10">
+          <span className="flex size-32 shrink-0 items-center justify-center rounded-7 bg-grid text-faint">
+            <Package aria-hidden className="size-15" />
+          </span>
+
+          <span className="flex min-w-0 flex-1 flex-col gap-2 leading-[1.3]">
+            <span className="line-clamp-2 font-medium">{product.name}</span>
+            <span className="truncate font-mono text-tiny text-faint">{product.sku}</span>
+          </span>
+
+          <ChevronRight aria-hidden className="mt-4 size-14 shrink-0 text-faint" />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-6">
+          <Pill tone={STATUS_TONE[product.status]} size="sm">
+            {product.status}
+          </Pill>
+          <span className="rounded-4 border border-line-2 px-6 py-px text-tiny tracking-[0.04em] text-dim">
+            {product.rank}
+          </span>
+        </div>
+
+        <dl className="m-0 grid grid-cols-2 gap-x-12 gap-y-8 border-t border-line pt-9 sm:grid-cols-3">
+          {facts.map((fact) => (
+            <div key={fact.label} className="flex min-w-0 flex-col gap-px">
+              <dt className="truncate text-meta uppercase tracking-[0.08em] text-faint">
+                {fact.label}
+              </dt>
+              <dd className={cn('m-0 truncate text-sm-plus', fact.tone ?? 'text-text')}>
+                {fact.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      {/* — the dense grid, `lg` and up — */}
+      <div className={cn(GRID, DESKTOP_ONLY, 'items-center px-14 py-7')}>
+        <span className="flex min-w-0 items-center gap-9">
+          <span className="flex size-26 shrink-0 items-center justify-center rounded-6 bg-grid text-faint">
+            <Package aria-hidden className="size-12" />
+          </span>
+          <span className="flex min-w-0 flex-col leading-[1.25]">
+            <span className="truncate">{product.name}</span>
+            <span className="text-tiny text-faint">{product.sku}</span>
+          </span>
         </span>
-        <span className="flex min-w-0 flex-col leading-[1.25]">
-          <span className="truncate">{product.name}</span>
-          <span className="text-tiny text-faint">{product.sku}</span>
+
+        <span className="truncate text-right">{formatNumber(product.price)}</span>
+        <span className="truncate text-right text-dim">{formatNumber(product.purchasePrice)}</span>
+        <span className="truncate text-right">{formatNumber(product.turnover)}</span>
+        <span className="truncate text-right text-dim">{product.sold}</span>
+        <span
+          className={cn('truncate text-right', product.returnedPct > 10 ? 'text-neg' : 'text-dim')}
+        >
+          {product.returnedPct}%
         </span>
-      </span>
+        <span className="truncate text-right text-dim">{product.quantityAvailable}</span>
+        <span className="truncate text-right text-dim">{product.quantityFbs}</span>
 
-      <span className="truncate text-right">{formatNumber(product.price)}</span>
-      <span className="truncate text-right text-dim">{formatNumber(product.purchasePrice)}</span>
-      <span className="truncate text-right">{formatNumber(product.turnover)}</span>
-      <span className="truncate text-right text-dim">{product.sold}</span>
-      <span
-        className={cn('truncate text-right', product.returnedPct > 10 ? 'text-neg' : 'text-dim')}
-      >
-        {product.returnedPct}%
-      </span>
-      <span className="truncate text-right text-dim">{product.quantityAvailable}</span>
-      <span className="truncate text-right text-dim">{product.quantityFbs}</span>
-
-      <span className="flex min-w-0 justify-end">
-        <span className="truncate rounded-4 border border-line-2 px-5 py-px text-tiny tracking-[0.04em] text-dim">
-          {product.rank}
+        <span className="flex min-w-0 justify-end">
+          <span className="truncate rounded-4 border border-line-2 px-5 py-px text-tiny tracking-[0.04em] text-dim">
+            {product.rank}
+          </span>
         </span>
-      </span>
 
-      <span className="flex min-w-0 justify-end">
-        <Pill tone={STATUS_TONE[product.status]} size="sm">
-          {product.status}
-        </Pill>
-      </span>
+        <span className="flex min-w-0 justify-end">
+          <Pill tone={STATUS_TONE[product.status]} size="sm">
+            {product.status}
+          </Pill>
+        </span>
 
-      <span className="flex justify-end text-faint">
-        <ChevronRight aria-hidden className="size-11" />
-      </span>
+        <span className="flex justify-end text-faint">
+          <ChevronRight aria-hidden className="size-11" />
+        </span>
+      </div>
     </div>
   );
 }

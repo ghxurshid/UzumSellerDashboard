@@ -12,15 +12,17 @@ import { cn } from '@/lib/utils';
  * a deliberate two-step act, and the value on screen is dots until asked for.
  */
 
-const CONTROL = 'h-32 rounded-7 border border-line-2 bg-ground text-xs-plus';
+/* 44px on touch, the design's 32px from `md` up — a credential row is three
+   controls side by side, and at 32px on a phone they are three near-misses. */
+const CONTROL = 'h-44 md:h-32 rounded-7 border border-line-2 bg-ground text-xs-plus';
 const ICON_BUTTON = cn(
   CONTROL,
-  'flex w-32 shrink-0 cursor-pointer items-center justify-center bg-transparent text-dim',
+  'flex w-44 shrink-0 cursor-pointer items-center justify-center bg-transparent text-dim md:w-32',
   'transition-colors hover:border-acc-line hover:text-acc-dim',
 );
 const TEXT_BUTTON = cn(
   CONTROL,
-  'shrink-0 cursor-pointer bg-transparent px-10 text-dim',
+  'shrink-0 cursor-pointer bg-transparent px-12 text-dim md:px-10',
   'transition-colors hover:border-acc-line hover:text-acc-dim',
 );
 
@@ -79,13 +81,18 @@ export function CredentialField({
       <span className="text-xs text-dim">{label}</span>
 
       {editing ? (
-        <div className="flex gap-6">
+        /* The input keeps the first line to itself on a phone, with Save and
+           Cancel wrapping underneath — a token is long, and sharing 320px with
+           two buttons leaves it about ten characters wide. */
+        <div className="flex flex-wrap gap-6">
           <input
             autoFocus
             value={draft}
             placeholder={placeholder}
             spellCheck={false}
             autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') onCommit(draft);
@@ -96,7 +103,7 @@ export function CredentialField({
             }}
             className={cn(
               CONTROL,
-              'min-w-0 flex-1 border-acc-line px-10 font-mono text-text outline-none',
+              'w-full min-w-140 flex-1 border-acc-line px-10 font-mono text-text outline-none sm:w-auto',
             )}
           />
           <button

@@ -35,12 +35,12 @@ export function UnitEconomics({ rows, onOpenMethod }: UnitEconomicsProps): React
   const { t } = useTranslation();
 
   return (
-    <Panel className="flex flex-col gap-11 px-14 py-13">
-      <div className="flex items-center justify-between">
+    <Panel className="flex min-w-0 flex-col gap-11 px-11 py-13 sm:px-14">
+      <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
         <PanelKicker>{t('unitEcon')}</PanelKicker>
-        <span className="flex items-center gap-4 text-tiny text-faint">
-          <Database aria-hidden className="size-10 text-acc-dim" />
-          {t('srcFinOrders')}
+        <span className="flex min-w-0 items-center gap-4 text-tiny text-faint">
+          <Database aria-hidden className="size-10 shrink-0 text-acc-dim" />
+          <span className="truncate">{t('srcFinOrders')}</span>
         </span>
       </div>
 
@@ -48,10 +48,12 @@ export function UnitEconomics({ rows, onOpenMethod }: UnitEconomicsProps): React
         {rows.map((row) => (
           <div key={row.key} className="flex flex-col gap-4">
             <div className="flex items-baseline gap-8">
-              <span className="text-xs text-dim">{t(row.labelKey as TranslationKey)}</span>
-              <span className="font-mono text-meta text-faint">{row.field}</span>
+              <span className="shrink-0 text-xs text-dim">{t(row.labelKey as TranslationKey)}</span>
+              {/* The API field name is evidence, not a label — it is the first
+                  thing to give up its space when the row is narrow. */}
+              <span className="min-w-0 truncate font-mono text-meta text-faint">{row.field}</span>
               <div className="flex-1" />
-              <span data-numeric className={`text-sm-plus ${TONE_TEXT[row.tone]}`}>
+              <span data-numeric className={`shrink-0 text-sm-plus ${TONE_TEXT[row.tone]}`}>
                 {row.value}
               </span>
             </div>
@@ -80,7 +82,7 @@ export function UnitEconomics({ rows, onOpenMethod }: UnitEconomicsProps): React
           <button
             type="button"
             onClick={onOpenMethod}
-            className="cursor-pointer border-0 bg-transparent p-0 text-xs text-acc-dim underline underline-offset-2"
+            className="tap cursor-pointer border-0 bg-transparent p-0 text-xs text-acc-dim underline underline-offset-2"
           >
             {t('method')}
           </button>
