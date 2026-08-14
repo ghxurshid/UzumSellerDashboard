@@ -1,0 +1,339 @@
+@import 'tailwindcss';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Savdo Copilot — design tokens.
+
+   Ported 1:1 from the Nocturne design system (_design/v1/_ds/…/styles.css)
+   plus the application-surface ramp the design file layers on top of it
+   (the `--s-*` set). Runtime values live on :root / [data-theme] so the
+   theme switch is a single attribute flip with no repaint of the token
+   graph; `@theme inline` only maps Tailwind's utility names onto them.
+
+   The spacing base is deliberately 1px: this interface is drawn on a dense
+   half-pixel grid (7px, 9px, 11px, 13px gaps, 9.5px type) that a 4px scale
+   cannot express. With `--spacing: 1px`, `gap-9` is 9px and every value in
+   the source design maps to the same number here — no arbitrary values and
+   no rounding drift.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --s-ground: #141622;
+  --s-chrome: #0f1119;
+  --s-panel: #1b1d2a;
+  --s-raise: #232532;
+
+  --s-line: rgba(233, 233, 237, 0.09);
+  --s-line-2: rgba(233, 233, 237, 0.17);
+  --s-grid: rgba(233, 233, 237, 0.07);
+
+  --s-text: #e9e9ed;
+  --s-dim: rgba(233, 233, 237, 0.66);
+  --s-faint: rgba(233, 233, 237, 0.4);
+
+  --s-acc: #9184d9;
+  --s-acc-dim: #b5abfc;
+  --s-acc-soft: rgba(145, 132, 217, 0.14);
+  --s-acc-strong: rgba(145, 132, 217, 0.22);
+  --s-acc-line: rgba(145, 132, 217, 0.38);
+
+  --s-pos: #63c39a;
+  --s-pos-soft: rgba(99, 195, 154, 0.13);
+  --s-neg: #e08a80;
+  --s-neg-soft: rgba(224, 138, 128, 0.13);
+  --s-neg-line: rgba(224, 138, 128, 0.5);
+  --s-warn: #dcb173;
+  --s-warn-soft: rgba(220, 177, 115, 0.13);
+  --s-warn-line: rgba(220, 177, 115, 0.4);
+
+  /* Backdrop behind the extension window — the host page, dimmed. */
+  --s-backdrop: #0a0b11;
+  --s-shadow-menu: 0 22px 60px rgba(0, 0, 0, 0.55);
+  --s-shadow-window: 0 44px 130px rgba(0, 0, 0, 0.72);
+  --s-shadow-tip: 0 14px 34px rgba(0, 0, 0, 0.5);
+  --s-shadow-float: 0 18px 50px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --s-ground: #eceef7;
+  --s-chrome: #e3e5f0;
+  --s-panel: #f8f9fd;
+  --s-raise: #ffffff;
+
+  --s-line: rgba(41, 43, 49, 0.11);
+  --s-line-2: rgba(41, 43, 49, 0.2);
+  --s-grid: rgba(41, 43, 49, 0.08);
+
+  --s-text: #22242c;
+  --s-dim: rgba(34, 36, 44, 0.72);
+  --s-faint: rgba(34, 36, 44, 0.45);
+
+  --s-acc: #6d61ad;
+  --s-acc-dim: #5d5294;
+  --s-acc-soft: rgba(109, 97, 173, 0.1);
+  --s-acc-strong: rgba(109, 97, 173, 0.18);
+  --s-acc-line: rgba(109, 97, 173, 0.34);
+
+  --s-pos: #2c8a63;
+  --s-pos-soft: rgba(44, 138, 99, 0.11);
+  --s-neg: #bf554b;
+  --s-neg-soft: rgba(191, 85, 75, 0.11);
+  --s-neg-line: rgba(191, 85, 75, 0.45);
+  --s-warn: #8a6522;
+  --s-warn-soft: rgba(150, 112, 42, 0.12);
+  --s-warn-line: rgba(150, 112, 42, 0.4);
+
+  --s-backdrop: #d6d9e8;
+  --s-shadow-menu: 0 22px 60px rgba(41, 43, 49, 0.18);
+  --s-shadow-window: 0 44px 130px rgba(41, 43, 49, 0.28);
+  --s-shadow-tip: 0 14px 34px rgba(41, 43, 49, 0.16);
+  --s-shadow-float: 0 18px 50px rgba(41, 43, 49, 0.2);
+}
+
+@theme inline {
+  /* — surfaces — */
+  --color-ground: var(--s-ground);
+  --color-chrome: var(--s-chrome);
+  --color-panel: var(--s-panel);
+  --color-raise: var(--s-raise);
+  --color-backdrop: var(--s-backdrop);
+
+  /* — lines — */
+  --color-line: var(--s-line);
+  --color-line-2: var(--s-line-2);
+  --color-grid: var(--s-grid);
+
+  /* — text — */
+  --color-text: var(--s-text);
+  --color-dim: var(--s-dim);
+  --color-faint: var(--s-faint);
+
+  /* — accent — */
+  --color-acc: var(--s-acc);
+  --color-acc-dim: var(--s-acc-dim);
+  --color-acc-soft: var(--s-acc-soft);
+  --color-acc-strong: var(--s-acc-strong);
+  --color-acc-line: var(--s-acc-line);
+
+  /* — status — */
+  --color-pos: var(--s-pos);
+  --color-pos-soft: var(--s-pos-soft);
+  --color-neg: var(--s-neg);
+  --color-neg-soft: var(--s-neg-soft);
+  --color-neg-line: var(--s-neg-line);
+  --color-warn: var(--s-warn);
+  --color-warn-soft: var(--s-warn-soft);
+  --color-warn-line: var(--s-warn-line);
+
+  /* — type scale, matching the density of the source design — */
+  --text-meta: 9.5px;
+  --text-tiny: 10px;
+  --text-mini: 10.5px;
+  --text-xs: 11px;
+  --text-xs-plus: 11.5px;
+  --text-sm: 12px;
+  --text-sm-plus: 12.5px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 15px;
+  --text-xl: 17px;
+  --text-2xl: 19px;
+  --text-3xl: 22px;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, Menlo, Monaco, 'Cascadia Mono', monospace;
+
+  /* — radii, as drawn — */
+  --radius-4: 4px;
+  --radius-5: 5px;
+  --radius-6: 6px;
+  --radius-7: 7px;
+  --radius-8: 8px;
+  --radius-9: 9px;
+  --radius-10: 10px;
+  --radius-11: 11px;
+  --radius-14: 14px;
+
+  /* — elevation — */
+  --shadow-menu: var(--s-shadow-menu);
+  --shadow-window: var(--s-shadow-window);
+  --shadow-tip: var(--s-shadow-tip);
+  --shadow-float: var(--s-shadow-float);
+
+  /* One px per step — see the note at the top of this file. */
+  --spacing: 1px;
+
+  /* — motion — micro interactions 120–250ms, panels 250–400ms — */
+  --ease-out-soft: cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-shimmer: shimmer 1.1s linear infinite;
+  --animate-pulse-ring: pulse-ring 2.4s infinite;
+  --animate-rise: rise 0.14s ease both;
+  --animate-slide-panel: slide-panel 0.26s var(--ease-out-soft) both;
+  --animate-spin-slow: spin 0.9s linear infinite;
+  --animate-pop: pop 0.14s ease both;
+  --animate-toast: toast 0.2s ease both;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -260px 0;
+  }
+  100% {
+    background-position: 340px 0;
+  }
+}
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(99, 195, 154, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(99, 195, 154, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 195, 154, 0);
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes slide-panel {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes toast {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--s-backdrop);
+    color: var(--s-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* The design system's rule: keyboard focus is always the 2px accent ring,
+     never the browser default. */
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--s-acc);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--s-acc) 30%, transparent);
+  }
+
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--s-line-2);
+    border-radius: 9px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font-family: inherit;
+  }
+
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  option {
+    background: var(--s-panel);
+    color: var(--s-text);
+  }
+  input[type='range'] {
+    accent-color: var(--s-acc);
+    height: 4px;
+  }
+
+  /* Numbers in this interface are compared column-to-column; they must not
+     jitter as values change. */
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  /* The shimmer band used by every skeleton, so the gradient is declared once. */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--s-line) 0%,
+      var(--s-line-2) 40%,
+      var(--s-line) 80%
+    );
+    background-size: 300px 100%;
+    animation: var(--animate-shimmer);
+  }
+}
+
+/* Motion is decoration here — every animation has a still equivalent. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

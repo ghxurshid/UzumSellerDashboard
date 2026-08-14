@@ -1,0 +1,103 @@
+{
+  // Paths are relative to the repository root so a fresh clone works unchanged.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // preLaunchTask for the "🔵 Backend" launch configuration.
+      "label": "backend: build",
+      "detail": "dotnet build backend/UzumSellerDashboard.sln (Debug)",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder}/backend/UzumSellerDashboard.sln",
+        "--configuration",
+        "Debug",
+        "-property:GenerateFullPaths=true",
+        "-consoleloggerparameters:NoSummary"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "revealProblems": "onProblem",
+        "panel": "dedicated",
+        "clear": true,
+        "group": "uzum-seller-dashboard"
+      }
+    },
+    {
+      // First-time setup / after package.json changes. Not run automatically
+      // because reinstalling on every launch would slow the debug loop down.
+      "label": "frontend: install",
+      "detail": "npm install (frontend dependencies)",
+      "type": "shell",
+      "command": "npm",
+      "args": ["install"],
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      // Debugger-free way to start Vite: Terminal > Run Task… > "frontend: dev".
+      // The "⚛️ Frontend" launch configuration is the equivalent that also gives
+      // you a Stop button in the Run and Debug toolbar — run one or the other,
+      // not both, or Vite falls back to a second port.
+      "label": "frontend: dev",
+      "detail": "Vite dev server (background task)",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "source": "vite",
+        "fileLocation": ["relative", "${workspaceFolder}/frontend"],
+        "pattern": {
+          "regexp": "^\\s*(?:\\[vite\\]\\s*)?(.*?):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        },
+        "background": {
+          // The server is treated as starting up the moment the task launches,
+          // so nothing waits on a "begins" line that Vite may print before the
+          // matcher is attached.
+          // Vite colours its banner *inside* the words ("ready in [1m2971"),
+          // so these only ever match uninterrupted literal phrases — a pattern
+          // like "Local:\s+http" silently fails against the real output.
+          // The server counts as starting up from the moment the task runs, so
+          // nothing waits on a banner line printed before the matcher attaches.
+          "activeOnStart": true,
+          "beginsPattern": "changed, restarting server",
+          "endsPattern": "ready in|server restarted"
+        }
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "group": "uzum-seller-dashboard"
+      }
+    }
+  ]
+}

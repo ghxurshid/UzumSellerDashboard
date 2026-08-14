@@ -1,0 +1,66 @@
+{
+  // Open VS Code at the repository root — every path below is resolved from it.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "🔵 Backend",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "backend: build",
+      "program": "${workspaceFolder}/backend/UzumSellerDashboard/bin/Debug/net8.0/UzumSellerDashboard.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/backend/UzumSellerDashboard",
+      "stopAtEntry": false,
+      // URLs and environment variables come from the project's own
+      // launchSettings.json instead of being duplicated here. Switch this to
+      // "https" (https://localhost:7265) once `dotnet dev-certs https --trust`
+      // has been run on the machine; "http" needs no certificate setup.
+      "launchSettingsFilePath": "${workspaceFolder}/backend/UzumSellerDashboard/Properties/launchSettings.json",
+      "launchSettingsProfile": "http",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      // Its own terminal, so backend and frontend output never interleave.
+      "console": "integratedTerminal",
+      // Mirrors launchBrowser/launchUrl from the "http" profile.
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+(https?://\\S+)",
+        "uriFormat": "%s/swagger"
+      },
+      "presentation": {
+        "group": "1_run",
+        "order": 2
+      }
+    },
+    {
+      // node-terminal simply runs the npm script in a dedicated terminal — no
+      // browser debugger or extra dependency involved — while still appearing in
+      // Run and Debug with a working Stop button (which is what lets the
+      // compound below tear the dev server down together with the backend).
+      "name": "⚛️ Frontend",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev -- --open",
+      "cwd": "${workspaceFolder}/frontend",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "1_run",
+        "order": 3
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "🚀 Full Stack",
+      "configurations": ["🔵 Backend", "⚛️ Frontend"],
+      // Stopping either session stops the other, so the Vite server never
+      // survives the backend it was started with.
+      "stopAll": true,
+      "presentation": {
+        "group": "1_run",
+        "order": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  // Required for the "🔵 Backend" launch configuration to run at all.
+  "recommendations": [
+    "ms-dotnettools.csharp",
+    "ms-dotnettools.csdevkit",
+    "dbaeumer.vscode-eslint"
+  ]
+}

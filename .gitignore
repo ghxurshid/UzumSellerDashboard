@@ -1,0 +1,26 @@
+# Node / frontend
+node_modules/
+frontend/dist/
+*.local
+.vite/
+
+# .NET / backend
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+
+# Muhit sozlamalari
+.env
+.env.*
+!.env.example
+appsettings.*.local.json
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Loglar
+*.log
+npm-debug.log*

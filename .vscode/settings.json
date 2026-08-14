@@ -1,0 +1,20 @@
+{
+  // The solution does not sit at the repository root, so point C# Dev Kit at it
+  // instead of making every developer answer the "select a solution" prompt.
+  "dotnet.defaultSolution": "backend/UzumSellerDashboard.sln",
+  "npm.packageManager": "npm",
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/bin": true,
+    "**/obj": true,
+    "**/.vs": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/bin/**": true,
+    "**/obj/**": true,
+    "**/.vs/**": true
+  }
+}
