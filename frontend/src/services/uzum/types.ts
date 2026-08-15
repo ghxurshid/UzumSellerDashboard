@@ -178,8 +178,12 @@ export interface ShopProduct {
 
 export interface ShopProductsResponse {
   readonly productList: readonly ShopProduct[];
-  readonly totalElements?: number;
-  readonly totalPages?: number;
+  /**
+   * The catalogue total. Named unlike every other collection in the API, which
+   * publishes `totalElements`; this route has neither that nor `totalPages`.
+   */
+  readonly totalProductsAmount?: number;
+  readonly totalProductsAmountWithoutWeightDimensional?: number;
 }
 
 /* ── FBS stocks ─────────────────────────────────────────────────────────── */

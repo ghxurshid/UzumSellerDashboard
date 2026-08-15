@@ -20,9 +20,24 @@ const KNOWN_STATUSES: readonly ProductStatus[] = [
   'WARNING',
 ];
 
+/**
+ * Wire vocabulary that differs from ours.
+ *
+ * The API calls a listed product `IN_STOCK`, never `ACTIVE` — a live account
+ * answers with `IN_STOCK`, `RUN_OUT`, `ARCHIVED` and `BLOCKED`. Without the
+ * translation every sellable product fell through to `INACTIVE`, which left the
+ * `ACTIVE` filter chip permanently empty.
+ */
+const STATUS_ALIASES: Readonly<Record<string, ProductStatus>> = {
+  IN_STOCK: 'ACTIVE',
+  BLOCKED: 'WARNING',
+};
+
 function narrowStatus(value: string | undefined): ProductStatus {
   const upper = (value ?? '').toUpperCase();
-  return KNOWN_STATUSES.find((status) => status === upper) ?? 'INACTIVE';
+  return (
+    STATUS_ALIASES[upper] ?? KNOWN_STATUSES.find((status) => status === upper) ?? 'INACTIVE'
+  );
 }
 
 function toSku(sku: ProductSku): Sku {

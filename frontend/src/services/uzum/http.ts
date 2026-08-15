@@ -123,7 +123,12 @@ export async function paginate<T>(options: PaginateOptions<T>): Promise<PageResu
 
   for (; page < limit; page += 1) {
     const result = await options.fetchPage(page, options.pageSize);
-    if (result.total !== undefined) reported = result.total;
+
+    /* A route that publishes 0 while still handing back rows is saying "unknown",
+       not "nothing" — `/v1/finance/expenses` reports `totalElements: 0` on every
+       page. Taken at face value it satisfies the completion check below on the
+       first page and the walk stops one page in, so 0 is treated as absent. */
+    if (result.total !== undefined && result.total > 0) reported = result.total;
 
     collected.push(...result.items);
 

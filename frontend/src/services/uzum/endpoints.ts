@@ -140,7 +140,7 @@ export async function fetchShopProducts(
         { shopId, page, size, sortBy: 'ORDERS', order: 'DESC', filter: 'ALL' },
         context,
       );
-      return { items: body.productList ?? [], total: body.totalElements };
+      return { items: body.productList ?? [], total: body.totalProductsAmount };
     },
   });
 }
