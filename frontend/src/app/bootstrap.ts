@@ -1,5 +1,4 @@
 import { isAvailable, requestPersistence } from '@/services/storage/idb/db';
-import { migrateFromLocalStorage } from '@/services/storage/migration/migrate';
 import { hydrateSettings } from '@/services/storage/settings.service';
 import { useArchiveStore } from '@/store/archive.store';
 import { restoreNotifications } from '@/store/notifications.store';
@@ -26,13 +25,14 @@ import { restoreSyncLog } from '@/store/sync.store';
  * The steps are sequential because each depends on the last:
  *
  *   1. **Open the database.** Everything else needs it, and a browser that
- *      refuses gets an in-memory session rather than a blank screen.
- *   2. **Import from localStorage**, once ever. This adopts the previous
- *      engine's settings as part of its work, because the account fingerprint
- *      every stored row is keyed by is derived from the API token they carry.
- *   3. **Hydrate settings** — a no-op if the import already adopted them.
- *   4. **Restore the logs and the archive view**, which need the fingerprint
- *      from step 2 or 3 to know which account's data to read.
+ *      refuses gets an in-memory session rather than a blank screen. Opening is
+ *      also where a v1 database is discarded and the v2 stores are built — see
+ *      `idb/db.ts`, which is why the first start after an upgrade finds an empty
+ *      archive and the next sync backfills it.
+ *   2. **Hydrate settings**, which carry the API token the account fingerprint
+ *      every stored row is keyed by is derived from.
+ *   3. **Restore the logs and the archive view**, which need that fingerprint to
+ *      know which account's data to read.
  *
  * Failure at any step is survivable and none of them throws. A session without
  * storage is degraded, not broken: it fetches everything it needs, holds it in
@@ -44,10 +44,6 @@ export interface BootstrapReport {
   readonly storage: boolean;
   /** Whether the browser promised not to evict this origin under pressure. */
   readonly persisted: boolean;
-  /** Whether the one-shot localStorage import ran during this startup. */
-  readonly migrated: boolean;
-  readonly migratedShops: number;
-  readonly migratedRows: number;
   readonly failures: readonly string[];
 }
 
@@ -65,9 +61,6 @@ async function run(): Promise<BootstrapReport> {
     return {
       storage: false,
       persisted: false,
-      migrated: false,
-      migratedShops: 0,
-      migratedRows: 0,
       failures: ['Local storage is unavailable; this session will not be saved'],
     };
   }
@@ -83,26 +76,6 @@ async function run(): Promise<BootstrapReport> {
    */
   const persisted = await requestPersistence();
 
-  let migrated = false;
-  let migratedShops = 0;
-  let migratedRows = 0;
-
-  try {
-    const outcome = await migrateFromLocalStorage();
-    migrated = outcome.ran;
-    migratedShops = outcome.shops;
-    migratedRows = outcome.rows;
-    failures.push(...outcome.failures);
-  } catch (error) {
-    /* An import that throws leaves the old keys in place, so the next startup
-       tries again. Nothing is lost by carrying on without it. */
-    failures.push(
-      error instanceof Error
-        ? `Import from the previous storage failed: ${error.message}`
-        : 'Import from the previous storage failed',
-    );
-  }
-
   await hydrateSettings();
 
   /* These three are independent of each other and all needed before paint. */
@@ -112,7 +85,7 @@ async function run(): Promise<BootstrapReport> {
     useArchiveStore.getState().refresh(),
   ]);
 
-  return { storage: true, persisted, migrated, migratedShops, migratedRows, failures };
+  return { storage: true, persisted, failures };
 }
 
 /** Run the startup sequence once; later callers await the same result. */

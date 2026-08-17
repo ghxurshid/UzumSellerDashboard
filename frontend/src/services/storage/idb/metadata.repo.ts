@@ -6,8 +6,8 @@ import {
   ALL_ENTITY_TYPES,
   INDEXES,
   METADATA_VERSION,
-  PERIODIC_ENTITIES,
   STORES,
+  WINDOWED_ENTITIES,
   metadataKey,
   type EntityType,
   type SyncMetadataRecord,
@@ -385,4 +385,4 @@ export function clearMetadata(): Promise<void> {
   });
 }
 
-export { PERIODIC_ENTITIES };
+export { WINDOWED_ENTITIES };

@@ -1,10 +1,14 @@
 import {
+  ALL_ENTITY_TYPES,
   DB_NAME,
   DB_VERSION,
+  ENTITIES,
   INDEXES,
   STORES,
-  type StoreName,
 } from './schema';
+
+/** Any object store in the database — entity stores included. */
+export type StoreName = string;
 
 /**
  * The connection, and the promise wrappers everything above it uses.
@@ -67,30 +71,46 @@ function indexedDbFactory(): IDBFactory | null {
  * current shape by running both steps in order.
  */
 function upgrade(db: IDBDatabase, fromVersion: number): void {
-  if (fromVersion < 1) {
-    /* The time-series store. Everything the archive holds lives here, flat. */
-    const records = db.createObjectStore(STORES.records, { keyPath: 'id' });
+  /**
+   * v2 replaced the single `records` store with one store per entity.
+   *
+   * Everything from before is dropped rather than reshaped. Every row the
+   * archive holds can be fetched again, and the coverage record makes the
+   * refetch incremental — so starting clean costs a backfill that the sync
+   * engine already knows how to pace, while a migration that mis-maps a column
+   * would leave wrong numbers on screen with nothing to detect it.
+   */
+  if (fromVersion < 2) {
+    for (const name of [...db.objectStoreNames]) db.deleteObjectStore(name);
 
     /**
-     * The index the whole design rests on.
+     * One store per entity, each with the same four indexes.
      *
-     * Compound keys sort component by component, so bounding this index between
-     * `[shop, kind, from]` and `[shop, kind, to]` yields exactly one shop's rows
-     * of one kind inside one period — already in timestamp order, with nothing
-     * to filter out afterwards.
+     * `store_date` is the one the design rests on: compound keys sort component
+     * by component, so bounding it between `[shop, from]` and `[shop, to]`
+     * yields exactly one shop's rows inside one period — already in timestamp
+     * order, with nothing to filter afterwards.
      */
-    records.createIndex(INDEXES.storeEntityDate, ['store_id', 'entity_type', 'timestamp'], {
-      unique: false,
-    });
+    for (const entity of ALL_ENTITY_TYPES) {
+      const definition = ENTITIES[entity];
+      const store = db.createObjectStore(definition.store, { keyPath: 'id' });
 
-    /* Cross-shop reads over a period — the consolidated "all stores" view. */
-    records.createIndex(INDEXES.timestamp, 'timestamp', { unique: false });
+      store.createIndex(INDEXES.storeDate, ['store_id', 'timestamp'], { unique: false });
 
-    /* Everything one shop holds, for per-shop counts and deletion. */
-    records.createIndex(INDEXES.storeId, 'store_id', { unique: false });
+      /* Cross-shop reads over a period — the consolidated "all stores" view. */
+      store.createIndex(INDEXES.timestamp, 'timestamp', { unique: false });
 
-    /* Housekeeping only: dropping one account's rows when the token changes. */
-    records.createIndex(INDEXES.account, 'account', { unique: false });
+      /* Everything one shop holds, for per-shop counts and deletion. */
+      store.createIndex(INDEXES.storeId, 'store_id', { unique: false });
+
+      /* Housekeeping only: dropping one account's rows when the token changes. */
+      store.createIndex(INDEXES.account, 'account', { unique: false });
+
+      /* Lookups only this entity needs — `sku_id`, `order_id` and the like. */
+      for (const index of definition.indexes ?? []) {
+        store.createIndex(index.name, index.keyPath, { unique: false });
+      }
+    }
 
     const metadata = db.createObjectStore(STORES.syncMetadata, { keyPath: 'key' });
     metadata.createIndex(INDEXES.account, 'account', { unique: false });

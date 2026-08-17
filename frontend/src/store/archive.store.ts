@@ -71,7 +71,9 @@ async function viewOf(shopId: number): Promise<ShopArchiveView> {
   ]);
 
   const ledger = meta[ENTITY_TYPES.orderItem];
-  const catalog = meta[ENTITY_TYPES.catalogSku];
+  /* The catalogue's freshness is the product capture's — SKUs are written in the
+     same call, so either one dates the capture. */
+  const catalog = meta[ENTITY_TYPES.product];
   const ranges = ledger === undefined ? [] : toCoverage(ledger.synced_ranges);
   const outer = bounds(ranges);
 

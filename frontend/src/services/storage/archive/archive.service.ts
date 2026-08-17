@@ -1,7 +1,33 @@
 import type { DateWindow } from '@/services/uzum/endpoints';
-import type { FinanceOrderItem, SellerPayment } from '@/services/uzum/types';
+import type {
+  FbsInvoice,
+  FbsOrder,
+  FinanceOrderItem,
+  InvoiceProduct,
+  SellerPayment,
+  SellerReturn,
+  ShopProduct,
+  SkuAmount,
+  SupplyInvoice,
+} from '@/services/uzum/types';
 
 import { accountFingerprint } from '../account';
+import {
+  changeToRecord,
+  expenseToRecord,
+  fbsInvoiceToRecord,
+  fbsOrderToRecords,
+  orderToRecord,
+  productToRecords,
+  recordToChange,
+  recordToExpense,
+  recordToOrder,
+  returnToRecords,
+  skuRecordToCatalog,
+  stockToRecord,
+  supplyInvoiceItemToRecord,
+  supplyInvoiceToRecord,
+} from '../idb/mappers';
 import {
   commitBackfill,
   commitCoverage,
@@ -21,67 +47,62 @@ import {
   deleteStore as deleteStoreRecords,
   entityBounds,
   putRecords,
+  readBy,
   readPeriod,
   storeIdsFor,
   trimToNewest,
   type WriteOutcome,
 } from '../idb/records.repo';
 import {
+  ALL_ENTITY_TYPES,
   ENTITY_TYPES,
-  type CatalogSkuRecord,
+  SNAPSHOT_ENTITIES,
+  WINDOWED_ENTITIES,
   type ChangeEventRecord,
   type EntityType,
   type ExpenseRecord,
+  type FbsInvoiceRecord,
+  type FbsOrderItemRecord,
+  type FbsOrderRecord,
+  type FbsStockRecord,
   type OrderItemRecord,
+  type ProductRecord,
+  type ProductSkuRecord,
+  type ReturnItemRecord,
+  type SellerReturnRecord,
+  type StoredRecord,
+  type SupplyInvoiceItemRecord,
+  type SupplyInvoiceRecord,
   type SyncMetadataRecord,
 } from '../idb/schema';
-import {
-  changeToRecord,
-  expenseToRecord,
-  orderToRecord,
-  recordToChange,
-  recordToExpense,
-  recordToOrder,
-  recordToSku,
-  skuToRecord,
-} from '../idb/mappers';
 import { needsPruning, retentionFor } from '../retention';
-import { diffCatalog, type CatalogSku, type ChangeEvent } from './codec';
+import { diffCatalog, projectCatalog, type CatalogSku, type ChangeEvent } from './codec';
 
 /**
- * The archive, over IndexedDB.
+ * The archive: one shop's data, and the record of how much of it is held.
  *
- * Same responsibility as before — one shop's history, and the record of which
- * periods of it are held — but the mechanics are inverted by the storage engine
- * underneath.
+ * Two write paths, because there are two kinds of entity and conflating them is
+ * what produces either a stale catalogue or a re-fetched year of history.
  *
- * Under localStorage, a shop's history was one string per part. Storing a
- * newly-fetched window meant reading the whole part, parsing it, merging by row
- * id in memory, re-serialising the lot, and writing it back — with an eviction
- * loop around that in case the result no longer fit the origin's five megabytes.
- * The cost of storing one week grew with the size of the archive it was being
- * added to.
+ *   **`mergeWindow`** — settled history. Rows are upserted by deterministic key
+ *   and the window is recorded as covered *after* the write lands. Re-reading a
+ *   period that is already held overwrites in place, which is how the settlement
+ *   lag corrects a `PROCESSING` order item that has since become `CANCELED`.
+ *   Only `order_item`, `expense`, `fbs_order` and `fbs_order_item` take this
+ *   path — they are exactly the entities whose route accepts `dateFrom`/`dateTo`.
  *
- * Here, a window is a batch of keyed `put`s into the `records` store. Rows
- * outside the window are never read, never rewritten, and never even
- * deserialised. The cost of storing one week is the size of that week.
+ *   **`commitSnapshot`** — current state. The previous capture is deleted and
+ *   the new one written whole, because a row that has left the catalogue has no
+ *   incoming row to overwrite it and would otherwise show its last known price
+ *   forever. Metadata records `captured_at` and never a range: there is no
+ *   period to claim, and the route would not filter by one if there were.
  *
- * ## What is a "shop" here
+ * ## The invariant that must never break
  *
- * Partitioning is by `(account, store_id)` as before, but it is now a *column*
- * rather than a key prefix, because IndexedDB can index a column and
- * localStorage could not search one. Two shops still never mix — the compound
- * index pins `store_id` as its leading component — but dropping one shop is now
- * a bounded delete rather than a walk over every key in the origin.
- *
- * ## Merging
- *
- * Rows are still merged, never appended blindly. The seller ledger hands back
- * the same order item as often as it is asked, and the settlement lag means an
- * already-covered window is deliberately re-read so provisional rows can be
- * corrected. The record id is deterministic in `(account, shop, entity, row id)`,
- * so a re-read is an overwrite in place — the merge that used to need a
- * read-modify-write cycle is now what `put` does by definition.
+ * A range is recorded **only after the rows it covers have been written**. The
+ * opposite order is the single unrecoverable bug available in this design: a
+ * window marked covered but never stored is a hole no future sync will ever look
+ * at again, because the planner trusts this record absolutely.
  */
 
 /* ── metadata ───────────────────────────────────────────────────────────── */
@@ -106,13 +127,13 @@ export function readMeta(shopId: number, entity: EntityType): Promise<SyncMetada
 /** Every entity's metadata for one shop, in one read. */
 export function readShopMeta(
   shopId: number,
-  entities: readonly EntityType[],
+  entities: readonly EntityType[] = ALL_ENTITY_TYPES,
 ): Promise<Readonly<Record<string, SyncMetadataRecord>>> {
   return readShopMetadata(accountFingerprint(), shopId, entities);
 }
 
 /** The ledger's coverage, which is what every planning decision is made from. */
-export async function ledgerCoverage(shopId: number): Promise<SyncMetadataRecord> {
+export function ledgerCoverage(shopId: number): Promise<SyncMetadataRecord> {
   return readMeta(shopId, ENTITY_TYPES.orderItem);
 }
 
@@ -130,85 +151,7 @@ export function stampSynced(shopId: number, at: number): Promise<SyncMetadataRec
   }));
 }
 
-/* ── reads ──────────────────────────────────────────────────────────────── */
-
-const UNBOUNDED = {
-  fromMs: Number.NEGATIVE_INFINITY,
-  toMs: Number.POSITIVE_INFINITY,
-} as const;
-
-/**
- * Settled order items for a shop, optionally confined to a window.
- *
- * The window is not a filter applied after reading — it is the key range the
- * cursor opens on. Asking for March touches March's rows and nothing else,
- * which is the single behavioural difference that makes period queries cheap
- * enough to run on every range change.
- */
-export async function readLedger(
-  shopId: number,
-  window: DateWindow = UNBOUNDED,
-): Promise<readonly FinanceOrderItem[]> {
-  const rows = await readPeriod<OrderItemRecord>({
-    storeId: shopId,
-    entity: ENTITY_TYPES.orderItem,
-    fromMs: window.fromMs,
-    toMs: window.toMs,
-  });
-
-  return rows.map(recordToOrder);
-}
-
-export async function readExpenses(
-  shopId: number,
-  window: DateWindow = UNBOUNDED,
-): Promise<readonly SellerPayment[]> {
-  const rows = await readPeriod<ExpenseRecord>({
-    storeId: shopId,
-    entity: ENTITY_TYPES.expense,
-    fromMs: window.fromMs,
-    toMs: window.toMs,
-  });
-
-  return rows.map(recordToExpense);
-}
-
-export interface CatalogCapture {
-  readonly at: number | null;
-  readonly skus: readonly CatalogSku[];
-}
-
-export async function readCatalog(shopId: number): Promise<CatalogCapture> {
-  const [rows, meta] = await Promise.all([
-    readPeriod<CatalogSkuRecord>({
-      storeId: shopId,
-      entity: ENTITY_TYPES.catalogSku,
-      ...UNBOUNDED,
-    }),
-    readMeta(shopId, ENTITY_TYPES.catalogSku),
-  ]);
-
-  return { at: meta.captured_at, skus: rows.map(recordToSku) };
-}
-
-export async function readJournal(
-  shopId: number,
-  window: DateWindow = UNBOUNDED,
-): Promise<readonly ChangeEvent[]> {
-  const rows = await readPeriod<ChangeEventRecord>({
-    storeId: shopId,
-    entity: ENTITY_TYPES.changeEvent,
-    fromMs: window.fromMs,
-    toMs: window.toMs,
-  });
-
-  return rows.flatMap((row) => {
-    const event = recordToChange(row);
-    return event === null ? [] : [event];
-  });
-}
-
-/* ── writes ─────────────────────────────────────────────────────────────── */
+/* ── the generic write paths ────────────────────────────────────────────── */
 
 export interface MergeOutcome {
   readonly stored: boolean;
@@ -231,21 +174,17 @@ export const EMPTY_MERGE: MergeOutcome = {
 };
 
 /**
- * Write rows, prune if the policy says to, then record the window as covered.
+ * Write rows, prune if the policy says to, then record what is now held.
  *
- * The order is the one invariant that must never be relaxed. Coverage is
- * committed **after** the rows have landed, because a window marked covered but
- * never stored is a hole no future sync will look at again — the planner trusts
- * the coverage record absolutely, and it is right to.
- *
- * Pruning happens between the two, and when it clips the record the coverage is
- * clipped with it. That keeps "what is covered" and "what is stored" the same
- * statement rather than two claims that can drift apart.
+ * The order is the one invariant that must never be relaxed — see this module's
+ * header. Pruning happens between the two, and when it clips the record the
+ * coverage is clipped with it, so "what is covered" and "what is stored" stay
+ * the same statement rather than two claims that can drift apart.
  */
-async function mergeEntity(options: {
+async function write(options: {
   readonly shopId: number;
   readonly entity: EntityType;
-  readonly rows: readonly (OrderItemRecord | ExpenseRecord | ChangeEventRecord | CatalogSkuRecord)[];
+  readonly rows: readonly StoredRecord[];
   readonly window: DateWindow | null;
   readonly at: number;
   readonly capturedAt?: number | undefined;
@@ -254,7 +193,7 @@ async function mergeEntity(options: {
 
   let outcome: WriteOutcome;
   try {
-    outcome = await putRecords(options.rows);
+    outcome = await putRecords(options.entity, options.rows);
   } catch {
     /* A failed write must leave the coverage record untouched, so the next run
        plans this window again. Reporting `stored: false` is what the sync log
@@ -287,101 +226,381 @@ async function mergeEntity(options: {
     }
   }
 
-  return {
-    stored: true,
-    added: outcome.added,
-    updated: outcome.updated,
-    rows,
-    evicted,
-  };
+  return { stored: true, added: outcome.added, updated: outcome.updated, rows, evicted };
 }
 
-export async function mergeLedger(
+/**
+ * Store a window of settled history and record it as covered.
+ *
+ * Rows outside the window are never read, never rewritten and never even
+ * deserialised — the cost of storing one week is the size of that week.
+ */
+export function mergeWindow(
+  shopId: number,
+  entity: EntityType,
+  rows: readonly StoredRecord[],
+  window: DateWindow | null,
+): Promise<MergeOutcome> {
+  return write({ shopId, entity, rows, window, at: Date.now() });
+}
+
+/**
+ * Replace a snapshot entity's rows wholesale.
+ *
+ * The delete comes first and is not optional: a product that has left the
+ * catalogue, or an invoice that has closed and dropped off the list, has no
+ * incoming row to overwrite it. Without the delete it would sit in the table
+ * showing its last known state indefinitely, and no read could tell it apart
+ * from a live one.
+ *
+ * An empty incoming set is treated as a failed read rather than an emptied
+ * catalogue, and leaves the previous capture alone. A route that answers with
+ * nothing is far more often rate-limited or briefly broken than it is a seller
+ * who deleted every product, and wiping a good capture on that evidence is not
+ * a recoverable mistake.
+ */
+export async function commitSnapshot(
+  shopId: number,
+  entity: EntityType,
+  rows: readonly StoredRecord[],
+  at: number,
+): Promise<MergeOutcome> {
+  if (rows.length === 0) return EMPTY_MERGE;
+
+  await deleteEntity(shopId, entity);
+  return write({ shopId, entity, rows, window: null, at, capturedAt: at });
+}
+
+/* ── windowed entities ──────────────────────────────────────────────────── */
+
+const UNBOUNDED = {
+  fromMs: Number.NEGATIVE_INFINITY,
+  toMs: Number.POSITIVE_INFINITY,
+} as const;
+
+/**
+ * Settled order items for a shop, optionally confined to a window.
+ *
+ * The window is not a filter applied after reading — it is the key range the
+ * cursor opens on. Asking for March touches March's rows and nothing else.
+ */
+export async function readLedger(
+  shopId: number,
+  window: DateWindow = UNBOUNDED,
+): Promise<readonly FinanceOrderItem[]> {
+  const rows = await readPeriod<OrderItemRecord>({
+    storeId: shopId,
+    entity: ENTITY_TYPES.orderItem,
+    fromMs: window.fromMs,
+    toMs: window.toMs,
+  });
+
+  return rows.map(recordToOrder);
+}
+
+export function mergeLedger(
   shopId: number,
   items: readonly FinanceOrderItem[],
   window: DateWindow | null,
 ): Promise<MergeOutcome> {
   const account = accountFingerprint();
-
-  return mergeEntity({
-    shopId,
-    entity: ENTITY_TYPES.orderItem,
-    rows: items.map((item) => orderToRecord(item, account, shopId)),
-    window,
-    at: Date.now(),
-  });
+  const rows = items.map((item) => orderToRecord(item, account, shopId));
+  return mergeWindow(shopId, ENTITY_TYPES.orderItem, rows, window);
 }
 
-export async function mergeExpenses(
+export async function readExpenses(
+  shopId: number,
+  window: DateWindow = UNBOUNDED,
+): Promise<readonly SellerPayment[]> {
+  const rows = await readPeriod<ExpenseRecord>({
+    storeId: shopId,
+    entity: ENTITY_TYPES.expense,
+    fromMs: window.fromMs,
+    toMs: window.toMs,
+  });
+
+  return rows.map(recordToExpense);
+}
+
+export function mergeExpenses(
   shopId: number,
   payments: readonly SellerPayment[],
   window: DateWindow | null,
 ): Promise<MergeOutcome> {
   const account = accountFingerprint();
+  const rows = payments.map((payment) => expenseToRecord(payment, account, shopId));
+  return mergeWindow(shopId, ENTITY_TYPES.expense, rows, window);
+}
 
-  return mergeEntity({
-    shopId,
-    entity: ENTITY_TYPES.expense,
-    rows: payments.map((payment) => expenseToRecord(payment, account, shopId)),
-    window,
-    at: Date.now(),
+export function readFbsOrders(
+  shopId: number,
+  window: DateWindow = UNBOUNDED,
+): Promise<readonly FbsOrderRecord[]> {
+  return readPeriod<FbsOrderRecord>({
+    storeId: shopId,
+    entity: ENTITY_TYPES.fbsOrder,
+    fromMs: window.fromMs,
+    toMs: window.toMs,
   });
 }
 
-/* ── catalogue and journal ──────────────────────────────────────────────── */
-
-export interface CatalogOutcome {
-  readonly stored: boolean;
-  readonly skus: number;
-  /** Changes this capture revealed against the previous one. */
-  readonly events: readonly ChangeEvent[];
+/** The lines of one FBS order — a keyed read, not a walk. */
+export function readFbsOrderItems(orderId: number): Promise<readonly FbsOrderItemRecord[]> {
+  return readBy<FbsOrderItemRecord>(ENTITY_TYPES.fbsOrderItem, 'order_id', orderId);
 }
+
+/**
+ * Store a window of FBS orders and their lines together.
+ *
+ * Both are committed for the same window, and the order record is written
+ * first. If the second write fails the order's coverage claims a window whose
+ * lines are missing — so the line entity keeps its own coverage record, and the
+ * planner takes the union of what either is missing.
+ */
+export async function mergeFbsOrders(
+  shopId: number,
+  orders: readonly FbsOrder[],
+  window: DateWindow | null,
+): Promise<{ orders: MergeOutcome; items: MergeOutcome }> {
+  const account = accountFingerprint();
+  const mapped = orders.map((order) => fbsOrderToRecords(order, account, shopId));
+
+  const orderOutcome = await mergeWindow(
+    shopId,
+    ENTITY_TYPES.fbsOrder,
+    mapped.map((entry) => entry.order),
+    window,
+  );
+
+  const itemOutcome = await mergeWindow(
+    shopId,
+    ENTITY_TYPES.fbsOrderItem,
+    mapped.flatMap((entry) => entry.items),
+    window,
+  );
+
+  return { orders: orderOutcome, items: itemOutcome };
+}
+
+/* ── snapshot entities ──────────────────────────────────────────────────── */
+
+export interface Capture<T> {
+  /** When the capture was taken, or null if there has never been one. */
+  readonly at: number | null;
+  readonly rows: readonly T[];
+}
+
+async function readCapture<T extends StoredRecord>(
+  shopId: number,
+  entity: EntityType,
+): Promise<Capture<T>> {
+  const [rows, meta] = await Promise.all([
+    readPeriod<T>({ storeId: shopId, entity, ...UNBOUNDED }),
+    readMeta(shopId, entity),
+  ]);
+
+  return { at: meta.captured_at, rows };
+}
+
+export const readProducts = (shopId: number): Promise<Capture<ProductRecord>> =>
+  readCapture<ProductRecord>(shopId, ENTITY_TYPES.product);
+
+export const readProductSkus = (shopId: number): Promise<Capture<ProductSkuRecord>> =>
+  readCapture<ProductSkuRecord>(shopId, ENTITY_TYPES.productSku);
+
+export const readFbsStocks = (shopId: number): Promise<Capture<FbsStockRecord>> =>
+  readCapture<FbsStockRecord>(shopId, ENTITY_TYPES.fbsStock);
+
+export const readSupplyInvoices = (shopId: number): Promise<Capture<SupplyInvoiceRecord>> =>
+  readCapture<SupplyInvoiceRecord>(shopId, ENTITY_TYPES.supplyInvoice);
+
+export const readSellerReturns = (shopId: number): Promise<Capture<SellerReturnRecord>> =>
+  readCapture<SellerReturnRecord>(shopId, ENTITY_TYPES.sellerReturn);
+
+export const readFbsInvoices = (shopId: number): Promise<Capture<FbsInvoiceRecord>> =>
+  readCapture<FbsInvoiceRecord>(shopId, ENTITY_TYPES.fbsInvoice);
+
+/** The SKUs of one product — a keyed read on the `product_id` index. */
+export const readSkusOf = (productId: number): Promise<readonly ProductSkuRecord[]> =>
+  readBy<ProductSkuRecord>(ENTITY_TYPES.productSku, 'product_id', productId);
+
+/** The lines of one supply invoice. */
+export const readSupplyInvoiceItems = (
+  invoiceId: number,
+): Promise<readonly SupplyInvoiceItemRecord[]> =>
+  readBy<SupplyInvoiceItemRecord>(ENTITY_TYPES.supplyInvoiceItem, 'invoice_id', invoiceId);
+
+/** The lines of one warehouse return. */
+export const readReturnItems = (returnId: number): Promise<readonly ReturnItemRecord[]> =>
+  readBy<ReturnItemRecord>(ENTITY_TYPES.returnItem, 'return_id', returnId);
 
 /**
  * Replace the shop's catalogue capture, and journal what moved.
  *
- * Deliberately *not* incremental. A price, a stock level and a status are
- * statements about right now: there is no window to fill in, and yesterday's
- * value is only interesting as the thing today's value differs from. So the
- * capture is replaced whole — and the difference, which is the only part worth
- * keeping, is appended to the journal.
+ * Products and SKUs are two entities from one payload, so both are replaced in
+ * the same call — a capture that updated products but not SKUs would leave the
+ * two tables describing different days.
  *
- * The first capture journals nothing. There is no "before" to compare against,
- * and emitting the entire catalogue as changes would make the journal useless
- * on the one day it is created.
- *
- * SKUs that have left the catalogue are deleted rather than left behind. The
- * old implementation got this for free by overwriting one blob; here it has to
- * be done deliberately, and not doing it would leave a discontinued SKU showing
- * its last known stock level forever.
+ * The journal is the reason the previous SKU capture is read first. The seller
+ * API publishes no change history — no endpoint answers "what was this SKU's
+ * price on 15 July" — so a price move can only be *observed*, by comparing this
+ * capture against the last one. The first capture journals nothing: there is no
+ * "before", and emitting the whole catalogue as changes would bury the real
+ * moves on the one day the journal is created.
  */
 export async function commitCatalog(
   shopId: number,
-  skus: readonly CatalogSku[],
+  products: readonly ShopProduct[],
+  stocks: readonly SkuAmount[],
   at: number,
-): Promise<CatalogOutcome> {
+): Promise<{
+  readonly stored: boolean;
+  readonly products: number;
+  readonly skus: number;
+  readonly events: readonly ChangeEvent[];
+}> {
   const account = accountFingerprint();
 
-  const previous = await readCatalog(shopId);
-  const events = previous.at === null ? [] : diffCatalog(previous.skus, skus, at);
+  /* The diff is taken against what is stored, joined with the stock amounts the
+     stored rows no longer carry — `fbs_stock` is its own entity now. */
+  const previousSkus = await readProductSkus(shopId);
+  const previousStock = await readFbsStocks(shopId);
+  const stockBySku = new Map(previousStock.rows.map((row) => [row.sku_id, row.amount]));
 
-  /* Drop the previous capture first: a SKU that is no longer in the catalogue
-     has no row in the incoming set to overwrite it. */
-  await deleteEntity(shopId, ENTITY_TYPES.catalogSku);
+  const before: readonly CatalogSku[] = previousSkus.rows.map((row) =>
+    skuRecordToCatalog(row, stockBySku.get(row.sku_id) ?? -1),
+  );
+  const after = projectCatalog(products, stocks);
+  const events = previousSkus.at === null ? [] : diffCatalog(before, after, at);
 
-  const outcome = await mergeEntity({
+  const mapped = products.map((product) => productToRecords(product, account, shopId, at));
+
+  const productOutcome = await commitSnapshot(
     shopId,
-    entity: ENTITY_TYPES.catalogSku,
-    rows: skus.map((sku) => skuToRecord(sku, account, shopId, at)),
-    window: null,
+    ENTITY_TYPES.product,
+    mapped.map((entry) => entry.product),
     at,
-    capturedAt: at,
-  });
+  );
+  const skuOutcome = await commitSnapshot(
+    shopId,
+    ENTITY_TYPES.productSku,
+    mapped.flatMap((entry) => entry.skus),
+    at,
+  );
 
-  if (!outcome.stored) return { stored: false, skus: 0, events: [] };
+  if (!productOutcome.stored) return { stored: false, products: 0, skus: 0, events: [] };
   if (events.length > 0) await appendJournal(shopId, events);
 
-  return { stored: true, skus: outcome.rows, events };
+  return {
+    stored: true,
+    products: productOutcome.rows,
+    skus: skuOutcome.rows,
+    events,
+  };
+}
+
+/**
+ * Replace the FBS stock capture for one shop.
+ *
+ * `/v3/fbs/sku/stocks` is account-wide and names no shop, so the caller decides
+ * which rows belong here — normally by matching `skuId` against this shop's
+ * catalogue. Splitting the account-wide read across shops is what keeps
+ * `store_id` truthful on an entity the API never stamps.
+ */
+export function commitStocks(
+  shopId: number,
+  stocks: readonly SkuAmount[],
+  at: number,
+): Promise<MergeOutcome> {
+  const account = accountFingerprint();
+  const rows = stocks.map((stock) => stockToRecord(stock, account, shopId, at));
+  return commitSnapshot(shopId, ENTITY_TYPES.fbsStock, rows, at);
+}
+
+export function commitSupplyInvoices(
+  shopId: number,
+  invoices: readonly SupplyInvoice[],
+  at: number,
+): Promise<MergeOutcome> {
+  const account = accountFingerprint();
+  const rows = invoices.map((invoice) => supplyInvoiceToRecord(invoice, account, shopId, at));
+  return commitSnapshot(shopId, ENTITY_TYPES.supplyInvoice, rows, at);
+}
+
+/**
+ * Replace the line rows of the supply invoices that were captured.
+ *
+ * Lines come from a different route than the invoices, one request per invoice,
+ * so the caller fetches only the invoices worth expanding and hands the whole
+ * result here to be written as one capture.
+ */
+export function commitSupplyInvoiceItems(
+  shopId: number,
+  lines: readonly { readonly invoiceId: number; readonly products: readonly InvoiceProduct[] }[],
+  at: number,
+): Promise<MergeOutcome> {
+  const account = accountFingerprint();
+
+  const rows = lines.flatMap((entry) =>
+    entry.products.map((product) =>
+      supplyInvoiceItemToRecord(product, entry.invoiceId, account, shopId, at),
+    ),
+  );
+
+  return commitSnapshot(shopId, ENTITY_TYPES.supplyInvoiceItem, rows, at);
+}
+
+export async function commitReturns(
+  shopId: number,
+  returns: readonly SellerReturn[],
+  at: number,
+): Promise<{ entries: MergeOutcome; items: MergeOutcome }> {
+  const account = accountFingerprint();
+  const mapped = returns.map((entry) => returnToRecords(entry, account, shopId, at));
+
+  const entries = await commitSnapshot(
+    shopId,
+    ENTITY_TYPES.sellerReturn,
+    mapped.map((entry) => entry.entry),
+    at,
+  );
+  const items = await commitSnapshot(
+    shopId,
+    ENTITY_TYPES.returnItem,
+    mapped.flatMap((entry) => entry.items),
+    at,
+  );
+
+  return { entries, items };
+}
+
+export function commitFbsInvoices(
+  shopId: number,
+  invoices: readonly FbsInvoice[],
+  at: number,
+): Promise<MergeOutcome> {
+  const account = accountFingerprint();
+  const rows = invoices.map((invoice) => fbsInvoiceToRecord(invoice, account, shopId, at));
+  return commitSnapshot(shopId, ENTITY_TYPES.fbsInvoice, rows, at);
+}
+
+/* ── journal ────────────────────────────────────────────────────────────── */
+
+export async function readJournal(
+  shopId: number,
+  window: DateWindow = UNBOUNDED,
+): Promise<readonly ChangeEvent[]> {
+  const rows = await readPeriod<ChangeEventRecord>({
+    storeId: shopId,
+    entity: ENTITY_TYPES.changeEvent,
+    fromMs: window.fromMs,
+    toMs: window.toMs,
+  });
+
+  return rows.flatMap((row) => {
+    const event = recordToChange(row);
+    return event === null ? [] : [event];
+  });
 }
 
 /**
@@ -398,11 +617,11 @@ export async function appendJournal(
   if (events.length === 0) return true;
 
   const account = accountFingerprint();
-
-  const outcome = await mergeEntity({
+  const rows = events.map((event) => changeToRecord(event, account, shopId));
+  const outcome = await write({
     shopId,
     entity: ENTITY_TYPES.changeEvent,
-    rows: events.map((event) => changeToRecord(event, account, shopId)),
+    rows,
     window: null,
     at: Date.now(),
   });
@@ -422,16 +641,16 @@ export interface ShopUsage {
 /**
  * What one shop holds.
  *
- * Counted through the index, so this is four keyed counts rather than four
- * deserialisations — the old version had to read every stored string to measure
- * its length.
+ * Counted through each store's index, so this is one keyed count per entity
+ * rather than a deserialisation of anything.
  */
 export async function usage(shopId: number): Promise<ShopUsage> {
-  const entities = Object.values(ENTITY_TYPES);
-  const counts = await Promise.all(entities.map((entity) => countEntity(shopId, entity)));
+  const counts = await Promise.all(
+    ALL_ENTITY_TYPES.map((entity) => countEntity(shopId, entity)),
+  );
 
   const rows = Object.fromEntries(
-    entities.map((entity, index) => [entity, counts[index] ?? 0]),
+    ALL_ENTITY_TYPES.map((entity, index) => [entity, counts[index] ?? 0]),
   ) as Record<EntityType, number>;
 
   return {
@@ -454,14 +673,14 @@ export async function clearArchive(): Promise<void> {
   await deleteAccountMetadata(account);
 }
 
-/** A shop with no settled rows at all — what makes the next sync a backfill. */
+/** A shop with nothing at all — what makes the next sync a backfill. */
 export async function isEmpty(shopId: number): Promise<boolean> {
-  const [ledger, catalog] = await Promise.all([
+  const [ledger, products] = await Promise.all([
     readMeta(shopId, ENTITY_TYPES.orderItem),
-    readMeta(shopId, ENTITY_TYPES.catalogSku),
+    readMeta(shopId, ENTITY_TYPES.product),
   ]);
 
-  return ledger.synced_ranges.length === 0 && catalog.captured_at === null;
+  return ledger.synced_ranges.length === 0 && products.captured_at === null;
 }
 
 /** The outer bounds of one shop's settled ledger. */
@@ -476,5 +695,5 @@ export async function ledgerBounds(shopId: number): Promise<DateWindow | null> {
   return { fromMs: first.fromMs, toMs: last.toMs };
 }
 
-export { ENTITY_TYPES };
+export { ENTITY_TYPES, SNAPSHOT_ENTITIES, WINDOWED_ENTITIES };
 export type { EntityType, SyncMetadataRecord };

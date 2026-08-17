@@ -1,19 +1,20 @@
 import { ApiError } from '@/services/api/client';
 import {
   ENTITY_TYPES,
-  commitCatalog,
   mergeExpenses,
+  mergeFbsOrders,
   mergeLedger,
   readMeta,
   recordBackfill,
   stampSynced,
   type MergeOutcome,
 } from '@/services/storage/archive/archive.service';
-import { projectCatalog, type ChangeEvent } from '@/services/storage/archive/codec';
+import type { ChangeEvent } from '@/services/storage/archive/codec';
+import type { EntityType } from '@/services/storage/idb/schema';
 import {
   fetchExpenses,
+  fetchFbsOrders,
   fetchFinanceOrderItems,
-  fetchShopProducts,
   fetchSkuStocks,
   type DateWindow,
 } from '@/services/uzum/endpoints';
@@ -26,6 +27,7 @@ import {
   type PlanStep,
 } from './archivePlan';
 import { ensureWindow } from './lazySync';
+import { captureSnapshots, type SnapshotReport } from './snapshotSync';
 
 /**
  * Running an archive plan.
@@ -36,30 +38,23 @@ import { ensureWindow } from './lazySync';
  * already queues everything through one channel, so firing windows in parallel
  * would buy nothing but 429s.
  *
- * The three groups the data falls into are handled on their own terms:
+ * The data falls into three groups, handled on their own terms:
  *
- *   **Group 1 — settled history** (order items, expense rows). Fetched only for
- *   windows `sync_metadata` says are missing, upserted by record id, and the
- *   window recorded as covered *after* the write lands. This is the group the
- *   archive exists for: a sale that happened is a fact, and once it is stored
- *   and settled no later sync asks about it again.
+ *   **Windowed history** — order items, expense rows, FBS orders and their
+ *   lines. Fetched only for windows `sync_metadata` says are missing, upserted
+ *   by record id, and the window recorded as covered *after* the write lands.
+ *   These are exactly the entities whose route accepts `dateFrom`/`dateTo`; the
+ *   coincidence is not one, since a period can only be claimed for a route that
+ *   will filter by it.
  *
- *   **Group 2 — current state** (catalogue, prices, stock). Re-read whole on
- *   every run, because there is no window to fill: a stock level is a claim
- *   about this instant, and last week's is not part of it.
+ *   **Snapshots** — the catalogue, FBS stock, invoices and returns. Re-read
+ *   whole on every run, because there is no window to fill: a stock level is a
+ *   claim about this instant, and their routes accept nothing but `page` and
+ *   `size` anyway. See `snapshotSync.ts`.
  *
- *   **Group 3 — changes to group 2.** The seller API publishes no change
- *   history, so it is produced here, by diffing the new capture against the
- *   stored one. See `archive/codec.ts` for why that is the only way to get it.
- *
- * ## What the storage migration changed here
- *
- * Only the cost. A window used to be stored by reading the shop's entire packed
- * ledger, merging in memory, re-serialising it and writing it back — so the
- * price of storing one week grew with the size of the archive it joined. It is
- * now a batch of keyed upserts, and rows outside the window are never touched.
- * The planning logic is unchanged, because it was already reading a small
- * coverage record rather than the rows.
+ *   **Changes to snapshots.** The seller API publishes no change history, so it
+ *   is produced by diffing the new catalogue capture against the stored one.
+ *   See `archive/codec.ts` for why that is the only way to get it.
  */
 
 /** Sub-divisions a truncated window is split into before the result is accepted. */
@@ -72,8 +67,10 @@ export interface ShopSyncReport {
   readonly windowsDone: number;
   readonly ledger: MergeOutcome;
   readonly expenses: MergeOutcome;
-  readonly catalogSkus: number;
-  /** Group 3: what changed since the previous capture. */
+  readonly fbsOrders: MergeOutcome;
+  /** Rows captured per snapshot entity. */
+  readonly snapshots: Readonly<Partial<Record<EntityType, number>>>;
+  /** What changed since the previous catalogue capture. */
   readonly changes: readonly ChangeEvent[];
   readonly genesis: boolean;
   readonly backfillComplete: boolean;
@@ -123,7 +120,7 @@ function describe(error: unknown): string {
   return error instanceof ApiError ? error.message : 'Unexpected failure';
 }
 
-/* ── group 1: settled history ───────────────────────────────────────────── */
+/* ── windowed history ───────────────────────────────────────────────────── */
 
 /**
  * Read one window, splitting it if the page ceiling cut the read short.
@@ -168,21 +165,6 @@ async function readWindow<Row>(
   };
 }
 
-/* ── group 2 and 3: the capture and its diff ────────────────────────────── */
-
-async function syncCatalog(
-  shopId: number,
-  stocks: readonly SkuAmount[],
-  now: number,
-  signal: AbortSignal | undefined,
-): Promise<{ skus: number; changes: readonly ChangeEvent[] }> {
-  const page = await fetchShopProducts(shopId, { signal });
-  const skus = projectCatalog(page.items, stocks);
-  const outcome = await commitCatalog(shopId, skus, now);
-
-  return { skus: outcome.skus, changes: outcome.events };
-}
-
 /* ── the run ────────────────────────────────────────────────────────────── */
 
 /**
@@ -208,6 +190,7 @@ export async function syncShopArchive(options: ArchiveSyncOptions): Promise<Shop
   const failures: string[] = [];
   let ledger = EMPTY_MERGE;
   let expenses = EMPTY_MERGE;
+  let fbsOrders = EMPTY_MERGE;
   let windowsDone = 0;
   let emptyBackfillChunks = 0;
   let reachedHorizon = false;
@@ -244,6 +227,22 @@ export async function syncShopArchive(options: ArchiveSyncOptions): Promise<Shop
         expenses = sumMerge(expenses, await mergeExpenses(shopId, payments.rows, step.window));
       }
 
+      if (!aborted(signal)) {
+        /* Read without a status filter — it is optional at the source, so one
+           walk covers the window instead of one per status. */
+        const fbs = await readWindow(
+          step.window,
+          async (window) => {
+            const page = await fetchFbsOrders([shopId], window, null, { signal });
+            return { items: page.items, truncated: page.truncated };
+          },
+          signal,
+        );
+
+        const outcome = await mergeFbsOrders(shopId, fbs.rows, step.window);
+        fbsOrders = sumMerge(fbsOrders, outcome.orders);
+      }
+
       /* Two consecutive empty months, walking backwards, is how the start of a
          shop's history is found — the API has no field that states it. */
       if (step.kind === 'backfill') {
@@ -261,19 +260,19 @@ export async function syncShopArchive(options: ArchiveSyncOptions): Promise<Shop
     }
   }
 
-  /* Group 2 and 3, once per run rather than once per window. */
-  let catalogSkus = 0;
-  let changes: readonly ChangeEvent[] = [];
+  /* The snapshots, once per run rather than once per window. */
+  let snapshots: SnapshotReport | null = null;
 
   if (!aborted(signal)) {
-    try {
-      const stocks = options.stocks ?? (await fetchSkuStocks({ signal })).items;
-      const catalog = await syncCatalog(shopId, stocks, now, signal);
-      catalogSkus = catalog.skus;
-      changes = catalog.changes;
-    } catch (error) {
-      failures.push(describe(error));
-    }
+    snapshots = await captureSnapshots({
+      shopId,
+      now,
+      signal,
+      /* A planned run means "go and look now", so nothing is skipped for age. */
+      force: true,
+      ...(options.stocks !== undefined ? { stocks: options.stocks } : {}),
+    });
+    failures.push(...snapshots.failures);
   }
 
   const backfillComplete =
@@ -288,8 +287,9 @@ export async function syncShopArchive(options: ArchiveSyncOptions): Promise<Shop
     windowsDone,
     ledger,
     expenses,
-    catalogSkus,
-    changes,
+    fbsOrders,
+    snapshots: snapshots?.captured ?? {},
+    changes: snapshots?.changes ?? [],
     genesis: plan.genesis,
     backfillComplete,
     failures,
@@ -297,13 +297,13 @@ export async function syncShopArchive(options: ArchiveSyncOptions): Promise<Shop
 }
 
 /**
- * Make sure one shop's settled history covers a window.
+ * Make sure one shop's windowed history covers a window.
  *
  * Kept as a named export because it is the vocabulary the rest of the app uses,
- * but the mechanism now lives in `lazySync.ts` — the same code path a chart or
- * an AI analysis takes when it asks about a period. There is deliberately no
- * separate "sync fetches, screens read" split: a screen asking for January and
- * a sync asking for it are the same request, answered by the complement of what
+ * but the mechanism lives in `lazySync.ts` — the same code path a chart or an AI
+ * analysis takes when it asks about a period. There is deliberately no separate
+ * "sync fetches, screens read" split: a screen asking for January and a sync
+ * asking for it are the same request, answered by the complement of what
  * `sync_metadata` already claims.
  */
 export async function ensureLedgerWindow(options: {

@@ -1,58 +1,53 @@
 import { deleteWhere, request, walk, withStore } from './db';
 import {
+  ALL_ENTITY_TYPES,
   ENTITY_TYPES,
   INDEXES,
-  STORES,
+  storeNameFor,
   type EntityType,
   type StoredRecord,
 } from './schema';
 
 /**
- * Every read and write of the time-series store.
+ * Every read and write of the entity stores.
  *
  * The one rule this module exists to enforce: **a period query never scans.**
- * Each read below is bounded on `store_entity_date` — the compound index
- * `['store_id', 'entity_type', 'timestamp']` — so the cursor opens directly on
- * the first row of the requested window and stops at the last. A shop holding
- * two years of history answers a question about last Tuesday by touching the
- * rows of last Tuesday, and the cost of the query is the size of the answer
- * rather than the size of the archive.
+ * Each read below is bounded on `store_date` — the compound index
+ * `['store_id', 'timestamp']` every entity store carries — so the cursor opens
+ * directly on the first row of the requested window and stops at the last. A
+ * shop holding two years of history answers a question about last Tuesday by
+ * touching the rows of last Tuesday, and the cost of the query is the size of
+ * the answer rather than the size of the archive.
  *
- * That is what `IDBKeyRange.bound()` buys, and why the index is ordered
- * `(store, entity, time)` rather than any other permutation: the components a
- * query fixes exactly come first, and the one it asks a range over comes last.
- * Reversing the last two would make every period query a filtered scan of the
- * shop's entire history.
+ * Every function takes an `EntityType` and resolves it to an object store
+ * through the registry. Callers name the entity, never the store: the split
+ * into per-entity stores is this layer's business, and moving an entity from one
+ * store to another should not be visible above it.
  */
 
 /* ── ranges ─────────────────────────────────────────────────────────────── */
 
 /**
- * The key range for one shop's rows, of one kind, inside one period.
+ * The key range for one shop's rows inside one period.
  *
  * Inclusive at both ends, which matches how the rest of the application talks
  * about windows (`fromMs`/`toMs` are both "in the period"). The trailing
- * component of a compound key is what the bound actually varies; the first two
- * are pinned to the same value in both keys, which is what confines the cursor
- * to a single contiguous run.
+ * component is what the bound actually varies; `store_id` is pinned to the same
+ * value in both keys, which is what confines the cursor to a single contiguous
+ * run.
  */
-export function periodRange(
-  storeId: number,
-  entity: EntityType,
-  fromMs: number,
-  toMs: number,
-): IDBKeyRange {
-  return IDBKeyRange.bound([storeId, entity, fromMs], [storeId, entity, toMs]);
+export function periodRange(storeId: number, fromMs: number, toMs: number): IDBKeyRange {
+  return IDBKeyRange.bound([storeId, fromMs], [storeId, toMs]);
 }
 
 /**
- * Everything of one kind a shop holds, at any time.
+ * Everything one shop holds of one kind, at any time.
  *
  * `-Infinity`/`Infinity` are legal IndexedDB number keys, so this stays on the
  * same index as a period query instead of needing a second one.
  */
-export function entityRange(storeId: number, entity: EntityType): IDBKeyRange {
-  return periodRange(storeId, entity, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY);
+export function entityRange(storeId: number): IDBKeyRange {
+  return periodRange(storeId, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY);
 }
 
 /* ── reads ──────────────────────────────────────────────────────────────── */
@@ -80,10 +75,10 @@ export async function readPeriod<T extends StoredRecord>(query: PeriodQuery): Pr
   const rows: T[] = [];
   const limit = query.limit ?? Number.POSITIVE_INFINITY;
 
-  await withStore(STORES.records, 'readonly', (store) =>
+  await withStore(storeNameFor(query.entity), 'readonly', (store) =>
     walk<T>(
-      store.index(INDEXES.storeEntityDate),
-      periodRange(query.storeId, query.entity, query.fromMs, query.toMs),
+      store.index(INDEXES.storeDate),
+      periodRange(query.storeId, query.fromMs, query.toMs),
       query.direction ?? 'next',
       (row) => {
         rows.push(row);
@@ -121,16 +116,39 @@ export async function readPeriodAcross<T extends StoredRecord>(
 
   /* One transaction for all of them: opening a transaction per shop would pay
      the setup cost six times over for a consolidated view. */
-  await withStore(STORES.records, 'readonly', async (store) => {
-    const index = store.index(INDEXES.storeEntityDate);
+  await withStore(storeNameFor(entity), 'readonly', async (store) => {
+    const index = store.index(INDEXES.storeDate);
     for (const storeId of storeIds) {
-      await walk<T>(index, periodRange(storeId, entity, fromMs, toMs), 'next', (row) => {
+      await walk<T>(index, periodRange(storeId, fromMs, toMs), 'next', (row) => {
         rows.push(row);
       });
     }
   });
 
   return rows.sort((a, b) => a.timestamp - b.timestamp);
+}
+
+/**
+ * Rows matching one value of an entity-specific index.
+ *
+ * What the nested entities are for: the lines of one order, the SKUs of one
+ * product, the items of one return. Answered by the index rather than by
+ * reading the parent and walking its children.
+ */
+export async function readBy<T extends StoredRecord>(
+  entity: EntityType,
+  indexName: string,
+  value: number | string,
+): Promise<T[]> {
+  const rows: T[] = [];
+
+  await withStore(storeNameFor(entity), 'readonly', (store) =>
+    walk<T>(store.index(indexName), IDBKeyRange.only(value), 'next', (row) => {
+      rows.push(row);
+    }),
+  );
+
+  return rows;
 }
 
 /**
@@ -148,10 +166,10 @@ export async function reduceRecords<T extends StoredRecord, A>(
 ): Promise<A> {
   let accumulator = seed;
 
-  await withStore(STORES.records, 'readonly', (store) =>
+  await withStore(storeNameFor(query.entity), 'readonly', (store) =>
     walk<T>(
-      store.index(INDEXES.storeEntityDate),
-      periodRange(query.storeId, query.entity, query.fromMs, query.toMs),
+      store.index(INDEXES.storeDate),
+      periodRange(query.storeId, query.fromMs, query.toMs),
       query.direction ?? 'next',
       (row) => {
         accumulator = step(accumulator, row);
@@ -164,8 +182,8 @@ export async function reduceRecords<T extends StoredRecord, A>(
 
 /** How many rows a shop holds of one kind, without reading any of them. */
 export function countEntity(storeId: number, entity: EntityType): Promise<number> {
-  return withStore(STORES.records, 'readonly', (store) =>
-    request(store.index(INDEXES.storeEntityDate).count(entityRange(storeId, entity))),
+  return withStore(storeNameFor(entity), 'readonly', (store) =>
+    request(store.index(INDEXES.storeDate).count(entityRange(storeId))),
   );
 }
 
@@ -176,8 +194,8 @@ export function countPeriod(
   fromMs: number,
   toMs: number,
 ): Promise<number> {
-  return withStore(STORES.records, 'readonly', (store) =>
-    request(store.index(INDEXES.storeEntityDate).count(periodRange(storeId, entity, fromMs, toMs))),
+  return withStore(storeNameFor(entity), 'readonly', (store) =>
+    request(store.index(INDEXES.storeDate).count(periodRange(storeId, fromMs, toMs))),
   );
 }
 
@@ -195,9 +213,9 @@ export interface EntityBounds {
  * the coverage read-out draws as the outer bounds of the record.
  */
 export async function entityBounds(storeId: number, entity: EntityType): Promise<EntityBounds> {
-  return withStore(STORES.records, 'readonly', async (store) => {
-    const index = store.index(INDEXES.storeEntityDate);
-    const range = entityRange(storeId, entity);
+  return withStore(storeNameFor(entity), 'readonly', async (store) => {
+    const index = store.index(INDEXES.storeDate);
+    const range = entityRange(storeId);
 
     let oldest: number | null = null;
     let newest: number | null = null;
@@ -216,15 +234,22 @@ export async function entityBounds(storeId: number, entity: EntityType): Promise
   });
 }
 
-/** Every shop id that holds at least one record for this account. */
+/**
+ * Every shop id that holds at least one record for this account.
+ *
+ * Walks every entity store, because a shop may hold a catalogue capture and no
+ * settled history — or the other way round after a failed first sync.
+ */
 export async function storeIdsFor(account: string): Promise<readonly number[]> {
   const ids = new Set<number>();
 
-  await withStore(STORES.records, 'readonly', (store) =>
-    walk<StoredRecord>(store.index(INDEXES.account), IDBKeyRange.only(account), 'next', (row) => {
-      ids.add(row.store_id);
-    }),
-  );
+  for (const entity of ALL_ENTITY_TYPES) {
+    await withStore(storeNameFor(entity), 'readonly', (store) =>
+      walk<StoredRecord>(store.index(INDEXES.account), IDBKeyRange.only(account), 'next', (row) => {
+        ids.add(row.store_id);
+      }),
+    );
+  }
 
   return [...ids].sort((a, b) => a - b);
 }
@@ -251,18 +276,13 @@ const EMPTY_OUTCOME: WriteOutcome = { added: 0, updated: 0, unchanged: 0 };
 const PROBE_BATCH = 500;
 
 /**
- * Upsert a batch of records, reporting what actually changed.
+ * Upsert a batch of records of one entity, reporting what actually changed.
  *
- * All of it in one transaction, which is the whole reason this migration is
- * worth doing: the localStorage archive had to read a shop's entire history,
- * merge in memory, re-serialise and write it back on every window fetched.
- * Here a window is a batch of `put`s against a keyed store, and rows outside it
- * are never touched.
- *
- * The added/updated/unchanged split is not bookkeeping for its own sake — the
- * sync log reports it, and "updated" is the visible evidence that the settlement
- * lag is doing its job, since it counts rows whose status or profit moved after
- * they were first stored.
+ * All of it in one transaction over one store. The added/updated/unchanged
+ * split is not bookkeeping for its own sake — the sync log reports it, and
+ * "updated" is the visible evidence that the settlement lag is doing its job,
+ * since it counts rows whose status or profit moved after they were first
+ * stored.
  *
  * ## Why the reads are batched rather than sequential
  *
@@ -273,10 +293,13 @@ const PROBE_BATCH = 500;
  * them together, and every request in the batch is created in the same turn, so
  * the transaction stays open across the collection.
  */
-export async function putRecords(rows: readonly StoredRecord[]): Promise<WriteOutcome> {
+export async function putRecords(
+  entity: EntityType,
+  rows: readonly StoredRecord[],
+): Promise<WriteOutcome> {
   if (rows.length === 0) return EMPTY_OUTCOME;
 
-  return withStore(STORES.records, 'readwrite', async (store) => {
+  return withStore(storeNameFor(entity), 'readwrite', async (store) => {
     let added = 0;
     let updated = 0;
     let unchanged = 0;
@@ -320,9 +343,7 @@ export async function putRecords(rows: readonly StoredRecord[]): Promise<WriteOu
  * Whether two records state the same thing.
  *
  * A shallow compare over the union of both key sets. Every column is a
- * primitive — that is what "flat" means here — so shallow *is* deep, and this
- * avoids the trap the packed archive had to work around, where two identical
- * rows compared unequal because their keys were in a different order.
+ * primitive — that is what "flat" means here — so shallow *is* deep.
  */
 function sameRecord(a: StoredRecord, b: StoredRecord): boolean {
   const left = a as unknown as Record<string, unknown>;
@@ -337,10 +358,10 @@ function sameRecord(a: StoredRecord, b: StoredRecord): boolean {
 
 /* ── deletion ───────────────────────────────────────────────────────────── */
 
-/** Drop every record of one kind for one shop — how a capture is replaced. */
+/** Drop every record of one kind for one shop — how a snapshot is replaced. */
 export function deleteEntity(storeId: number, entity: EntityType): Promise<number> {
-  return withStore(STORES.records, 'readwrite', (store) =>
-    deleteWhere(store.index(INDEXES.storeEntityDate), entityRange(storeId, entity)),
+  return withStore(storeNameFor(entity), 'readwrite', (store) =>
+    deleteWhere(store.index(INDEXES.storeDate), entityRange(storeId)),
   );
 }
 
@@ -350,10 +371,10 @@ export function deleteBefore(
   entity: EntityType,
   earliest: number,
 ): Promise<number> {
-  return withStore(STORES.records, 'readwrite', (store) =>
+  return withStore(storeNameFor(entity), 'readwrite', (store) =>
     deleteWhere(
-      store.index(INDEXES.storeEntityDate),
-      periodRange(storeId, entity, Number.NEGATIVE_INFINITY, earliest - 1),
+      store.index(INDEXES.storeDate),
+      periodRange(storeId, Number.NEGATIVE_INFINITY, earliest - 1),
     ),
   );
 }
@@ -376,18 +397,13 @@ export async function trimToNewest(
   let boundary: number | null = null;
   let seen = 0;
 
-  await withStore(STORES.records, 'readonly', (store) =>
-    walk<StoredRecord>(
-      store.index(INDEXES.storeEntityDate),
-      entityRange(storeId, entity),
-      'prev',
-      (row) => {
-        seen += 1;
-        if (seen < keep) return true;
-        boundary = row.timestamp;
-        return false;
-      },
-    ),
+  await withStore(storeNameFor(entity), 'readonly', (store) =>
+    walk<StoredRecord>(store.index(INDEXES.storeDate), entityRange(storeId), 'prev', (row) => {
+      seen += 1;
+      if (seen < keep) return true;
+      boundary = row.timestamp;
+      return false;
+    }),
   );
 
   if (boundary === null) return 0;
@@ -395,24 +411,38 @@ export async function trimToNewest(
 }
 
 /** Drop everything one shop holds, of every kind. */
-export function deleteStore(storeId: number): Promise<number> {
-  return withStore(STORES.records, 'readwrite', (store) =>
-    deleteWhere(store.index(INDEXES.storeId), IDBKeyRange.only(storeId)),
-  );
+export async function deleteStore(storeId: number): Promise<number> {
+  let removed = 0;
+
+  for (const entity of ALL_ENTITY_TYPES) {
+    removed += await withStore(storeNameFor(entity), 'readwrite', (store) =>
+      deleteWhere(store.index(INDEXES.storeId), IDBKeyRange.only(storeId)),
+    );
+  }
+
+  return removed;
 }
 
 /** Drop everything one account holds — what a token change costs. */
-export function deleteAccount(account: string): Promise<number> {
-  return withStore(STORES.records, 'readwrite', (store) =>
-    deleteWhere(store.index(INDEXES.account), IDBKeyRange.only(account)),
-  );
+export async function deleteAccount(account: string): Promise<number> {
+  let removed = 0;
+
+  for (const entity of ALL_ENTITY_TYPES) {
+    removed += await withStore(storeNameFor(entity), 'readwrite', (store) =>
+      deleteWhere(store.index(INDEXES.account), IDBKeyRange.only(account)),
+    );
+  }
+
+  return removed;
 }
 
-/** Empty the store completely. */
-export function clearRecords(): Promise<void> {
-  return withStore(STORES.records, 'readwrite', (store) => {
-    store.clear();
-  });
+/** Empty every entity store completely. */
+export async function clearRecords(): Promise<void> {
+  for (const entity of ALL_ENTITY_TYPES) {
+    await withStore(storeNameFor(entity), 'readwrite', (store) => {
+      store.clear();
+    });
+  }
 }
 
 export { ENTITY_TYPES };

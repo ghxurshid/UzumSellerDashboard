@@ -185,10 +185,18 @@ export const FBS_ORDER_STATUSES = [
 
 export type FbsCountedStatus = (typeof FBS_ORDER_STATUSES)[number];
 
+/**
+ * Orders in a window, of one status or of all of them.
+ *
+ * `status` is optional at the source — only `shopIds` is required — so omitting
+ * it reads every order in the window in one paginated walk instead of eight.
+ * The archive does exactly that; the screens that show a single status column
+ * still pass one.
+ */
 export function fetchFbsOrders(
   shopIds: readonly number[],
   window: DateWindow,
-  status: FbsCountedStatus,
+  status: FbsCountedStatus | null,
   context: RequestContext = {},
 ): Promise<PageResult<FbsOrder>> {
   return paginate<FbsOrder>({
@@ -197,7 +205,13 @@ export function fetchFbsOrders(
     fetchPage: async (page, size) => {
       const payload = await getPayload<FbsOrdersPayload>(
         '/v2/fbs/orders',
-        { shopIds, ...windowParams(window), status, page, size },
+        {
+          shopIds,
+          ...windowParams(window),
+          ...(status === null ? {} : { status }),
+          page,
+          size,
+        },
         context,
       );
       return { items: payload.orders ?? [], total: payload.totalElements };

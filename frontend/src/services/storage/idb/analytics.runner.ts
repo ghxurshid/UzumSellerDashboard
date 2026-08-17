@@ -9,9 +9,9 @@ import {
   type ProductRowLike,
 } from './aggregation';
 import { withStore, walk } from './db';
-import { ENTITY_TYPES, INDEXES, STORES } from './schema';
+import { ENTITY_TYPES, INDEXES, storeNameFor } from './schema';
 import { periodRange } from './records.repo';
-import type { ExpenseRecord, OrderItemRecord } from './schema';
+import type { EntityType, ExpenseRecord, OrderItemRecord } from './schema';
 
 /**
  * Running one analytics job against IndexedDB.
@@ -33,17 +33,17 @@ import type { ExpenseRecord, OrderItemRecord } from './schema';
 /** Fold one shop's rows for a period, without building an array. */
 async function streamPeriod<T>(
   storeIds: readonly number[],
-  entity: (typeof ENTITY_TYPES)[keyof typeof ENTITY_TYPES],
+  entity: EntityType,
   fromMs: number,
   toMs: number,
   visit: (row: T) => void,
 ): Promise<void> {
   if (storeIds.length === 0) return;
 
-  await withStore(STORES.records, 'readonly', async (store) => {
-    const index = store.index(INDEXES.storeEntityDate);
+  await withStore(storeNameFor(entity), 'readonly', async (store) => {
+    const index = store.index(INDEXES.storeDate);
     for (const storeId of storeIds) {
-      await walk<T>(index, periodRange(storeId, entity, fromMs, toMs), 'next', visit);
+      await walk<T>(index, periodRange(storeId, fromMs, toMs), 'next', visit);
     }
   });
 }
@@ -116,11 +116,11 @@ export async function runAnalytics(job: AnalyticsJob): Promise<AnalyticsResult> 
     case 'count': {
       /* Counted by the index rather than read — no row is deserialised at all. */
       let total = 0;
-      await withStore(STORES.records, 'readonly', async (store) => {
-        const index = store.index(INDEXES.storeEntityDate);
+      await withStore(storeNameFor(job.entity), 'readonly', async (store) => {
+        const index = store.index(INDEXES.storeDate);
         for (const storeId of job.storeIds) {
           total += await new Promise<number>((resolve, reject) => {
-            const counter = index.count(periodRange(storeId, job.entity, job.fromMs, job.toMs));
+            const counter = index.count(periodRange(storeId, job.fromMs, job.toMs));
             counter.onsuccess = () => {
               resolve(counter.result);
             };

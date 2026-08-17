@@ -1,28 +1,21 @@
-import { ENTITY_TYPES, type EntityType } from './idb/schema';
+import { ENTITIES, ENTITY_TYPES, type EntityType } from './idb/schema';
 
 /**
  * How much history each entity keeps.
  *
- * This module replaces the character budget the localStorage tiers needed. That
- * budget existed for one reason: an origin got roughly five megabytes, the
- * ceiling could not be queried, and the only way to discover it was a write that
- * threw. A good deal of the old archive was machinery for serialising a shop's
- * whole history, measuring it, evicting rows and trying again — up to twelve
- * rounds per write.
+ * IndexedDB gives an origin a share of free disk, typically gigabytes, and
+ * `navigator.storage.estimate()` reports it. So the policy is not "what fits"
+ * but "what is worth keeping", which is a question about the data:
  *
- * None of that is needed here. IndexedDB gives an origin a share of free disk,
- * typically gigabytes, and `navigator.storage.estimate()` reports it. So the
- * policy is no longer "what fits" but "what is worth keeping", which is a
- * question about the data rather than about the browser:
- *
- *   • **Settled history is capped by count, generously.** An order item is the
+ *   • **Windowed history is capped by count, generously.** An order item is the
  *     record of a sale and the only copy of it this machine will ever have — the
  *     seller API pages at fifty rows behind a per-hour rate limit, so re-fetching
  *     a year costs hundreds of requests. Two hundred thousand rows is several
  *     years for most shops and still a small database.
  *
- *   • **Current state is not capped at all.** A catalogue capture is one row per
- *     SKU, replaced whole on every sync. It cannot grow.
+ *   • **Snapshots are not capped at all.** A capture is one row per product, per
+ *     SKU, per open invoice — replaced whole on every sync. It cannot grow
+ *     without the shop growing.
  *
  *   • **The change journal is capped by count, not by age.** It is the only
  *     record of a price move — no endpoint replays it — so a shop that changed
@@ -39,23 +32,36 @@ export interface RetentionPolicy {
   /**
    * Whether pruning this entity un-covers a period.
    *
-   * True for settled history: dropping March's rows means March is no longer
-   * held, and the coverage record has to say so. False for a capture, which has
+   * True for windowed history: dropping March's rows means March is no longer
+   * held, and the coverage record has to say so. False for a snapshot, which has
    * no period to un-cover.
    */
   readonly clipsCoverage: boolean;
 }
 
-const POLICIES: Readonly<Record<EntityType, RetentionPolicy>> = {
+const UNCAPPED: RetentionPolicy = {
+  maxRows: Number.POSITIVE_INFINITY,
+  clipsCoverage: false,
+};
+
+/**
+ * Caps for the entities that have one.
+ *
+ * Anything absent is uncapped, which is the right default for a snapshot: it is
+ * bounded by the shop's own size and pruning it would delete part of a capture
+ * that is supposed to be complete.
+ */
+const CAPS: Partial<Record<EntityType, RetentionPolicy>> = {
   [ENTITY_TYPES.orderItem]: { maxRows: 200_000, clipsCoverage: true },
   [ENTITY_TYPES.expense]: { maxRows: 50_000, clipsCoverage: true },
-  /* One row per SKU, replaced on every capture — bounded by the catalogue. */
-  [ENTITY_TYPES.catalogSku]: { maxRows: Number.POSITIVE_INFINITY, clipsCoverage: false },
+  [ENTITY_TYPES.fbsOrder]: { maxRows: 100_000, clipsCoverage: true },
+  /* Several lines per order, so the cap is a multiple of the order cap. */
+  [ENTITY_TYPES.fbsOrderItem]: { maxRows: 300_000, clipsCoverage: true },
   [ENTITY_TYPES.changeEvent]: { maxRows: 20_000, clipsCoverage: false },
 };
 
 export function retentionFor(entity: EntityType): RetentionPolicy {
-  return POLICIES[entity];
+  return CAPS[entity] ?? UNCAPPED;
 }
 
 /**
@@ -68,6 +74,11 @@ export function needsPruning(entity: EntityType, rows: number): boolean {
   const { maxRows } = retentionFor(entity);
   if (!Number.isFinite(maxRows)) return false;
   return rows > maxRows * 1.05;
+}
+
+/** The route an entity's rows came from — shown in the storage read-out. */
+export function sourceOf(entity: EntityType): string {
+  return ENTITIES[entity].source;
 }
 
 /** Bytes, formatted for the storage read-out in Settings. */

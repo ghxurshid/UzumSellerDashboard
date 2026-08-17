@@ -1,15 +1,25 @@
 import { ApiError } from '@/services/api/client';
 import { accountFingerprint } from '@/services/storage/account';
-import { mergeExpenses, mergeLedger } from '@/services/storage/archive/archive.service';
+import {
+  mergeExpenses,
+  mergeFbsOrders,
+  mergeLedger,
+} from '@/services/storage/archive/archive.service';
 import { chunk, normalize } from '@/services/storage/archive/coverage';
 import { missingRanges, readMetadata } from '@/services/storage/idb/metadata.repo';
 import {
   ENTITY_TYPES,
+  WINDOWED_ENTITIES,
   type EntityType,
   type SyncMetadataRecord,
 } from '@/services/storage/idb/schema';
 import { readDataSettings } from '@/services/storage/settings.service';
-import { fetchExpenses, fetchFinanceOrderItems, type DateWindow } from '@/services/uzum/endpoints';
+import {
+  fetchExpenses,
+  fetchFbsOrders,
+  fetchFinanceOrderItems,
+  type DateWindow,
+} from '@/services/uzum/endpoints';
 import { useSyncStore } from '@/store/sync.store';
 
 import { LEDGER_CHUNK_MS, SETTLEMENT_LAG_MS } from './archivePlan';
@@ -187,18 +197,22 @@ export async function planWindow(
 }
 
 /**
- * The gaps across **both** settled entities, merged.
+ * The gaps across **every** windowed entity, merged.
  *
- * Order items and expense rows are fetched together per window, so they usually
- * advance in step — but not always. A request whose order-item write landed and
- * whose expense write failed leaves the two records disagreeing, and planning
- * from the ledger alone would then declare the window covered and never repair
- * the expense side.
+ * Order items, expense rows and FBS orders are fetched together per window, so
+ * they usually advance in step — but not always. A request whose order-item
+ * write landed and whose expense write failed leaves the records disagreeing,
+ * and planning from the ledger alone would then declare the window covered and
+ * never repair the expense side.
  *
- * So the plan is the union of what either entity is missing. The redundant half
- * of a repair costs one request for rows that are already held and upsert to
- * themselves, which is a far cheaper mistake than a permanent hole in the
- * expense ledger.
+ * So the plan is the union of what *any* windowed entity is missing. The
+ * redundant part of a repair costs one request for rows that are already held
+ * and upsert to themselves, which is a far cheaper mistake than a permanent
+ * hole in one of the four records.
+ *
+ * Snapshot entities are deliberately absent. Their routes take no date filter,
+ * so a gap in one is not a question that can be asked — `snapshotSync.ts`
+ * captures them whole instead.
  */
 async function planSettledWindow(
   shopId: number,
@@ -209,20 +223,18 @@ async function planSettledWindow(
   const now = options.now ?? Date.now();
   const force = options.force === true;
 
-  const [ledger, expenses] = await Promise.all([
-    readMetadata(account, shopId, ENTITY_TYPES.orderItem),
-    readMetadata(account, shopId, ENTITY_TYPES.expense),
-  ]);
+  const records = await Promise.all(
+    WINDOWED_ENTITIES.map((entity) => readMetadata(account, shopId, entity)),
+  );
 
-  /* Each entity's tail is judged on its own record: the two are written by the
-     same request but a failed half leaves one of them older than the other. */
-  const holes = [
-    ...missingRanges(ledger, window, { now, unsealMs: unsealFor(ledger, now, force) }),
-    ...missingRanges(expenses, window, { now, unsealMs: unsealFor(expenses, now, force) }),
-  ];
+  /* Each entity's tail is judged on its own record: they are written by the
+     same request but a failed one leaves it older than the others. */
+  const holes = records.flatMap((record) =>
+    missingRanges(record, window, { now, unsealMs: unsealFor(record, now, force) }),
+  );
 
-  /* Normalised so two overlapping holes — one from each entity — become one
-     request rather than two that fetch most of the same period twice. */
+  /* Normalised so overlapping holes — one from each entity — become one request
+     rather than several that fetch most of the same period again. */
   const merged = normalize(holes.map((hole) => ({ fromMs: hole.fromMs, toMs: hole.toMs })));
   const gaps = merged.flatMap((hole) => chunk(hole, LEDGER_CHUNK_MS));
 
@@ -402,6 +414,25 @@ async function execute(options: EnsureWindowOptions): Promise<LazySyncResult> {
         );
 
         await mergeExpenses(shopId, payments.rows, gap);
+        fetched += payments.rows.length;
+      }
+
+      if (!aborted(signal)) {
+        /* No status filter: it is optional at the source, so one walk reads
+           every order in the window instead of eight walks reading one status
+           each. Orders and their lines are written as two entities from the
+           one payload. */
+        const fbs = await readWindow(
+          gap,
+          async (slice) => {
+            const page = await fetchFbsOrders([shopId], slice, null, { signal });
+            return { items: page.items, truncated: page.truncated };
+          },
+          signal,
+        );
+
+        await mergeFbsOrders(shopId, fbs.rows, gap);
+        fetched += fbs.rows.length;
       }
     } catch (error) {
       failures.push(describe(error));

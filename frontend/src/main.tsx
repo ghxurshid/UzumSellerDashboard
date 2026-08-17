@@ -56,13 +56,6 @@ void bootstrap().then((report) => {
     return;
   }
 
-  if (report.migrated) {
-    notify(
-      `Local archive upgraded — ${report.migratedRows.toLocaleString()} rows across ${report.migratedShops} store(s)`,
-      { icon: 'database', tone: 'positive', dedupeKey: 'storage-migrated' },
-    );
-  }
-
   for (const failure of report.failures) {
     notify(failure, { icon: 'triangle-alert', tone: 'warning', dedupeKey: 'storage-failure' });
   }

@@ -420,7 +420,7 @@ function StoreCard({
         <div className="grid grid-cols-4 gap-px overflow-hidden rounded-9 border border-line bg-line max-[820px]:grid-cols-2">
           <Metric label={t('dRows')} value={formatNumber(rows[ENTITY_TYPES.orderItem] ?? 0)} />
           <Metric label={t('dExpRows')} value={formatNumber(rows[ENTITY_TYPES.expense] ?? 0)} />
-          <Metric label={t('dSkus')} value={formatNumber(rows[ENTITY_TYPES.catalogSku] ?? 0)} />
+          <Metric label={t('dSkus')} value={formatNumber(rows[ENTITY_TYPES.productSku] ?? 0)} />
           <Metric
             label={t('dJournal')}
             value={formatNumber(rows[ENTITY_TYPES.changeEvent] ?? 0)}
