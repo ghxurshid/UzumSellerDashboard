@@ -137,6 +137,40 @@ export function buildFacts(input: FactInput): FactTable {
     }
   }
 
+  /**
+   * The step that makes the chain add up.
+   *
+   * `netProfit` is built from Uzum's own `sellerProfit` rather than from revenue
+   * less the commission and delivery lines — see `finance.ts`. The two are close
+   * but not equal, so a deduction chain written as
+   * `sellPrice − commission − logistics − purchasePrice − expenses` lands beside
+   * `netProfit` instead of on it, by whatever `sellerProfit` accounts for and
+   * those two lines do not.
+   *
+   * Without a name, that residual can only show up as a chart whose columns
+   * quietly fail to reach its total — a figure the seller can see is missing and
+   * cannot look up. Naming it makes the chain closeable and the gap citable, and
+   * it is the honest label: this is the part of `sellerProfit` these deductions
+   * do not explain, not a category anyone booked.
+   *
+   * Signed as a deduction, because that is what every other step in the chain
+   * is: `commission` and the rest are stored as positive amounts that come off
+   * the balance. So this is `base - sellerProfit`, and a marketplace that paid
+   * out more than those two lines account for makes it negative — a deduction
+   * of a negative amount, which is money going back on. Subtracting all six in
+   * order lands on `totals.netProfit` exactly.
+   */
+  const sellerBase = totals.sellPrice - totals.commission - totals.logisticDeliveryFee;
+  put(table, {
+    ref: 'totals.sellerAdjustment',
+    label:
+      '(sellPrice - commission - logisticDeliveryFee) - sellerProfit: the residual that closes a ' +
+      'revenue-to-net-profit chain, signed as a deduction like the other steps. Negative means ' +
+      'the payout exceeded those lines. Include it as a step whenever you draw that chain',
+    value: sellerBase - totals.sellerProfit,
+    format: 'money',
+  });
+
   /* The marketplace's own cut, which is the one figure a seller cannot change
      by buying better — it is worth naming rather than leaving to be derived. */
   const take = totals.commission + totals.logisticDeliveryFee;

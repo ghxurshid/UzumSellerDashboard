@@ -67,15 +67,24 @@ export function ChartBlockView({
 }: ChartBlockProps): ReactNode {
   const gradientId = useId();
 
-  const steps: readonly Step[] = (block.steps ?? []).flatMap((step) => {
+  const steps: readonly Step[] = (block.steps ?? []).flatMap((step, index, all) => {
     const fact = facts.get(step.ref);
     if (fact === undefined) return [];
+
+    /* Red for a negative figure is right everywhere except mid-waterfall, where
+       a negative deduction is the balance going back up — the one place the
+       app's usual reading of the sign is inverted. */
+    const isBridgeStep =
+      block.chart === 'waterfall' && index > 0 && index < all.length - 1;
+
     return [
       {
         label: phrase(t, step.label),
         value: fact.value,
         display: formatFact(fact, language),
-        tone: step.tone ?? (fact.value < 0 ? 'negative' : 'accent'),
+        tone:
+          step.tone ??
+          (fact.value >= 0 ? 'accent' : isBridgeStep ? 'positive' : 'negative'),
       },
     ];
   });
@@ -178,7 +187,11 @@ function ColumnChart({
      * leaves the rest overlapping at the wrong altitudes.
      */
     const from = isTotal ? 0 : running;
-    const to = isTotal ? span : running - span;
+    /* Signed, so a deduction of a negative amount — a refund, a credit, a payout
+       larger than the lines above it explain — puts the balance back up instead
+       of taking the same bite twice. Totals are measured from the baseline and
+       so take the magnitude. */
+    const to = isTotal ? span : running - (step.value / ceiling) * height;
     running = isTotal ? (step.value < 0 ? 0 : span) : to;
 
     /* Clamped to the plot so a run of deductions deeper than the opening total
@@ -186,11 +199,17 @@ function ColumnChart({
     const upper = Math.min(Math.max(from, to), height);
     const lower = Math.max(Math.min(from, to), 0);
 
+    /* A column too thin to see is still drawn, at a floor of two pixels — but
+       that floor is what makes a zero-valued one hang below the axis, since it
+       is grown downwards from a top edge sitting exactly on the baseline. Held
+       up to rest on the line instead. */
+    const h = Math.max(2, upper - lower);
+
     return {
       x: index * width + width * 0.18,
-      y: PLOT_BOTTOM - upper,
+      y: Math.min(PLOT_BOTTOM - upper, PLOT_BOTTOM - h),
       w: width * 0.64,
-      h: Math.max(2, upper - lower),
+      h,
       tone: step.tone,
       /* Where this column leaves the balance, for the tread drawn to the next. */
       balance: Math.min(Math.max(running, 0), height),
