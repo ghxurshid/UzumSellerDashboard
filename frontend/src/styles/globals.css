@@ -548,3 +548,40 @@
     scroll-behavior: auto !important;
   }
 }
+
+/**
+ * Printing one answer.
+ *
+ * There is no PDF library in this bundle and adding one to lay out a page the
+ * browser can already lay out would cost about what the charting library
+ * `RevenueChart` declined. So *PDF* means the print dialog, and the print
+ * dialog needs to be shown one answer rather than the whole application.
+ *
+ * `data-printing` is set on `<body>` for the duration of the call and
+ * `data-print-target` on the answer being printed — see `insights/export.ts`.
+ * Everything else is hidden, and the target is lifted out of the panel's
+ * scrolling column so it can flow across pages instead of being clipped to the
+ * height it had on screen.
+ */
+@media print {
+  body[data-printing] * {
+    visibility: hidden;
+  }
+
+  body[data-printing] [data-print-target],
+  body[data-printing] [data-print-target] * {
+    visibility: visible;
+  }
+
+  body[data-printing] [data-print-target] {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+    border: 0;
+    background: #fff;
+    color: #000;
+    padding: 0;
+  }
+}

@@ -1,16 +1,26 @@
 import { useCallback, useMemo, useRef } from 'react';
 
-import { formatDay, formatNumber } from '@/lib/format';
+import { formatDay } from '@/lib/format';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { ApiError } from '@/services/api/client';
-import { complete } from '@/services/ai/client';
-import { useArchiveSeries } from '@/services/queries/useArchiveSeries';
+import { estimateCost } from '@/services/ai/pricing';
+import { streamComplete } from '@/services/ai/stream';
+import { statesRawNumber, type Block } from '@/services/insights/blocks';
+import { buildFacts, type Fact, type FactTable, type FactSeries, type SeriesTable } from '@/services/insights/facts';
+import { createBlockStream, flush, pushChunk } from '@/services/insights/ndjson';
+import { runPlan, type ToolOutcome } from '@/services/insights/tools';
 import { useOverviewQuery } from '@/services/queries/useOverviewQuery';
 import { useProductsQuery } from '@/services/queries/useProductsQuery';
-import { useScope, useScopeReady } from '@/services/queries/useScope';
-import type { SeriesResult } from '@/services/storage/idb/aggregation';
+import { useScope } from '@/services/queries/useScope';
 import { useChatStore } from '@/store/chat.store';
 import { useAiSettings } from '@/store/settings.store';
+
+import {
+  buildComposeSystem,
+  buildPlanSystem,
+  parsePlan,
+  summariseAnswer,
+} from './copilotProtocol';
 
 export interface SuggestedQuestion {
   readonly id: string;
@@ -26,135 +36,57 @@ interface UseCopilotAnswersResult {
 }
 
 /**
- * How many buckets of the period series the model is given.
- *
- * Enough for a trend to be visible and an outlier to be nameable, few enough
- * that the grounding context stays a page rather than a spreadsheet. The model
- * is asked about a period, not handed the period's rows.
- */
-const SERIES_LINES = 30;
-
-/**
- * The period series, written out for the model.
- *
- * This is the AI half of what the storage layer was rebuilt for. The buckets are
- * computed by the analytics worker from a bounded index range over the flat
- * records — never by loading the period's rows onto the main thread — so asking
- * about a year of history costs the same interface responsiveness as asking
- * about a week.
- *
- * Empty buckets are included rather than skipped. A day with no sales is a fact
- * about the business, and a series that silently omitted it would let the model
- * describe a gap as continuity.
- */
-function describeSeries(series: SeriesResult): readonly string[] {
-  const { at, revenue, units, profit } = series.series;
-  if (at.length === 0) return [];
-
-  const lines: string[] = [
-    '',
-    `Period series, one row per ${series.series.granularity} (date, revenue, units, sellerProfit):`,
-  ];
-
-  /* The tail rather than the head: a question about a period is nearly always
-     about how it ended, and a truncated series should keep the part that
-     answers it. */
-  const start = Math.max(0, at.length - SERIES_LINES);
-  for (let index = start; index < at.length; index += 1) {
-    lines.push(
-      `${formatDay(at[index] ?? 0)}  ${formatNumber(revenue[index] ?? 0)}  ${formatNumber(
-        units[index] ?? 0,
-      )}  ${formatNumber(profit[index] ?? 0)}`,
-    );
-  }
-
-  if (start > 0) {
-    lines.push(`(${start} earlier ${series.series.granularity} buckets omitted for brevity)`);
-  }
-
-  return lines;
-}
-
-/**
  * The Copilot.
  *
- * The model is asked over the network with the user's own key, and it is given
- * the figures already on screen as context — the totals this app summed from
- * the seller API, stated as facts, plus an instruction not to invent any
- * others. That is what keeps an answer checkable: every number it can quote is
- * one the user can find in the tables behind it.
+ * An answer is composed the same way an insight card is — blocks citing facts
+ * the application resolved — and for the same reason: every figure a seller
+ * reads should be one they can find in the table behind it. What the chat adds
+ * is that the *question* decides which facts are needed, so the run has three
+ * movements rather than one.
  *
- * Two kinds of grounding go in, and they answer different questions. The
- * **totals** say what the window came to; the **series** says how it got there,
- * which is what a question like "why was last week worse" needs and what a
- * single sum can never support.
+ *   **Plan.** The model is shown the question and the read registry and answers
+ *   with the lookups it wants. Skipped entirely in shallow mode, where the
+ *   standing totals are taken as the whole of the evidence.
+ *
+ *   **Retrieve.** The plan runs against the analytics worker — bounded index
+ *   ranges over IndexedDB, off the main thread — and its results are folded into
+ *   the fact table as new refs.
+ *
+ *   **Compose.** The model is asked again, now over the enlarged table, and
+ *   streams NDJSON. Each finished line is validated and pushed to the transcript
+ *   the moment it arrives, so the answer builds on screen instead of appearing
+ *   whole after four seconds of nothing.
+ *
+ * Cancellation cuts all three: one `AbortController` is threaded through both
+ * requests and the worker jobs between them.
  */
 export function useCopilotAnswers(): UseCopilotAnswersResult {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const ai = useAiSettings();
 
   const begin = useChatStore((state) => state.begin);
+  const append = useChatStore((state) => state.append);
+  const ground = useChatStore((state) => state.ground);
   const settle = useChatStore((state) => state.settle);
   const fail = useChatStore((state) => state.fail);
 
-  const { summary } = useOverviewQuery();
-  const { products, total: productTotal } = useProductsQuery();
-
-  /* Read straight from IndexedDB through the analytics worker, and only when a
-     provider is configured — there is no point aggregating a period for a panel
-     that is going to offer the Settings link instead. */
   const scope = useScope();
-  const scopeReady = useScopeReady(scope);
-  const series = useArchiveSeries(scope, {
-    enabled: scopeReady && ai.apiKey.trim() !== '',
-  });
+  const { summary } = useOverviewQuery();
+  const { products } = useProductsQuery();
 
   const controllerRef = useRef<AbortController | null>(null);
 
-  /** The grounding context: what this account's data actually says. */
-  const system = useMemo(() => {
-    const lines: string[] = [
-      'You are the analysis layer of a dashboard for Uzum Market sellers.',
-      'You may only reason about the figures listed below. They were summed client-side from the Uzum seller OpenAPI.',
-      'The seller API has no forecast, scoring or aggregate endpoint — never present a prediction as data.',
-      'If the answer is not derivable from these figures, say which endpoint would be needed instead of guessing.',
-      'Answer in the language the question was asked in. Be concise and quote the field names.',
-    ];
+  /** The standing table: what is true about the window before anyone asks. */
+  const standing = useMemo<FactTable>(() => {
+    if (summary === null) return new Map();
+    return buildFacts({ totals: summary.totals, products, invoices: undefined });
+  }, [products, summary]);
 
-    if (summary === null) {
-      lines.push('', 'No data has been synced yet for the selected shops and period.');
-      return lines.join('\n');
-    }
-
-    const totals = summary.totals;
-    lines.push(
-      '',
-      `Order items in the window: ${formatNumber(summary.reportedItems)} (cancelled ${formatNumber(totals.cancelledItems)})`,
-      `Distinct orders read: ${formatNumber(totals.orders)}`,
-      `Sum sellPrice: ${formatNumber(totals.sellPrice)}`,
-      `Sum purchasePrice: ${formatNumber(totals.purchasePrice)}`,
-      `Sum commission: ${formatNumber(totals.commission)}`,
-      `Sum logisticDeliveryFee: ${formatNumber(totals.logisticDeliveryFee)}`,
-      `Sum sellerProfit: ${formatNumber(totals.sellerProfit)}`,
-      `Net profit (sellerProfit - purchasePrice - expenses): ${formatNumber(totals.netProfit)}`,
-      `Net margin: ${totals.netMargin.toFixed(1)}%`,
-      `Products in catalogue: ${formatNumber(productTotal)} (read ${formatNumber(products.length)})`,
-    );
-
-    for (const [source, value] of totals.expenseBySource) {
-      lines.push(`Expense ledger, ${source}: ${formatNumber(value)}`);
-    }
-
-    if (summary.truncated) {
-      lines.push(
-        'Note: the finance read stopped at the page ceiling, so sums cover only the rows read.',
-      );
-    }
-
-    if (series.data !== undefined) lines.push(...describeSeries(series.data));
-
-    return lines.join('\n');
-  }, [productTotal, products.length, series.data, summary]);
+  const scopeLine = useMemo(
+    () =>
+      `shopIds=[${scope.shopIds.join(', ')}] · ${formatDay(scope.fromMs)} – ${formatDay(scope.toMs)}`,
+    [scope.fromMs, scope.shopIds, scope.toMs],
+  );
 
   const ask = useCallback(
     (question: string) => {
@@ -162,27 +94,135 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
       if (trimmed === '') return;
 
       const id = begin(trimmed);
-      const history = useChatStore
-        .getState()
-        .messages.filter((message) => message.id !== id && message.text !== '')
-        .slice(-8)
-        .map((message) => ({ role: message.role, content: message.text }));
+      const deep = useChatStore.getState().deep;
+      const startedAt = Date.now();
 
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
+      const signal = controller.signal;
 
-      void complete(ai, { system, messages: history, signal: controller.signal })
-        .then((text) => settle(id, text))
-        .catch((error: unknown) => {
-          if (error instanceof ApiError && error.isCancelled) {
-            fail(id, t('tCancelled'));
-            return;
+      /* The previous turns, flattened to prose. The model does not need its own
+         JSON read back to it — see `summariseAnswer`. */
+      const history = useChatStore
+        .getState()
+        .messages.filter((message) => message.id !== id)
+        .slice(-6)
+        .map((message) => ({
+          role: message.role,
+          content:
+            message.role === 'user'
+              ? message.text
+              : summariseAnswer(message.blocks, message.facts, language),
+        }))
+        .filter((message) => message.content !== '');
+
+      void (async (): Promise<void> => {
+        let inputTokens = 0;
+        let outputTokens = 0;
+
+        /* ── plan and retrieve ──────────────────────────────────────────── */
+
+        let retrieved: ToolOutcome = { facts: [], series: [], routes: [] };
+
+        if (deep) {
+          const planned = await streamComplete({
+            settings: ai,
+            request: {
+              system: buildPlanSystem(language),
+              messages: [{ role: 'user', content: trimmed }],
+              signal,
+            },
+            /* Nothing is shown while planning: the plan is machinery, and
+               streaming it would put JSON in front of the seller. */
+            onDelta: () => undefined,
+          });
+
+          inputTokens += planned.inputTokens;
+          outputTokens += planned.outputTokens;
+
+          const steps = parsePlan(planned.text);
+          if (steps.length > 0) {
+            retrieved = await runPlan(steps, {
+              shopIds: scope.shopIds,
+              fromMs: scope.fromMs,
+              toMs: scope.toMs,
+              products,
+              language,
+              signal,
+            });
           }
-          fail(id, error instanceof ApiError ? error.message : t('tFail'));
+        }
+
+        /* ── the table this answer will resolve against ─────────────────── */
+
+        const facts = new Map<string, Fact>(standing);
+        for (const fact of retrieved.facts) facts.set(fact.ref, fact);
+
+        const series = new Map<string, FactSeries>();
+        for (const entry of retrieved.series) series.set(entry.ref, entry);
+
+        ground(id, facts as FactTable, series as SeriesTable);
+
+        /* ── compose, streamed ──────────────────────────────────────────── */
+
+        const stream = createBlockStream();
+
+        /**
+         * Blocks are filtered on the way in, not on the way out.
+         *
+         * `statesRawNumber` is the enforcement half of the "never type a
+         * figure" rule: a model that slipped and wrote `9.2%` into a sentence
+         * loses that block here rather than putting an unverifiable number in
+         * front of a seller. Dropping is counted and reported under the answer.
+         */
+        const accept = (blocks: readonly Block[]): readonly Block[] => {
+          const kept = blocks.filter((block) => {
+            if (block.kind !== 'text' || typeof block.text !== 'string') return true;
+            if (!statesRawNumber(block.text)) return true;
+            stream.dropped += 1;
+            return false;
+          });
+          return kept;
+        };
+
+        const composed = await streamComplete({
+          settings: ai,
+          request: {
+            system: buildComposeSystem({
+              facts: facts as FactTable,
+              series: series as SeriesTable,
+              language,
+              routes: retrieved.routes,
+              scopeLine,
+            }),
+            messages: [...history, { role: 'user', content: trimmed }],
+            signal,
+          },
+          onDelta: (chunk) => append(id, accept(pushChunk(stream, chunk))),
         });
+
+        append(id, accept(flush(stream)));
+
+        inputTokens += composed.inputTokens;
+        outputTokens += composed.outputTokens;
+
+        settle(id, {
+          routes: retrieved.routes,
+          elapsedMs: Date.now() - startedAt,
+          costUsd: estimateCost(ai, { inputTokens, outputTokens }),
+          dropped: stream.dropped,
+          deep,
+        });
+      })().catch((error: unknown) => {
+        if (error instanceof ApiError && error.isCancelled) {
+          fail(id, t('tCancelled'));
+          return;
+        }
+        fail(id, error instanceof ApiError ? error.message : t('tFail'));
+      });
     },
-    [ai, begin, fail, settle, system, t],
+    [ai, append, begin, fail, ground, language, products, scope, scopeLine, settle, standing, t],
   );
 
   const cancel = useCallback(() => controllerRef.current?.abort(), []);

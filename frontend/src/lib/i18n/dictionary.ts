@@ -933,6 +933,161 @@ const TUPLES = {
   sortL: ['Sort', 'Сортировка', 'Saralash'],
   detailsL: ['Details', 'Подробнее', 'Batafsil'],
   pageOf: ['Page {n} of {total}', 'Стр. {n} из {total}', '{total} dan {n}-sahifa'],
+
+  /* — insights: rail chrome — */
+  insAll: ['All', 'Все', 'Barchasi'],
+  insImportant: ['Important', 'Важное', 'Muhim'],
+  grProfit: ['Profit', 'Прибыль', 'Foyda'],
+  grStockOps: ['Stock and operations', 'Склад и операции', 'Zaxira va operatsiya'],
+  grAnomaly: ['Anomalies', 'Аномалии', 'Anomaliyalar'],
+  insNoMatch: [
+    'Nothing in this filter',
+    'В этом фильтре ничего нет',
+    "Bu filtrda hech nima yo'q",
+  ],
+  insSignal: ['Signal', 'Сигнал', 'Signal'],
+  aiPending: ['The model is reading the window…', 'Модель читает период…', 'Model davrni o‘qimoqda…'],
+  aiWrote: ['Written by the model', 'Написано моделью', 'Model tomonidan yozilgan'],
+  recAction: ['Recommended action', 'Рекомендуемое действие', 'Tavsiya etilgan amal'],
+
+  /* — insights: actions and risk — */
+  iaPrice: ['Change price', 'Изменить цену', "Narxni o'zgartirish"],
+  iaStock: ['Update stock', 'Обновить остаток', 'Qoldiqni yangilash'],
+  iaConfirm: ['Confirm orders', 'Подтвердить заказы', 'Buyurtmalarni tasdiqlash'],
+  riskMid: ['medium risk', 'средний риск', "o'rta xavf"],
+  riskHigh: ['high risk', 'высокий риск', 'yuqori xavf'],
+  insConfirmT: ['Apply this action?', 'Применить действие?', "Amalni qo'llaysizmi?"],
+  insConfirmB: [
+    'This sends a write request to Uzum with the values shown above. It cannot be undone from here.',
+    'Будет отправлен запрос на изменение в Uzum с показанными значениями. Отменить отсюда нельзя.',
+    "Yuqoridagi qiymatlar bilan Uzum'ga o'zgartirish so'rovi yuboriladi. Bu yerdan bekor qilib bo'lmaydi.",
+  ],
+
+  /* — insights: rule wording — */
+  insZeroT: [
+    '{n} of {total} SKU have quantityAvailable = 0',
+    'У {n} из {total} SKU quantityAvailable = 0',
+    '{total} SKU dan {n} tasida quantityAvailable = 0',
+  ],
+  insZeroB: [
+    'Most of the catalogue cannot be bought right now. The loss here is unsold demand rather than storage cost — a card that is live but empty still spends its ranking.',
+    'Большую часть каталога сейчас нельзя купить. Потеря здесь — непроданный спрос, а не стоимость хранения: активная, но пустая карточка всё равно расходует свой ранг.',
+    "Katalogning ko'p qismini hozir sotib bo'lmaydi. Bu yerdagi yo'qotish — saqlash xarajati emas, sotilmagan talab: faol, lekin bo'sh kartochka reytingini baribir sarflaydi.",
+  ],
+  insNegT: [
+    '{n} SKU report negative stock',
+    '{n} SKU показывают отрицательный остаток',
+    '{n} SKU manfiy qoldiq ko‘rsatmoqda',
+  ],
+  insNegB: [
+    'Reserved units exceed what the warehouse has registered. Nothing on these SKUs can be sold and the open reservations will cancel on their own.',
+    'Зарезервированных единиц больше, чем зарегистрировано на складе. По этим SKU ничего не продать, а открытые резервы отменятся сами.',
+    "Rezervlangan birliklar ombor ro'yxatidan oshib ketgan. Bu SKU'lar bo'yicha hech nima sotilmaydi va ochiq rezervlar o'z-o'zidan bekor bo'ladi.",
+  ],
+  insCancelT: [
+    '{pct} of order items were cancelled',
+    '{pct} позиций заказов отменено',
+    'Buyurtma qatorlarining {pct} qismi bekor qilingan',
+  ],
+  insCancelB: [
+    'Cancelled items return commission and sellerProfit as zero, but the delivery fee is still charged and only partly refunded. The gap between what sold and what shipped is where the money goes.',
+    'По отменённым позициям commission и sellerProfit приходят нулевыми, но доставка всё равно списывается и возвращается лишь частично. Деньги уходят в разрыв между проданным и отгруженным.',
+    "Bekor qilingan qatorlarda commission va sellerProfit nol bo'lib keladi, lekin yetkazib berish haqi baribir yechiladi va faqat qisman qaytariladi. Pul sotilgan va jo'natilgan o'rtasidagi farqqa ketadi.",
+  ],
+  insTakeT: [
+    'Marketplace fees take {pct} of revenue',
+    'Комиссии маркетплейса забирают {pct} выручки',
+    'Marketplace to‘lovlari tushumning {pct} qismini oladi',
+  ],
+  insTakeB: [
+    'Commission and delivery are deducted before sellerProfit, so this share is gone before your own purchase price is counted. Price and discount depth are the only levers on it.',
+    'Комиссия и доставка вычитаются до sellerProfit, поэтому эта доля уходит ещё до учёта вашей закупки. Влиять на неё можно только ценой и глубиной скидки.',
+    "Komissiya va yetkazib berish sellerProfit'dan oldin ushlab qolinadi, ya'ni bu ulush sizning tannarxingiz hisobga olinmasidan burun ketadi. Unga faqat narx va chegirma chuqurligi ta'sir qiladi.",
+  ],
+  insLossT: [
+    'The period is running at a loss after expenses',
+    'Период убыточен после расходов',
+    'Davr xarajatlardan keyin zarar bilan yakunlanmoqda',
+  ],
+  insThinT: [
+    'Net margin is {pct} after expenses',
+    'Чистая маржа после расходов — {pct}',
+    'Xarajatlardan keyin sof marja {pct}',
+  ],
+  insMarginB: [
+    'sellerProfit looks healthier than the account is: your purchase price and the marketing and storage rows of the expense ledger still have to come out of it.',
+    'sellerProfit выглядит лучше, чем состояние счёта: из него ещё предстоит вычесть закупку, а также строки рекламы и хранения из книги расходов.',
+    "sellerProfit hisobning haqiqiy holatidan yaxshiroq ko'rinadi: undan tannarx hamda xarajat daftaridagi reklama va saqlash qatorlari hali chiqarilishi kerak.",
+  ],
+  insExpenseT: [
+    '{source} costs {pct} of revenue',
+    '{source} стоит {pct} выручки',
+    '{source} tushumning {pct} qismini oladi',
+  ],
+  insExpenseB: [
+    'This is charged on top of the marketplace fee and is not inside sellerProfit, so it lands directly on net profit.',
+    'Это списывается сверх комиссии маркетплейса и не входит в sellerProfit, поэтому ложится прямо на чистую прибыль.',
+    "Bu marketplace komissiyasi ustiga yechiladi va sellerProfit ichida emas, shuning uchun to'g'ridan-to'g'ri sof foydaga tushadi.",
+  ],
+  insReturnT: [
+    '{n} product(s) return above {pct}',
+    'У {n} товар(ов) возврат выше {pct}',
+    '{n} ta mahsulotda qaytarish {pct} dan yuqori',
+  ],
+  insReturnB: [
+    'A returned unit costs the delivery both ways and comes back to the warehouse as stock you have already paid to store. The card, not the price, is usually the cause.',
+    'Возврат оплачивает доставку в обе стороны и возвращается на склад как товар, за хранение которого вы уже платите. Причина обычно в карточке, а не в цене.',
+    "Qaytarilgan birlik yetkazib berishni ikki tomonlama to'laydi va omborga siz allaqachon saqlash haqini to'layotgan tovar bo'lib qaytadi. Sabab odatda narxda emas, kartochkada.",
+  ],
+  insSupplyT: [
+    '{n} units never reached the warehouse',
+    '{n} единиц так и не дошли до склада',
+    '{n} birlik omborga yetib bormadi',
+  ],
+  insSupplyB: [
+    'These supply invoices were accepted for fewer units than were declared. The difference is stock you have paid for and cannot sell.',
+    'Эти поставочные накладные приняты на меньшее число единиц, чем заявлено. Разница — товар, за который заплачено и который нельзя продать.',
+    "Bu yetkazib berish hujjatlari e'lon qilinganidan kamroq birlik uchun qabul qilingan. Farq — siz to'lagan, lekin sotolmaydigan tovar.",
+  ],
+
+  /* — insights: evidence labels — */
+  evRevenue: ['Revenue (Σ sellPrice)', 'Выручка (Σ sellPrice)', 'Tushum (Σ sellPrice)'],
+  evCost: ['Purchase price', 'Закупочная цена', 'Tannarx'],
+  evCommission: ['Commission', 'Комиссия', 'Komissiya'],
+  evLogistics: ['Logistics charged', 'Списано за логистику', 'Logistika uchun yechilgan'],
+  evSellerProfit: ['Seller profit', 'Прибыль продавца', 'Sotuvchi foydasi'],
+  evNetProfit: ['Net profit', 'Чистая прибыль', 'Sof foyda'],
+  evExpenseOther: [
+    'Expenses excluding logistics',
+    'Расходы без логистики',
+    'Logistikasiz xarajatlar',
+  ],
+  evCancelled: ['Cancelled order items', 'Отменённые позиции', 'Bekor qilingan qatorlar'],
+  evLive: ['Live order items', 'Активные позиции', 'Faol qatorlar'],
+  evZeroSku: ['SKU at zero available', 'SKU с нулевым остатком', 'Nol qoldiqli SKU'],
+  evShare: ['Share of the catalogue', 'Доля каталога', 'Katalogdagi ulush'],
+  evRunOut: ['Products in RUN_OUT', 'Товары в RUN_OUT', 'RUN_OUT holatidagi mahsulotlar'],
+  evReturnRate: ['Return rate', 'Доля возвратов', 'Qaytarish ulushi'],
+  evMissingUnits: ['Units missing', 'Недостающие единицы', 'Yetishmayotgan birliklar'],
+  evShortInvoices: ['Short invoices', 'Неполные накладные', "To'liqsiz hujjatlar"],
+
+  /* — insights: table columns — */
+  colSku: ['SKU', 'SKU', 'SKU'],
+  colAvailable: ['Available', 'Доступно', 'Mavjud'],
+  colProduct: ['Product', 'Товар', 'Mahsulot'],
+  colInvoice: ['Invoice', 'Накладная', 'Hujjat'],
+  colAccepted: ['Accepted / declared', 'Принято / заявлено', "Qabul / e'lon"],
+
+  /* — copilot: answers — */
+  ctxLabel: ['Context', 'Контекст', 'Kontekst'],
+  deepMode: ['Deep reasoning', 'Глубокий анализ', 'Chuqur tahlil'],
+  exportPdf: ['PDF', 'PDF', 'PDF'],
+  srcCount: ['{n} sources · {s}s', 'источников: {n} · {s}с', '{n} manba · {s}s'],
+  droppedBlocks: [
+    '{n} block(s) discarded — they stated figures that could not be checked',
+    'Отброшено блоков: {n} — в них были непроверяемые цифры',
+    "{n} ta blok tashlandi — ularda tekshirib bo'lmaydigan raqamlar bor edi",
+  ],
 } as const satisfies Record<string, readonly [string, string, string]>;
 
 export type TranslationKey = keyof typeof TUPLES;

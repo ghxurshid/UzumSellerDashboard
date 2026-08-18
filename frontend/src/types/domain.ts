@@ -344,26 +344,16 @@ export interface Notification {
   readonly read: boolean;
 }
 
-export type InsightSeverity = 'critical' | 'high' | 'watch' | 'idea';
-
 /**
- * A finding derived from the account's own figures.
+ * How much a finding costs to ignore.
  *
- * `signal` is the expression it was computed from and `evidence` are the values
- * that triggered it, so every card can be checked against the API. `target` is
- * the screen that shows the underlying rows — there is no "apply" endpoint in
- * the seller API, so the action an insight offers is to go and look.
+ * The card that carries it lives in `services/insights/blocks.ts`, because its
+ * body is a composed document rather than a fixed record and belongs with the
+ * language it is composed in. This stays here: the rail sorts, counts and
+ * colours by severity, and those are decisions about the domain rather than
+ * about how a card is drawn.
  */
-export interface Insight {
-  readonly id: string;
-  readonly severity: InsightSeverity;
-  readonly categoryKey: string;
-  readonly title: string;
-  readonly body: string;
-  readonly signal: string;
-  readonly evidence: ReadonlyArray<{ readonly text: string; readonly value: string }>;
-  readonly target?: ScreenKey;
-}
+export type InsightSeverity = 'critical' | 'high' | 'watch' | 'idea';
 
 export type ChatRole = 'user' | 'assistant';
 
