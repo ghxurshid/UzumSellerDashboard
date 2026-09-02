@@ -47,12 +47,12 @@ export function useModuleQuery(key: ModuleKey): ModuleData {
   const needsOrders = key === 'ops';
   const needsInvoices = key === 'invoices';
 
-  const products = useQuery(productsQuery(scope, ready && needsCatalogue));
-  const stocks = useQuery(stocksQuery(ready && needsCatalogue, scope));
-  const finance = useQuery(financeQuery(scope, ready && needsFinance));
-  const expenses = useQuery(expensesQuery(scope, ready && needsExpenses));
-  const orders = useQuery(ordersQuery(scope, ready && needsOrders));
-  const invoices = useQuery(invoicesQuery(ready && needsInvoices, scope));
+  const products = useQuery(productsQuery(scope, { enabled: ready && needsCatalogue, sync: true }));
+  const stocks = useQuery(stocksQuery(scope, { enabled: ready && needsCatalogue, sync: true }));
+  const finance = useQuery(financeQuery(scope, { enabled: ready && needsFinance, sync: true }));
+  const expenses = useQuery(expensesQuery(scope, { enabled: ready && needsExpenses, sync: true }));
+  const orders = useQuery(ordersQuery(scope, { enabled: ready && needsOrders, sync: true }));
+  const invoices = useQuery(invoicesQuery(scope, { enabled: ready && needsInvoices, sync: true }));
 
   const shopNames = useMemo(
     () => new Map(shops.map((shop) => [shop.id, shop.name])),

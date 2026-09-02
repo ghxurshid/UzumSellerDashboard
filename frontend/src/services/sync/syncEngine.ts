@@ -64,7 +64,7 @@ const PLAN: readonly SourcePlan[] = [
   {
     id: 'products',
     run: (client, scope, onProgress) =>
-      client.fetchQuery(productsQuery(scope, true, onProgress, true)),
+      client.fetchQuery(productsQuery(scope, { sync: true, force: true, onProgress })),
     count: counted<{ products: readonly unknown[]; truncated: boolean }>((data) => ({
       rows: data.products.length,
       truncated: data.truncated,
@@ -72,7 +72,7 @@ const PLAN: readonly SourcePlan[] = [
   },
   {
     id: 'stocks',
-    run: (client, scope, onProgress) => client.fetchQuery(stocksQuery(true, scope, onProgress, true)),
+    run: (client, scope, onProgress) => client.fetchQuery(stocksQuery(scope, { sync: true, force: true, onProgress })),
     count: counted<{ stocks: readonly unknown[]; truncated: boolean }>((data) => ({
       rows: data.stocks.length,
       truncated: data.truncated,
@@ -85,7 +85,7 @@ const PLAN: readonly SourcePlan[] = [
        A screen asking for the same window never forces, and is answered from
        the archive. */
     run: (client, scope, onProgress) =>
-      client.fetchQuery(financeQuery(scope, true, onProgress, true)),
+      client.fetchQuery(financeQuery(scope, { sync: true, force: true, onProgress })),
     count: counted<{ items: readonly unknown[]; total: number; truncated: boolean }>((data) => ({
       rows: data.total,
       truncated: data.truncated,
@@ -94,7 +94,7 @@ const PLAN: readonly SourcePlan[] = [
   {
     id: 'expenses',
     run: (client, scope, onProgress) =>
-      client.fetchQuery(expensesQuery(scope, true, onProgress, true)),
+      client.fetchQuery(expensesQuery(scope, { sync: true, force: true, onProgress })),
     count: counted<{ payments: readonly unknown[]; truncated: boolean }>((data) => ({
       rows: data.payments.length,
       truncated: data.truncated,
@@ -103,13 +103,13 @@ const PLAN: readonly SourcePlan[] = [
   {
     id: 'orders',
     run: (client, scope, onProgress) =>
-      client.fetchQuery(ordersQuery(scope, true, onProgress, true)),
+      client.fetchQuery(ordersQuery(scope, { sync: true, force: true, onProgress })),
     count: counted<{ total: number }>((data) => ({ rows: data.total })),
   },
   {
     id: 'invoices',
     run: (client, scope, onProgress) =>
-      client.fetchQuery(invoicesQuery(true, scope, onProgress, true)),
+      client.fetchQuery(invoicesQuery(scope, { sync: true, force: true, onProgress })),
     count: counted<{ supply: readonly unknown[]; returns: readonly unknown[] }>((data) => ({
       rows: data.supply.length + data.returns.length,
     })),

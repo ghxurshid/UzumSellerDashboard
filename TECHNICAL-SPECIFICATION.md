@@ -25,8 +25,8 @@ gaplashadi, foydalanuvchining o'z tokeni bilan.
 │      │                                                          │
 │      ├── TanStack Query ──── axios ──┐                          │
 │      │                               │                          │
-│      └── IndexedDB ('savdo', v2)     │                          │
-│            16 object store           │                          │
+│      └── IndexedDB ('savdo', v3)     │                          │
+│            15 object store           │                          │
 │                                      │                          │
 └──────────────────────────────────────┼──────────────────────────┘
                                        │
@@ -84,7 +84,9 @@ pages/          ekranlar
    ↑
 features/       ekran bloklari
    ↑
-services/queries/    TanStack Query hooklari, read-through
+services/queries/    TanStack Query hooklari (kalit, enabled, dedup)
+   ↑
+services/data/       kolleksiyalarga yagona eshik — `sync` bayrog'i
    ↑
 services/derive/     hisob-kitob (sof funksiyalar)
    ↑
@@ -98,6 +100,42 @@ services/api/        axios, xatolar, rate limit
 
 **Qoida:** yuqori qatlam pastkini biladi, aksi yo'q. `derive/` sof — na tarmoq,
 na saqlash, na DOM.
+
+### 2.1. Kolleksiyalarga yagona eshik
+
+[`services/data/collections.ts`](./frontend/src/services/data/collections.ts) —
+har bir kolleksiya shu yerdan o'qiladi, har doim normalizatsiyalangan
+jadvallardan. Har bir o'qishda `sync` bayrog'i bor:
+
+| `sync` | Windowed kolleksiya | Snapshot kolleksiya |
+|---|---|---|
+| `false` (standart) | IndexedDB'dan o'qiydi, tarmoqqa chiqmaydi | xuddi shunday |
+| `true` | so'ralgan davrning yetishmagan qismini oladi | kolleksiyani butunlay qayta oladi |
+
+Farq tanlov emas: `dateFrom`/`dateTo` ni faqat uchta route qabul qiladi
+(4.3-bo'lim), qolganida so'raladigan davr yo'q. Shuning uchun snapshot uchun
+`sync: true` "hozirgi holatni qayta ol" degani, davr esa faqat **o'qishga**
+qo'llanadi.
+
+Standart qiymat `false` — tarmoqqa chiqish har doim ochiq-oydin so'raladi.
+"Bu boshqaruv elementini o'zgartirish so'rovga tushadimi?" degan savolga
+chaqiruvning o'zini o'qib javob berish mumkin.
+
+`sync` **so'rov kalitiga kirmaydi**: bir xil manba va qamrov uchun bitta so'rov
+yaratiladi, birinchi bo'lib mount bo'lgan chaqiruvchi tarmoqqa chiqish-chiqmaslikni
+hal qiladi. Ekran o'z qamrovi uchun qaror qiladi, yordamchi o'quvchi (masalan
+insights paneli) esa o'sha natijani oladi.
+
+Tarmoqqa hech narsa bu yerdan chiqmaydi — ikkala sync yo'li ham `sync/` orqali,
+u esa `api/rateLimit.ts` orqali boradi. Ya'ni `sync: true` o'qish navbatga
+turadi, poyga qilmaydi.
+
+Ikkita chetlanish ochiq aytiladi: `collections.ts` sinxronizatsiya jurnaliga
+yozish uchun `store/sync.store.ts` ga murojaat qiladi (`sync/` ham shunday
+qiladi), va `queries/` dan ikkita bargli tipni oladi (`SourceId`,
+`SourceProgressReporter`). Ikkalasi ham qiymat sikli hosil qilmaydi, lekin
+diagrammadagi sof yo'nalishdan chetlanish — shuning uchun bu yerda qayd
+etilgan.
 
 ---
 
@@ -152,7 +190,7 @@ To'liq tafsilot: [STORAGE.md](./frontend/src/services/storage/STORAGE.md).
 
 ### 4.1. IndexedDB sxemasi
 
-`DB_NAME = 'savdo'`, `DB_VERSION = 2`, **16 object store**.
+`DB_NAME = 'savdo'`, `DB_VERSION = 3`, **15 object store**.
 
 Har bir yozuvda: `id` (deterministik), `store_id`, `account`, `timestamp`, `day`.
 Har bir jadvalda 4 ta umumiy indeks: `store_date` (`['store_id','timestamp']`),
@@ -167,7 +205,7 @@ Har bir jadvalda 4 ta umumiy indeks: `store_date` (`['store_id','timestamp']`),
 
 **Journal**: `change_events`
 
-**Xizmat**: `sync_metadata`, `buffer`, `kv`
+**Xizmat**: `sync_metadata`, `kv`
 
 ### 4.2. `store_id` qayerdan keladi
 
@@ -414,13 +452,13 @@ npm run lint       # eslint
 `vendor-react`, `vendor-query`, `vendor-motion`, `vendor-forms` — yuqori
 paneldagi o'zgarish grafik bundle keshini buzmasligi uchun.
 
-**Hozirgi holat:** typecheck ✅ · lint ✅ · build ✅ (~6s, asosiy bundle 338 KB /
-gzip 111 KB)
+**Hozirgi holat:** typecheck ✅ · lint ✅ · build ✅ (~3s, asosiy bundle 398 KB /
+gzip 130 KB)
 
 **IndexedDB testlari** (`fake-indexeddb` bilan qo'lda o'tkazilgan):
-- Sxema: 16 store yaratiladi, indekslar joyida, period indeksi do'konlarni
+- Sxema: 15 store yaratiladi, indekslar joyida, period indeksi do'konlarni
   aralashtirmaydi
-- Upgrade: v1 baza ochilganda `records` o'chadi, 16 ta yangi store quriladi
+- Upgrade: v1 baza ochilganda `records` o'chadi, 15 ta yangi store quriladi
 
 > ⚠️ **Avtomatlashtirilgan test to'plami yo'q.** Loyihada test runner o'rnatilmagan.
 > Bu eng katta texnik qarz — pastdagi 12-bo'limga qarang.
@@ -453,16 +491,7 @@ Runner o'rnatilmagan. Eng avval qamrab olinishi kerak: `coverage.ts` interval
 algebrasi, `paginate()`, mapperlar, `missingRanges()`. Bular sof funksiyalar,
 ya'ni test yozish arzon, xato narxi esa qimmat — arxivda teshik.
 
-### 2. `buffer` va snapshot jadvallari ustma-ust
-Ekranlar mahsulot va qoldiqni **read-through buffer** dan o'qiydi
-(`queries/sources.ts`), yangi `products` / `product_skus` / `fbs_stocks`
-jadvallaridan emas. Ya'ni bir xil ma'lumot ikki joyda.
-
-Birlashtirilsa `buffer/` (~750 qator) butunlay olib tashlanadi. Lekin bu
-`sources.ts` (647 qator) va `readThrough.ts` (361 qator) ni qayta yozishni talab
-qiladi.
-
-### 3. Kod va OpenAPI hujjat orasidagi 8 ta ziddiyat
+### 2. Kod va OpenAPI hujjat orasidagi 8 ta ziddiyat
 Namunalarda faqat GET so'rovlar yozilgan, shuning uchun POST va print
 endpointlari tekshirilmagan. Eng shubhalilari — `fetchOrderLabel`,
 `fetchBarcodeTypes`, `fetchSupplyAct`, `fetchAcceptanceAct`: spec to'g'ri bo'lsa,
@@ -470,11 +499,11 @@ kod `payload` o'rniga `payload.document` ni olishi kerak.
 
 Tafsilot: [ENDPOINTS.md](./frontend/src/services/uzum/ENDPOINTS.md), 12.3-bo'lim.
 
-### 4. FBS nakladnoy yaratish to'liq emas
+### 3. FBS nakladnoy yaratish to'liq emas
 `GET /v1/fbs/invoice/dop/drop-off-points` va `GET /v1/fbs/invoice/dop/time-slot`
 ulanmagan — ularsiz `createFbsInvoice` uchun kerak bo'lgan UUID'larni olib
 bo'lmaydi.
 
-### 5. `backend/` bo'sh shablon
+### 4. `backend/` bo'sh shablon
 Agar jamoaviy ishlash yoki serverdagi zaxira kerak bo'lsa, arxitektura qarori
 qaytadan ko'rib chiqilishi kerak.

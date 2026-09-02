@@ -41,15 +41,15 @@ export const DEFAULT_API_BASE_URL: string =
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
-/* ── local buffer ───────────────────────────────────────────────────────── */
+/* ── capture freshness ──────────────────────────────────────────────────── */
 
 /**
- * How long re-readable data stays servable from the buffer.
+ * How long a snapshot capture stays servable before `sync: true` re-takes it.
  *
  * The choices are a spread rather than a free-text field, because the useful
- * range is narrow and bounded at both ends: below a minute the buffer stops
- * being a buffer and every screen change is a request, and above a few hours a
- * stock level is old enough to act on wrongly. Fifteen minutes is the default —
+ * range is narrow and bounded at both ends: below a minute the stored copy
+ * stops being worth keeping and every screen change is a request, and above a
+ * few hours a stock level is old enough to act on wrongly. Fifteen minutes is the default —
  * long enough that moving between screens and ranges costs nothing, short
  * enough that a restock made in the seller cabinet shows up in one coffee.
  */

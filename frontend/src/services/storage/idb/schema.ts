@@ -55,14 +55,21 @@
 export const DB_NAME = 'savdo';
 
 /**
- * v2 splits the single `records` store into one store per entity.
+ * v2 split the single `records` store into one store per entity; v3 removes the
+ * `buffer` store.
  *
- * The upgrade discards v1 rather than reshaping them. The archive is derived
- * data — every row in it can be fetched again — and the coverage record makes
- * the refetch incremental, so the cost of starting clean is bounded and the cost
- * of a migration that subtly mis-maps a row is not.
+ * The buffer held packed payloads keyed by source and selection, and it was a
+ * second copy of what the entity stores already hold in normalised form. Two
+ * copies of the catalogue meant two answers to "what is this SKU's price", and
+ * which one a screen saw depended on which path it happened to take. v3 keeps
+ * the normalised tables and deletes the copy.
+ *
+ * The upgrade discards rather than reshapes. The archive is derived data —
+ * every row in it can be fetched again — and the coverage record makes the
+ * refetch incremental, so the cost of starting clean is bounded and the cost of
+ * a migration that subtly mis-maps a row is not.
  */
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 /* ── entities ───────────────────────────────────────────────────────────── */
 
@@ -273,8 +280,6 @@ export function isWindowed(entity: EntityType): boolean {
 export const STORES = {
   /** What has been pulled from the server, per shop and entity. */
   syncMetadata: 'sync_metadata',
-  /** Read-through payload slots, keyed by source and scope. */
-  buffer: 'buffer',
   /** Everything that is one value rather than a series: settings, logs. */
   kv: 'kv',
 } as const;
@@ -495,6 +500,14 @@ export interface SupplyInvoiceRecord extends BaseRecord {
   readonly invoice_number: number;
   readonly status: string;
   readonly status_title: string;
+  /**
+   * The shop's display name as the route stated it.
+   *
+   * Denormalised on purpose: the invoice table is read on its own, and joining
+   * `store_id` against the shop list to render a name would make every read of
+   * this table depend on a second source being loaded first.
+   */
+  readonly shop_title: string;
   readonly full_price: number;
   /** What was handed over, and what the warehouse actually accepted. */
   readonly total_to_stock: number;
@@ -528,6 +541,8 @@ export interface SellerReturnRecord extends BaseRecord {
   readonly status: string;
   /** `RETURN` or `DEFECTED`. */
   readonly kind: string;
+  /** Denormalised for the same reason as on `supply_invoice`. */
+  readonly shop_title: string;
   readonly external_number: string;
   readonly stock_title: string;
   readonly stock_address: string;
@@ -647,32 +662,6 @@ export interface SyncMetadataRecord {
 
 export const METADATA_VERSION = 2;
 
-/* ── buffer ─────────────────────────────────────────────────────────────── */
-
-/**
- * One read-through slot: a whole API payload for one source and one scope.
- *
- * Kept apart from the entity stores on purpose. These are *payloads*, not facts
- * — they answer "what did this endpoint say when I last asked", they are
- * replaced wholesale, and they are evicted by age.
- */
-export interface BufferRecord {
-  /** `<account>:<source>:<scope>`. */
-  readonly key: string;
-  readonly account: string;
-  readonly source: string;
-  readonly scope: string;
-  /** When the payload was read from the server. Indexed, for LRU eviction. */
-  readonly at: number;
-  /** Rough serialised size, used for the usage read-out. */
-  readonly bytes: number;
-  readonly meta: Record<string, unknown>;
-  readonly tables: Readonly<Record<string, unknown>>;
-  readonly version: number;
-}
-
-export const BUFFER_VERSION = 1;
-
 /* ── key/value ──────────────────────────────────────────────────────────── */
 
 export interface KvRecord {
@@ -716,8 +705,4 @@ export function recordId(
 
 export function metadataKey(account: string, storeId: number, entity: EntityType): string {
   return `${account}:${storeId}:${entity}`;
-}
-
-export function bufferKey(account: string, source: string, scope: string): string {
-  return `${account}:${source}:${scope}`;
 }

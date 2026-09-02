@@ -22,13 +22,3 @@ export const SOURCE_IDS = [
 ] as const;
 
 export type SourceId = (typeof SOURCE_IDS)[number];
-
-/** Whether a source's stored payload depends on the selected window. */
-export const PERIODIC_SOURCES: Readonly<Record<SourceId, boolean>> = {
-  products: false,
-  stocks: false,
-  invoices: false,
-  orders: true,
-  finance: true,
-  expenses: true,
-};

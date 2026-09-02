@@ -116,12 +116,23 @@ function upgrade(db: IDBDatabase, fromVersion: number): void {
     metadata.createIndex(INDEXES.account, 'account', { unique: false });
     metadata.createIndex(INDEXES.storeId, 'store_id', { unique: false });
 
-    const buffer = db.createObjectStore(STORES.buffer, { keyPath: 'key' });
-    /* Eviction is least-recently-fetched first, which needs `at` ordered. */
-    buffer.createIndex('at', 'at', { unique: false });
-    buffer.createIndex(INDEXES.account, 'account', { unique: false });
-
     db.createObjectStore(STORES.kv, { keyPath: 'key' });
+  }
+
+  /**
+   * v3 removes the `buffer` store.
+   *
+   * It held packed payloads keyed by source and selection — a second copy of
+   * what the entity stores already keep in normalised form. Screens now read
+   * the tables, so the copy is not stale data waiting to be refreshed; it is
+   * data with no reader. Dropping the store is the whole migration: nothing
+   * referenced it that is not being deleted in the same change.
+   *
+   * Guarded on presence as well as version, because a v2 database created
+   * before this release has the store and one created after it does not.
+   */
+  if (fromVersion >= 2 && db.objectStoreNames.contains('buffer')) {
+    db.deleteObjectStore('buffer');
   }
 }
 

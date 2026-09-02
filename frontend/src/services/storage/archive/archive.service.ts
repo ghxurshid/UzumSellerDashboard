@@ -268,7 +268,25 @@ export async function commitSnapshot(
   if (rows.length === 0) return EMPTY_MERGE;
 
   await deleteEntity(shopId, entity);
-  return write({ shopId, entity, rows, window: null, at, capturedAt: at });
+  const outcome = await write({ shopId, entity, rows, window: null, at, capturedAt: at });
+
+  /* The delete is already done, so a write that did not land leaves the table
+     empty. A `captured_at` surviving from the previous capture would then claim
+     rows that are gone — and, worse, `isFresh` would read that stamp and skip
+     the retry for a whole freshness window, so the screen would stay empty
+     without anything trying again. Forgetting the stamp is what reopens it. */
+  if (!outcome.stored) await forgetCapture(shopId, entity);
+
+  return outcome;
+}
+
+/** Say that nothing is captured, after a replacement failed halfway. */
+function forgetCapture(shopId: number, entity: EntityType): Promise<unknown> {
+  return patchMetadata(accountFingerprint(), shopId, entity, (current) => ({
+    ...current,
+    rows: 0,
+    captured_at: null,
+  }));
 }
 
 /* ── windowed entities ──────────────────────────────────────────────────── */
@@ -347,6 +365,26 @@ export function readFbsOrders(
 /** The lines of one FBS order — a keyed read, not a walk. */
 export function readFbsOrderItems(orderId: number): Promise<readonly FbsOrderItemRecord[]> {
   return readBy<FbsOrderItemRecord>(ENTITY_TYPES.fbsOrderItem, 'order_id', orderId);
+}
+
+/**
+ * Every line inside a window, for reassembling a page of orders at once.
+ *
+ * A line carries its parent's timestamp, so the same bound that selects the
+ * orders selects their lines. Reading them in one range and grouping in memory
+ * is what keeps rebuilding two hundred orders a single cursor walk instead of
+ * two hundred keyed reads.
+ */
+export function readFbsOrderItemsIn(
+  shopId: number,
+  window: DateWindow = UNBOUNDED,
+): Promise<readonly FbsOrderItemRecord[]> {
+  return readPeriod<FbsOrderItemRecord>({
+    storeId: shopId,
+    entity: ENTITY_TYPES.fbsOrderItem,
+    fromMs: window.fromMs,
+    toMs: window.toMs,
+  });
 }
 
 /**
@@ -433,6 +471,21 @@ export const readSupplyInvoiceItems = (
 /** The lines of one warehouse return. */
 export const readReturnItems = (returnId: number): Promise<readonly ReturnItemRecord[]> =>
   readBy<ReturnItemRecord>(ENTITY_TYPES.returnItem, 'return_id', returnId);
+
+/**
+ * Every stored line of one kind, for reassembling a whole capture at once.
+ *
+ * The per-parent reads above answer a detail drawer; these answer a table. A
+ * screen showing forty invoices wants one walk of the line store, not forty
+ * keyed reads that each open their own request.
+ */
+export const readSupplyInvoiceLines = (
+  shopId: number,
+): Promise<Capture<SupplyInvoiceItemRecord>> =>
+  readCapture<SupplyInvoiceItemRecord>(shopId, ENTITY_TYPES.supplyInvoiceItem);
+
+export const readReturnLines = (shopId: number): Promise<Capture<ReturnItemRecord>> =>
+  readCapture<ReturnItemRecord>(shopId, ENTITY_TYPES.returnItem);
 
 /**
  * Replace the shop's catalogue capture, and journal what moved.
@@ -523,7 +576,7 @@ export function commitSupplyInvoices(
   at: number,
 ): Promise<MergeOutcome> {
   const account = accountFingerprint();
-  const rows = invoices.map((invoice) => supplyInvoiceToRecord(invoice, account, shopId, at));
+  const rows = invoices.map((invoice) => supplyInvoiceToRecord(invoice, account, shopId));
   return commitSnapshot(shopId, ENTITY_TYPES.supplyInvoice, rows, at);
 }
 
@@ -556,7 +609,7 @@ export async function commitReturns(
   at: number,
 ): Promise<{ entries: MergeOutcome; items: MergeOutcome }> {
   const account = accountFingerprint();
-  const mapped = returns.map((entry) => returnToRecords(entry, account, shopId, at));
+  const mapped = returns.map((entry) => returnToRecords(entry, account, shopId));
 
   const entries = await commitSnapshot(
     shopId,
@@ -580,7 +633,7 @@ export function commitFbsInvoices(
   at: number,
 ): Promise<MergeOutcome> {
   const account = accountFingerprint();
-  const rows = invoices.map((invoice) => fbsInvoiceToRecord(invoice, account, shopId, at));
+  const rows = invoices.map((invoice) => fbsInvoiceToRecord(invoice, account, shopId));
   return commitSnapshot(shopId, ENTITY_TYPES.fbsInvoice, rows, at);
 }
 
@@ -658,6 +711,78 @@ export async function usage(shopId: number): Promise<ShopUsage> {
     rows,
     totalRows: counts.reduce((sum, value) => sum + value, 0),
   };
+}
+
+export interface SnapshotUsage {
+  /** Rows held across every snapshot entity, for the shops asked about. */
+  readonly rows: number;
+  /** Snapshot entities that hold a capture, out of the ones that could. */
+  readonly captured: number;
+  readonly total: number;
+  /** The newest capture instant across them, or null if none has been taken. */
+  readonly capturedAt: number | null;
+}
+
+/**
+ * What the re-readable half of the archive is holding.
+ *
+ * Snapshot entities are the ones with no period to complete — the catalogue,
+ * stock, invoices — so "how much" and "how old" is the whole of what can be
+ * said about them. The settled ledger is measured by coverage instead, which is
+ * a different question with a different answer.
+ */
+export async function snapshotUsage(shopIds: readonly number[]): Promise<SnapshotUsage> {
+  const pairs = shopIds.flatMap((shopId) =>
+    SNAPSHOT_ENTITIES.map((entity) => ({ shopId, entity })),
+  );
+
+  const measured = await Promise.all(
+    pairs.map(async ({ shopId, entity }) => ({
+      rows: await countEntity(shopId, entity),
+      at: (await readMeta(shopId, entity)).captured_at,
+    })),
+  );
+
+  let capturedAt: number | null = null;
+  for (const entry of measured) {
+    if (entry.at !== null) capturedAt = capturedAt === null ? entry.at : Math.max(capturedAt, entry.at);
+  }
+
+  return {
+    rows: measured.reduce((sum, entry) => sum + entry.rows, 0),
+    captured: measured.filter((entry) => entry.at !== null).length,
+    total: pairs.length,
+    capturedAt,
+  };
+}
+
+/**
+ * Drop the snapshot captures, keeping the settled ledger.
+ *
+ * `captured_at` is reset with the rows, and that is the load-bearing half: the
+ * capture step skips an entity whose stamp is younger than the freshness
+ * window, so clearing rows without clearing the stamp would leave the tables
+ * empty and every re-capture skipped until the window expired.
+ */
+export async function clearSnapshots(shopIds: readonly number[]): Promise<void> {
+  const account = accountFingerprint();
+
+  for (const shopId of shopIds) {
+    for (const entity of SNAPSHOT_ENTITIES) {
+      /* The stamp goes first, and the order is the whole safety of this pair.
+         Deleting first and failing to reach the patch would leave an empty
+         table under a recent `captured_at`, which `isFresh` reads as "already
+         captured" — so nothing would refill it until the window expired. The
+         other way round the worst case is a stamp saying nothing is held while
+         rows still are, and that only costs one re-capture. */
+      await patchMetadata(account, shopId, entity, (current) => ({
+        ...current,
+        rows: 0,
+        captured_at: null,
+      }));
+      await deleteEntity(shopId, entity);
+    }
+  }
 }
 
 /** Drop one shop's archive entirely — every entity, and its metadata. */

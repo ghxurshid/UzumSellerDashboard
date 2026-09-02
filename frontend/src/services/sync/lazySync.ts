@@ -173,8 +173,8 @@ function unsealFor(metadata: SyncMetadataRecord, now: number, force: boolean): n
  * What a window still needs, without fetching anything.
  *
  * Exported so the interface can answer "will changing the range cost a request?"
- * *before* the change is made — the same question `isBuffered` answers for
- * re-readable sources.
+ * *before* the change is made. The snapshot collections answer the same
+ * question from `captured_at` instead, since they have no window to plan.
  */
 export async function planWindow(
   shopId: number,

@@ -8,7 +8,6 @@ import { cn } from '@/lib/utils';
 import { ApiError } from '@/services/api/client';
 import { useConnection, type ConnectionStatus } from '@/services/queries/useConnection';
 import { clearArchive } from '@/services/storage/archive/archive.service';
-import { clearBuffer } from '@/services/storage/buffer/buffer.service';
 import { resetLazySync } from '@/services/sync/lazySync';
 import { fetchShops } from '@/services/uzum/endpoints';
 import { useArchiveStore } from '@/store/archive.store';
@@ -182,7 +181,9 @@ export function ApiSettings({ onSync, syncing }: {
 
               const apply = async (): Promise<void> => {
                 if (changed) {
-                  await clearBuffer();
+                  /* One call now clears everything the old token produced: the
+                     payload buffer that used to need its own sweep is gone, and
+                     its data lives in the entity stores this drops. */
                   await clearArchive();
                   /* Any lazy fetch still in flight belongs to the old account
                      and would write its rows back under the old fingerprint. */

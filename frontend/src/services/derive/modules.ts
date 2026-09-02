@@ -398,7 +398,9 @@ export function buildOpsModule(input: OpsInput): ModuleDefinition {
         input.language === 'ru' ? 'сум' : "so'm",
         'Σ sellPrice ÷ orders',
       ),
-      kpi('fbs', 'FBS + DBS', formatNumber(fbsTotal), '', 'GET /v2/fbs/orders/count', fbsTotal > 0 ? 'up' : 'flat'),
+      /* Counted from the stored rows, not from `/v2/fbs/orders/count` — so the
+         source names the route those rows came from. */
+      kpi('fbs', 'FBS + DBS', formatNumber(fbsTotal), '', 'GET /v2/fbs/orders', fbsTotal > 0 ? 'up' : 'flat'),
     ],
     tabs,
     columns: [

@@ -69,13 +69,25 @@ export function useInsightsQuery(): InsightsData {
   const { language } = useTranslation();
   const ai = useAiSettings();
 
-  const finance = useQuery(financeQuery(scope, ready));
-  const expenses = useQuery(expensesQuery(scope, ready));
-  const products = useQuery(productsQuery(scope, ready));
+  /**
+   * The three the rail cannot do without, synced.
+   *
+   * `sync` is not part of the query key, so one query exists per source and
+   * scope and whichever caller mounts first decides whether it ever fetches. A
+   * rail that mounted with `sync` off would therefore not merely go without —
+   * it would answer the screen behind it out of an empty archive, and
+   * `staleTime: Infinity` would keep that answer. Asking for the same sync the
+   * screens ask for makes the mount order stop mattering.
+   */
+  const finance = useQuery(financeQuery(scope, { enabled: ready, sync: true }));
+  const expenses = useQuery(expensesQuery(scope, { enabled: ready, sync: true }));
+  const products = useQuery(productsQuery(scope, { enabled: ready, sync: true }));
   /* Stocks and invoices are read only if a screen has already asked for them;
-     the rail refines its findings when they arrive rather than forcing a read. */
-  const stocks = useQuery(stocksQuery(false, scope));
-  const invoices = useQuery(invoicesQuery(false, scope));
+     the rail refines its findings when they arrive rather than forcing a read.
+     Safe where the three above are not: `enabled: false` creates no query, so
+     no mount order can be decided by it. */
+  const stocks = useQuery(stocksQuery(scope, { enabled: false }));
+  const invoices = useQuery(invoicesQuery(scope, { enabled: false }));
 
   const derived = useMemo(() => {
     if (finance.data === undefined) return null;

@@ -1,7 +1,9 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Database, History, Layers, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { Panel } from '@/components/ui/Panel';
+import { queryKeys } from '@/services/api/queryKeys';
 import { FRESHNESS_OPTIONS } from '@/constants/settings';
 import { formatDelta, formatNumber, formatPercent, formatStamp } from '@/lib/format';
 import type { TranslationKey } from '@/lib/i18n/dictionary';
@@ -9,8 +11,12 @@ import { useTranslation } from '@/lib/i18n/useTranslation';
 import { cn } from '@/lib/utils';
 import { useArchiveAnalysis } from '@/services/queries/useArchiveAnalysis';
 import { useConnection } from '@/services/queries/useConnection';
-import { clearShop } from '@/services/storage/archive/archive.service';
-import { bufferUsage, clearBuffer, type BufferUsage } from '@/services/storage/buffer/buffer.service';
+import {
+  clearShop,
+  clearSnapshots,
+  snapshotUsage,
+  type SnapshotUsage,
+} from '@/services/storage/archive/archive.service';
 import { bounds, type Coverage } from '@/services/storage/archive/coverage';
 import type { ChangeField } from '@/services/storage/archive/codec';
 import { ENTITY_TYPES } from '@/services/storage/idb/schema';
@@ -107,7 +113,7 @@ export function DataSettings({
       </header>
 
       <DatabasePanel />
-      <BufferPanel />
+      <CapturePanel />
       <LazySyncPanel />
 
       {named.length === 0 ? (
@@ -204,37 +210,47 @@ function DatabasePanel(): ReactNode {
   );
 }
 
-/* ── the buffer ─────────────────────────────────────────────────────────── */
+/* ── the re-readable half ───────────────────────────────────────────────── */
 
 /**
- * The tier between Uzum and the screens, and the one dial that governs it.
+ * The snapshot captures, and the one dial that governs them.
  *
  * It sits above the archive panels because it is the first thing that decides
- * whether a range change costs a request: below the window, the answer is
- * already on this machine. The archive panels underneath answer the other half —
- * which *periods* are held at all.
+ * whether opening a screen costs a request: below the freshness window, the
+ * catalogue, stock and invoices are answered from this machine. The archive
+ * panels underneath answer the other half — which *periods* of settled history
+ * are held at all.
+ *
+ * Until v3 this measured a separate buffer store that held packed API payloads.
+ * That store is gone: the same data lives in the entity tables, normalised, and
+ * what is worth reporting about it is how many rows are held and how old the
+ * capture is — not how many payload slots were in use.
  */
-function BufferPanel(): ReactNode {
+function CapturePanel(): ReactNode {
   const { t } = useTranslation();
   const push = useToastStore((state) => state.push);
 
+  const client = useQueryClient();
+  const shops = useArchiveStore((state) => state.shops);
+  const refresh = useArchiveStore((state) => state.refresh);
   const freshnessMinutes = useSettingsStore((state) => state.settings.data.freshnessMinutes);
   const patch = useSettingsStore((state) => state.patch);
+
+  const shopIds = useMemo(() => shops.map((shop) => shop.shopId), [shops]);
 
   /**
    * Read in an effect rather than during render.
    *
-   * The usage figures now come from an indexed cursor walk, which is
-   * asynchronous — the old version could call `bufferUsage()` inline because
-   * localStorage answered synchronously. `tick` is what makes emptying the
-   * buffer refresh the read-out, since nothing else publishes that change.
+   * The figures come from an indexed cursor walk, which is asynchronous. `tick`
+   * is what makes clearing the captures refresh the read-out, since nothing
+   * else publishes that change.
    */
-  const [usage, setUsage] = useState<BufferUsage | null>(null);
+  const [usage, setUsage] = useState<SnapshotUsage | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let live = true;
-    void bufferUsage()
+    void snapshotUsage(shopIds)
       .then((result) => {
         if (live) setUsage(result);
       })
@@ -245,12 +261,16 @@ function BufferPanel(): ReactNode {
     return () => {
       live = false;
     };
-  }, [tick]);
+  }, [shopIds, tick]);
 
   const label = (minutes: number): string =>
     minutes >= 60 ? t('freshHour', { n: minutes / 60 }) : t('freshMin', { n: minutes });
 
-  const saturation = usage?.saturation ?? 0;
+  /* How much of what could be captured has been. Unlike the buffer's slot
+     saturation this has a meaningful full mark: every collection, every shop. */
+  const captured = usage?.captured ?? 0;
+  const total = usage?.total ?? 0;
+  const filled = total === 0 ? 0 : captured / total;
 
   return (
     <Panel className="flex flex-col gap-11 px-11 py-13 sm:px-14">
@@ -260,17 +280,17 @@ function BufferPanel(): ReactNode {
         <span className="text-mini text-faint">{t('bufHint')}</span>
         <div className="flex-1" />
         <span data-numeric className="text-mini text-dim">
-          {t('bufSlots', { n: usage?.slots ?? 0 })}
+          {t('bufSlots', { n: usage?.rows ?? 0 })}
         </span>
         <span data-numeric className="text-mini text-faint">
-          {formatBytes(usage?.bytes ?? 0)} · {formatPercent(saturation * 100, 0)}
+          {captured}/{total} · {formatPercent(filled * 100, 0)}
         </span>
       </div>
 
       <div className="h-4 overflow-hidden rounded-3 bg-grid">
         <div
-          className={cn('h-full rounded-3', saturation > 0.9 ? 'bg-warn' : 'bg-acc')}
-          style={{ width: `${(saturation * 100).toFixed(1)}%` }}
+          className="h-full rounded-3 bg-acc"
+          style={{ width: `${(filled * 100).toFixed(1)}%` }}
         />
       </div>
 
@@ -306,20 +326,37 @@ function BufferPanel(): ReactNode {
 
       <div className="flex items-center gap-8 border-t border-line pt-10">
         <span className="text-tiny text-faint">
-          {usage?.newestAt == null ? t('syncNever') : formatStamp(usage.newestAt)}
+          {usage?.capturedAt == null ? t('syncNever') : formatStamp(usage.capturedAt)}
         </span>
         <div className="flex-1" />
         <button
           type="button"
+          /* Nothing archived yet means nothing to clear, and a button that
+             reported success for a no-op would be the wrong kind of quiet. */
+          disabled={shopIds.length === 0}
           onClick={() => {
-            void clearBuffer().then(() => {
-              setTick((value) => value + 1);
-              push(t('bufCleared'), { kind: 'info' });
-            });
+            void clearSnapshots(shopIds)
+              .then(async () => {
+                setTick((value) => value + 1);
+                /* The archive panels below count these rows too. */
+                await refresh();
+                /* Removed, not invalidated. These queries carry
+                   `refetchOnMount: false`, and none of them is mounted on this
+                   screen — so invalidating would only set a flag that the next
+                   mount declines to act on, and the screen would render a
+                   catalogue that is no longer on disk. Dropping the entries
+                   makes the next mount a first load again. */
+                client.removeQueries({ queryKey: queryKeys.source.all });
+                push(t('bufCleared'), { kind: 'info' });
+              })
+              .catch(() => {
+                push(t('bufClearFail'), { kind: 'err' });
+              });
           }}
           className={cn(
             'tap flex h-36 cursor-pointer items-center gap-6 rounded-7 border border-line-2 bg-transparent md:h-26',
             'px-10 text-xs-plus text-dim transition-colors hover:border-neg hover:text-neg',
+            'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line-2 disabled:hover:text-dim',
           )}
         >
           <Trash2 aria-hidden className="size-12" />
@@ -329,6 +366,7 @@ function BufferPanel(): ReactNode {
     </Panel>
   );
 }
+
 
 /* ── one store ──────────────────────────────────────────────────────────── */
 

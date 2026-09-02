@@ -488,24 +488,33 @@ const TUPLES = {
     "Joriy ishga tushirish holati. Har bir raqam — API ning o'zi bergan qator soni.",
   ],
 
-  /* — buffer freshness — */
+  /* — capture freshness —
+     The `buf*` keys are named after the buffer store that used to back this
+     panel. The store is gone; the keys are kept because they are referenced by
+     name across the settings screen, but every string now describes what the
+     panel actually measures: the snapshot captures. */
   freshLbl: ['Refresh live data every', 'Обновлять живые данные каждые', "Jonli ma'lumotni yangilash"],
   freshHint: [
-    'Catalogue, stock, orders and invoices are served from this device until this long has passed. Settled sales are never governed by it — they are kept for good.',
-    'Каталог, остатки, заказы и накладные отдаются с этого устройства, пока не пройдёт это время. Закрытых продаж это не касается — они хранятся навсегда.',
-    "Katalog, qoldiq, buyurtma va nakladnoylar shu vaqt o'tguncha shu qurilmadan beriladi. Yakunlangan sotuvlarga bu tegishli emas — ular doimiy saqlanadi.",
+    'Catalogue, stock and invoices are served from this device until this long has passed. Settled sales and orders are never governed by it — they are held by period instead.',
+    'Каталог, остатки и накладные отдаются с этого устройства, пока не пройдёт это время. Закрытых продаж и заказов это не касается — они хранятся по периодам.',
+    "Katalog, qoldiq va nakladnoylar shu vaqt o'tguncha shu qurilmadan beriladi. Yakunlangan sotuv va buyurtmalarga bu tegishli emas — ular davrlar bo'yicha saqlanadi.",
   ],
   freshMin: ['{n} min', '{n} мин', '{n} daqiqa'],
   freshHour: ['{n} h', '{n} ч', '{n} soat'],
-  bufLbl: ['Buffer', 'Буфер', 'Bufer'],
-  bufSlots: ['{n} stored answers', 'Сохранённых ответов: {n}', '{n} ta saqlangan javob'],
+  bufLbl: ['Captures', 'Снимки', 'Suratlar'],
+  bufSlots: ['{n} stored rows', 'Сохранённых строк: {n}', '{n} ta saqlangan qator'],
   bufHint: [
-    'Every screen reads from here, never from Uzum directly.',
-    'Все экраны читают отсюда, а не напрямую из Uzum.',
-    "Barcha ekranlar shu yerdan o'qiydi, to'g'ridan-to'g'ri Uzum'dan emas.",
+    'The catalogue, stock and invoices as this device last captured them.',
+    'Каталог, остатки и накладные — какими их в последний раз получило это устройство.',
+    "Katalog, qoldiq va nakladnoylar — shu qurilma ularni oxirgi marta olgan holicha.",
   ],
-  bufClear: ['Empty the buffer', 'Очистить буфер', 'Buferni tozalash'],
-  bufCleared: ['Buffer emptied', 'Буфер очищен', 'Bufer tozalandi'],
+  bufClear: ['Clear the captures', 'Очистить снимки', 'Suratlarni tozalash'],
+  bufCleared: ['Captures cleared', 'Снимки очищены', 'Suratlar tozalandi'],
+  bufClearFail: [
+    'Could not clear the captures',
+    'Не удалось очистить снимки',
+    "Suratlarni tozalab bo'lmadi",
+  ],
 
   /* — data archive — */
   sData: ['Data', 'Данные', "Ma'lumotlar"],

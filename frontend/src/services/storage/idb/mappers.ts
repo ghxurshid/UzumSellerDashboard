@@ -1,8 +1,11 @@
 import type {
   FbsInvoice,
   FbsOrder,
+  FbsOrderItem,
   FinanceOrderItem,
   InvoiceProduct,
+  ProductSku,
+  ReturnItem,
   SellerPayment,
   SellerReturn,
   ShopProduct,
@@ -262,6 +265,47 @@ export function fbsOrderToRecords(
   };
 }
 
+/**
+ * Rebuild an order and its lines from the two tables they were split across.
+ *
+ * The lines are a keyed read on `fbs_order_items.order_id`, so an order is
+ * reassembled without walking anything. `shopId` comes back from `store_id` —
+ * which is the shop the request was made for, and therefore more trustworthy
+ * than the field the payload sometimes omits.
+ *
+ * `dropOffPoint` is always an object here, where the wire allows `null`. The
+ * stored columns are `''` when the route said nothing, and a caller reading
+ * `dropOffPoint?.title` gets the same empty answer either way.
+ */
+export function recordToFbsOrder(
+  record: FbsOrderRecord,
+  lines: readonly FbsOrderItemRecord[],
+): FbsOrder {
+  return {
+    id: record.order_id,
+    status: record.status,
+    scheme: record.scheme,
+    shopId: record.store_id,
+    dateCreated: record.timestamp,
+    dateAcceptUntil: record.accept_until,
+    dateDeliverUntil: record.deliver_until,
+    price: record.price,
+    orderItems: lines.map(recordToFbsOrderItem),
+    dropOffPoint: { title: record.drop_off_title, address: record.drop_off_address },
+  };
+}
+
+function recordToFbsOrderItem(record: FbsOrderItemRecord): FbsOrderItem {
+  return {
+    id: record.item_id,
+    skuId: record.sku_id,
+    skuTitle: record.sku_title,
+    productTitle: record.product_title,
+    amount: record.amount,
+    price: record.price,
+  };
+}
+
 /* ── catalogue: products and SKUs ───────────────────────────────────────── */
 
 /**
@@ -373,6 +417,97 @@ function hasDiscount(sku: Record<string, unknown>): boolean {
   return false;
 }
 
+/**
+ * Rebuild a product with its SKUs, from the two tables they were split across.
+ *
+ * Six wire fields are not stored and come back empty, because nothing in the
+ * application reads them: `quantityCreated`, `quantityMissing` and
+ * `quantityDefected` on a SKU, and `previewImg`, `rankInfo.rankValue` and
+ * `isActive` on the product. They are listed here rather than left to be
+ * discovered, so that adding a reader means adding a column instead of quietly
+ * rendering a zero.
+ *
+ * `status.id`, `description` and `color` are dropped for the same reason. The
+ * derivation layer narrows on `status.value`, which is stored verbatim —
+ * `IN_STOCK`, not the `ACTIVE` the domain calls it.
+ */
+export function recordToProduct(
+  record: ProductRecord,
+  skus: readonly ProductSkuRecord[],
+): ShopProduct {
+  return {
+    productId: record.product_id,
+    title: record.title,
+    category: record.category,
+    /* Stored numeric, sent as text. `0` means the route sent nothing, which is
+       not the same claim as a rating of zero. */
+    rating: record.rating === 0 ? null : String(record.rating),
+    feedbackQuantity: record.feedback_quantity,
+    status:
+      record.status === ''
+        ? null
+        : {
+            id: 0,
+            title: record.status_title,
+            value: record.status,
+            description: null,
+            color: null,
+          },
+    skuList: skus.map(recordToSku),
+    image: record.image,
+    previewImg: null,
+    quantityAvailable: record.quantity_available,
+    quantityActive: record.quantity_active,
+    quantityFbs: record.quantity_fbs,
+    quantityCreated: record.quantity_created,
+    quantitySold: record.quantity_sold,
+    quantityReturned: record.quantity_returned,
+    returnedPercentage: record.returned_percentage,
+    price: record.price,
+    roi: record.roi,
+    conversion: record.conversion,
+    clicks: record.clicks,
+    viewers: record.viewers,
+    rankInfo: rankOf(record.rank),
+    isActive: null,
+  };
+}
+
+export function recordToSku(record: ProductSkuRecord): ProductSku {
+  return {
+    skuId: record.sku_id,
+    /* One stored title, two wire fields: the column was written from
+       `skuFullTitle ?? skuTitle ?? product.title`, and `derive/products.ts`
+       reads it back through the same fallback chain. */
+    skuTitle: record.title,
+    skuFullTitle: record.title,
+    productTitle: null,
+    barcode: record.barcode,
+    characteristics: record.characteristics,
+    price: record.price,
+    purchasePrice: record.purchase_price,
+    quantityCreated: 0,
+    quantityAvailable: record.quantity_available,
+    quantityActive: record.quantity_active,
+    quantityFbs: record.quantity_fbs,
+    quantitySold: record.quantity_sold,
+    quantityReturned: record.quantity_returned,
+    quantityMissing: 0,
+    quantityDefected: 0,
+    returnedPercentage: record.returned_percentage,
+    rankInfo: rankOf(record.rank),
+    commission: record.commission,
+    turnover: record.turnover,
+    sellerItemCode: record.seller_item_code,
+    archived: record.archived === 1,
+    blocked: record.blocked === 1,
+  };
+}
+
+function rankOf(rank: string): ShopProduct['rankInfo'] {
+  return rank === '' ? null : { rank, rankValue: null, dateUpdated: null };
+}
+
 /* ── FBS stock ──────────────────────────────────────────────────────────── */
 
 /**
@@ -411,6 +546,21 @@ export function stockToRecord(
   };
 }
 
+export function recordToStock(record: FbsStockRecord): SkuAmount {
+  return {
+    skuId: record.sku_id,
+    skuTitle: record.sku_title,
+    productTitle: record.product_title,
+    barcode: record.barcode,
+    amount: record.amount,
+    fbsAllowed: record.fbs_allowed === 1,
+    dbsAllowed: record.dbs_allowed === 1,
+    fbsLinked: record.fbs_linked === 1,
+    dbsLinked: record.dbs_linked === 1,
+    sellerSkuCode: record.seller_sku_code,
+  };
+}
+
 /* ── FBO supply invoices ────────────────────────────────────────────────── */
 
 /**
@@ -418,16 +568,22 @@ export function stockToRecord(
  *
  * `dateCreated` arrives as a string on this route while every other timestamp in
  * the API is epoch milliseconds — parsed here so the series axis stays one type.
- * An unparseable date falls back to the capture instant rather than to 0, which
- * would sort the row before every other and drag chart bounds back to 1970.
+ * A date the route did not give, or gave unparseably, is stored as `0`. That is
+ * the value the whole codebase already reads as "unknown" (`stamp()` in
+ * `derive/modules.ts`, and `fbsOrderToRecords` right above), and the reverse
+ * mapper turns it back into `null` rather than into a day Uzum never named.
+ * These three tables are read unbounded, so a `0` does not fall out of a window.
  */
 export function supplyInvoiceToRecord(
   invoice: SupplyInvoice,
   account: string,
   storeId: number,
-  capturedAt: number,
 ): SupplyInvoiceRecord {
-  const at = parseDate(invoice.dateCreated, capturedAt);
+  /* `0` rather than `capturedAt` when the route said nothing: the reverse
+     mapper hands this straight to the screen, and a capture instant there
+     renders as "raised today" — a date Uzum never gave. Zero is the value
+     `stamp()` in `derive/modules.ts` already reads as unknown. */
+  const at = parseDate(invoice.dateCreated, 0);
   const toStock = num(invoice.totalToStock);
   const accepted = num(invoice.totalAccepted);
 
@@ -443,6 +599,7 @@ export function supplyInvoiceToRecord(
     invoice_number: num(invoice.invoiceNumber),
     status: str(invoice.invoiceStatus?.value),
     status_title: str(invoice.invoiceStatus?.text),
+    shop_title: str(invoice.shopTitle),
     full_price: num(invoice.fullPrice),
     total_to_stock: toStock,
     total_accepted: accepted,
@@ -457,10 +614,43 @@ export function supplyInvoiceToRecord(
   };
 }
 
+/** `dd.MM.yyyy`, the only shape `/v1/invoice` sends for `dateCreated`. */
+const DOTTED_DATE = /^(\d{2})\.(\d{2})\.(\d{4})$/;
+
+/**
+ * Parse the one route that sends a date as text.
+ *
+ * `Date.parse` must not be used here, and the reason is worth stating: it reads
+ * a dotted date as **month first**. `30.07.2026` is therefore `NaN` — month 30
+ * does not exist — and `07.08.2026` parses cleanly as 8 July when the invoice
+ * was raised on 7 August. The first case fell back to the capture instant and
+ * filed the invoice under today; the second was silently a month out. Both
+ * corrupt `timestamp`, which is half of the `store_date` index every period
+ * query bounds on, so the row lands outside the window that should contain it.
+ *
+ * Parsed as UTC midnight, matching `dayOf` and every other timestamp in the
+ * archive, so an invoice does not move a day when the viewer's clock does.
+ */
 function parseDate(value: string | null | undefined, fallback: number): number {
   if (value === null || value === undefined || value === '') return fallback;
+
+  const dotted = DOTTED_DATE.exec(value);
+  if (dotted !== null) {
+    const [, day, month, year] = dotted;
+    const parsed = Date.UTC(Number(year), Number(month) - 1, Number(day));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  /* ISO-8601 and anything else the platform agrees on unambiguously. */
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** The inverse of `parseDate`, so a stored invoice renders as it arrived. */
+function formatDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${pad(date.getUTCDate())}.${pad(date.getUTCMonth() + 1)}.${date.getUTCFullYear()}`;
 }
 
 export function supplyInvoiceItemToRecord(
@@ -497,15 +687,76 @@ export function supplyInvoiceItemToRecord(
   };
 }
 
+/**
+ * Rebuild a supply invoice with whatever lines were expanded for it.
+ *
+ * Line expansion costs one request per invoice, so the capture only expands the
+ * most recent few. An invoice whose lines were never fetched comes back with an
+ * empty list rather than `null`: "no lines held" and "no lines exist" would
+ * otherwise be the same value, and the shortfall on the header says which.
+ *
+ * `stock.id` / `externalId` and `timeSlotReservation.id` / `status` are not
+ * stored — nothing reads them — so the nested objects carry only the fields the
+ * table keeps.
+ */
+export function recordToSupplyInvoice(
+  record: SupplyInvoiceRecord,
+  lines: readonly SupplyInvoiceItemRecord[],
+): SupplyInvoice {
+  return {
+    id: record.invoice_id,
+    shopId: record.store_id,
+    /* Truthiness rather than `=== ''`: a row stored before this column existed
+       carries no value at all, and `undefined` is not what the wire type
+       promises. */
+    shopTitle: record.shop_title ? record.shop_title : null,
+    invoiceNumber: record.invoice_number,
+    /* Back to the `dd.MM.yyyy` the route sent, because the invoice table
+       renders this string as it stands. `0` is the column's "never said", and
+       formatting it would print 01.01.1970 as though it had. */
+    dateCreated: record.timestamp === 0 ? null : formatDate(record.timestamp),
+    invoiceStatus:
+      record.status === ''
+        ? null
+        : { value: record.status, text: record.status_title, color: null },
+    fullPrice: record.full_price,
+    totalAccepted: record.total_accepted,
+    totalToStock: record.total_to_stock,
+    dateAccepted: record.date_accepted,
+    stock: { id: 0, externalId: null, title: record.stock_title, address: record.stock_address },
+    timeSlotReservation: {
+      id: null,
+      status: null,
+      timeFrom: record.slot_from,
+      timeTo: record.slot_to,
+    },
+    productForInvoiceDto: lines.map(recordToSupplyInvoiceItem),
+  };
+}
+
+function recordToSupplyInvoiceItem(record: SupplyInvoiceItemRecord): InvoiceProduct {
+  return {
+    id: record.line_id,
+    skuTitle: record.sku_title,
+    productTitle: record.product_title,
+    quantityToStock: record.quantity_to_stock,
+    quantityAccepted: record.quantity_accepted,
+    purchasePrice: record.purchase_price,
+    /* The per-SKU breakdown inside a line is not a table of its own — nothing
+       reads it, and it would be a fourth level of nesting for one screen. */
+    skuForInvoiceDtoList: null,
+  };
+}
+
 /* ── warehouse returns ──────────────────────────────────────────────────── */
 
 export function returnToRecords(
   entry: SellerReturn,
   account: string,
   storeId: number,
-  capturedAt: number,
 ): { entry: SellerReturnRecord; items: readonly ReturnItemRecord[] } {
-  const at = entry.dateCreated ?? capturedAt;
+  /* Unknown stays unknown — see `supplyInvoiceToRecord`. */
+  const at = entry.dateCreated ?? 0;
   const lines = entry.returnItems ?? [];
 
   const items = lines.map((line): ReturnItemRecord => ({
@@ -538,6 +789,7 @@ export function returnToRecords(
       return_id: entry.id,
       status: str(entry.status),
       kind: str(entry.type),
+      shop_title: str(entry.shopTitle),
       external_number: str(entry.externalNumber),
       stock_title: str(entry.stock?.title),
       stock_address: str(entry.stock?.address),
@@ -548,15 +800,48 @@ export function returnToRecords(
   };
 }
 
+/** Rebuild a warehouse return with its lines, read by `return_items.return_id`. */
+export function recordToReturn(
+  record: SellerReturnRecord,
+  lines: readonly ReturnItemRecord[],
+): SellerReturn {
+  return {
+    id: record.return_id,
+    dateCreated: record.timestamp === 0 ? null : record.timestamp,
+    status: record.status,
+    type: record.kind,
+    shopId: record.store_id,
+    /* See `recordToSupplyInvoice`. */
+    shopTitle: record.shop_title ? record.shop_title : null,
+    externalNumber: record.external_number,
+    stock: { id: 0, externalId: null, title: record.stock_title, address: record.stock_address },
+    returnItems: lines.map(recordToReturnItem),
+    totalAmount: record.total_amount,
+    totalPackedAmount: record.total_packed_amount,
+  };
+}
+
+function recordToReturnItem(record: ReturnItemRecord): ReturnItem {
+  return {
+    id: record.line_id,
+    skuId: record.sku_id,
+    amount: record.amount,
+    packedAmount: record.packed_amount,
+    skuTitle: record.sku_title,
+    productTitle: record.product_title,
+    purchasePrice: record.purchase_price,
+  };
+}
+
 /* ── FBS shipment invoices ──────────────────────────────────────────────── */
 
 export function fbsInvoiceToRecord(
   invoice: FbsInvoice,
   account: string,
   storeId: number,
-  capturedAt: number,
 ): FbsInvoiceRecord {
-  const at = invoice.dateCreated ?? capturedAt;
+  /* Unknown stays unknown — see `supplyInvoiceToRecord`. */
+  const at = invoice.dateCreated ?? 0;
 
   return {
     id: recordId(account, storeId, ENTITY_TYPES.fbsInvoice, invoice.id),
@@ -577,6 +862,21 @@ export function fbsInvoiceToRecord(
     drop_off_address: str(invoice.dropOffPoint?.address),
     slot_from: invoice.timeSlot?.timeFrom ?? null,
     slot_to: invoice.timeSlot?.timeTo ?? null,
+  };
+}
+
+export function recordToFbsInvoice(record: FbsInvoiceRecord): FbsInvoice {
+  return {
+    id: record.invoice_id,
+    number: record.invoice_number,
+    status: record.status,
+    dateCreated: record.timestamp === 0 ? null : record.timestamp,
+    numberOrders: record.order_count,
+    numberAcceptedOrders: record.accepted_order_count,
+    fullPrice: record.full_price,
+    acceptedPrice: record.accepted_price,
+    dropOffPoint: { title: record.drop_off_title, address: record.drop_off_address },
+    timeSlot: { timeFrom: record.slot_from ?? undefined, timeTo: record.slot_to ?? undefined },
   };
 }
 

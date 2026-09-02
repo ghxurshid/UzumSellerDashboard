@@ -27,9 +27,9 @@ export function useOverviewQuery(): OverviewData {
   const ready = useScopeReady(scope);
   const language = usePreferencesStore((state) => state.language);
 
-  const finance = useQuery(financeQuery(scope, ready));
-  const expenses = useQuery(expensesQuery(scope, ready));
-  const products = useQuery(productsQuery(scope, ready));
+  const finance = useQuery(financeQuery(scope, { enabled: ready, sync: true }));
+  const expenses = useQuery(expensesQuery(scope, { enabled: ready, sync: true }));
+  const products = useQuery(productsQuery(scope, { enabled: ready, sync: true }));
 
   /* Read the previous period only once this one has landed: there is nothing
      to compare against until then, and the two reads together are the most

@@ -9,8 +9,14 @@ Bog'liq: [ENDPOINTS.md](../uzum/ENDPOINTS.md) — endpointlarning o'zi.
 
 ## 1. Asosiy qoida: har bir ro'yxat — alohida jadval
 
-`DB_NAME = 'savdo'`, `DB_VERSION = 2`. Jami **16 ta object store**:
-13 ta entity jadvali + `sync_metadata`, `buffer`, `kv`.
+`DB_NAME = 'savdo'`, `DB_VERSION = 3`. Jami **15 ta object store**:
+13 ta entity jadvali + `sync_metadata`, `kv`.
+
+> **v3 da `buffer` jadvali olib tashlandi.** U packed payload'larni manba va
+> tanlov bo'yicha saqlardi — ya'ni entity jadvallaridagi ma'lumotning ikkinchi
+> nusxasi. Ikki nusxa "bu SKU narxi qancha" degan savolga ikki xil javob
+> berardi va qaysi biri ko'rinishi ekran qaysi yo'ldan borganiga bog'liq edi.
+> Endi ekranlar faqat normalizatsiyalangan jadvallardan o'qiydi.
 
 Har bir entity yozuvida — **istisnosiz** — quyidagilar bor:
 
@@ -143,6 +149,12 @@ yo'q. Shuning uchun avval katalog o'qiladi, so'ng har bir qoldiq **o'z do'koni
 SKU'lariga tegishliligi bo'yicha** ajratiladi. Shu tufayli `store_id` yolg'on
 bo'lmaydi va bir account'ning bir necha do'koni bir-birining qatorini da'vo
 qilmaydi.
+
+Bog'liqlik `requested()` da yozilgan: `fbsStock` so'ralsa `product` ham
+so'raladi. Katalog na shu yugurishda, na saqlangan holda topilmasa, qoldiq
+**umuman yozilmaydi** va capture shtampi qo'yilmaydi — keyingi o'qish qayta
+urinadi. Hammasini bitta do'kon ostiga yozish muqobili emas edi: u ikki do'konli
+account'da har bir SKU'ni ikki marta sanardi.
 
 **`/v1/invoice` ham account bo'yicha**, lekin u har qatorda `shopId` yozadi —
 shuning uchun bu yerda ajratish oddiy filtr.

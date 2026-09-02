@@ -19,7 +19,7 @@ export interface ProductsData {
 export function useProductsQuery(): ProductsData {
   const scope = useScope();
   const ready = useScopeReady(scope);
-  const query = useQuery(productsQuery(scope, ready));
+  const query = useQuery(productsQuery(scope, { enabled: ready, sync: true }));
 
   const products = useMemo(
     () => toProducts(query.data?.products ?? []),
