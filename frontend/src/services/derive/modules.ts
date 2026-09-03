@@ -193,7 +193,12 @@ export function buildInventoryModule(input: InventoryInput): ModuleDefinition {
 
 function toInventoryRow(sku: CatalogueSku, fbs: SkuAmount | undefined): ModuleRow {
   const available = sku.quantityAvailable;
-  const returnRate = sku.quantitySold === 0 ? 0 : sku.quantityReturned / sku.quantitySold;
+  /* Returned over *shipped*, which is what the route means by
+     `returnedPercentage`: `quantitySold` counts what was kept, so dividing by
+     it alone reads 200% for a SKU sold twice and returned four times — a
+     percentage of a smaller population than the one being described. */
+  const shipped = sku.quantitySold + sku.quantityReturned;
+  const returnRate = shipped === 0 ? 0 : sku.quantityReturned / shipped;
 
   return {
     id: String(sku.skuId),

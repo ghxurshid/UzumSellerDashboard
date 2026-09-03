@@ -72,7 +72,12 @@ export function useProgressTask(): UseProgressTaskResult {
       controllerRef.current = controller;
       cancelledRef.current = false;
 
-      startProgress({ ...descriptor, cancellable });
+      /* Registered with the store so the global overlay's Cancel button aborts
+         *this* controller, whichever screen created it. */
+      startProgress({ ...descriptor, cancellable }, () => {
+        cancelledRef.current = true;
+        controller.abort();
+      });
 
       const report = (done: number, total: number): void => {
         if (controller.signal.aborted) return;

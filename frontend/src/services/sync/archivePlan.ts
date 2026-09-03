@@ -173,12 +173,19 @@ export function planShop(meta: SyncMetadataRecord, options: PlanOptions): Archiv
     null,
   );
 
+  /* Reaching the horizon ends the walk. Read from the stored frontier rather
+     than from this run's steps, so a chunk that failed at the horizon cannot
+     leave `backfill_complete` false while `backfillSteps` returns nothing —
+     which is the state that used to restart the whole two-year walk. */
+  const exhausted =
+    meta.backfill_from !== null && meta.backfill_from <= backfillHorizon(options.now);
+
   return {
     shopId: meta.store_id,
     steps,
     genesis,
     backfillFrom: oldest ?? meta.backfill_from,
-    backfillComplete: meta.backfill_complete,
+    backfillComplete: meta.backfill_complete || exhausted,
   };
 }
 

@@ -379,6 +379,17 @@ export interface ExpenseRecord extends BaseRecord {
 export interface FbsOrderRecord extends BaseRecord {
   readonly entity_type: 'fbs_order';
   readonly order_id: number;
+  /**
+   * `dateCreated` exactly as the route gave it, `null` when it gave nothing.
+   *
+   * Separate from `timestamp` because the two answer different questions. This
+   * one is what the screen prints, so it must never be invented. `timestamp` is
+   * half the `store_date` index every period query bounds on, so it must never
+   * fall outside the window the row was fetched for — and `0` would file an
+   * undated order in 1970, inside coverage that claims the month it came from,
+   * where no later read could reach it.
+   */
+  readonly date_created: number | null;
   readonly status: string;
   /** `FBS` or `DBS` — which fulfilment scheme the order runs under. */
   readonly scheme: string;

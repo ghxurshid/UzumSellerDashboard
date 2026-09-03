@@ -357,7 +357,14 @@ export function commitBackfill(
 ): Promise<SyncMetadataRecord> {
   return patchMetadata(account, storeId, entity, (current) => ({
     ...current,
-    backfill_from: progress.from ?? current.backfill_from,
+    /* The frontier only ever moves backwards. It marks how far the walk has
+       reached, so a later run reporting a newer instant — because its steps
+       were all recent ones, or because the backfill emitted nothing this time —
+       must not drag it forward and re-walk ground already covered. */
+    backfill_from:
+      progress.from === null
+        ? current.backfill_from
+        : Math.min(progress.from, current.backfill_from ?? progress.from),
     backfill_complete: progress.complete,
   }));
 }

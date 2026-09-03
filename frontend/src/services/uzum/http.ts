@@ -119,9 +119,20 @@ export async function paginate<T>(options: PaginateOptions<T>): Promise<PageResu
   const limit = options.maxPages ?? MAX_PAGES;
   const collected: T[] = [];
   let reported: number | undefined;
-  let page = 0;
 
-  for (; page < limit; page += 1) {
+  /**
+   * Whether the walk *stopped* rather than ran out of budget.
+   *
+   * The only two honest reasons to stop are a short page — the route has no
+   * more — and reaching the total it published. Anything else means the ceiling
+   * cut in, and on the routes that publish no total that is the only thing
+   * observable: comparing `collected.length` against a `total` that defaults to
+   * `collected.length` can never be true, so `/v1/invoice`, `/v1/return` and
+   * `/v1/fbs/invoice` used to report a clipped walk as a complete one.
+   */
+  let completed = false;
+
+  for (let page = 0; page < limit; page += 1) {
     const result = await options.fetchPage(page, options.pageSize);
 
     /* A route that publishes 0 while still handing back rows is saying "unknown",
@@ -137,12 +148,17 @@ export async function paginate<T>(options: PaginateOptions<T>): Promise<PageResu
        network round trip, not fifty per page. */
     options.onProgress?.({ loaded: collected.length, total: reported ?? 0 });
 
-    if (result.items.length < options.pageSize) break;
-    if (reported !== undefined && collected.length >= reported) break;
+    if (result.items.length < options.pageSize) {
+      completed = true;
+      break;
+    }
+    if (reported !== undefined && collected.length >= reported) {
+      completed = true;
+      break;
+    }
   }
 
-  const total = reported ?? collected.length;
-  return { items: collected, total, truncated: page >= limit && collected.length < total };
+  return { items: collected, total: reported ?? collected.length, truncated: !completed };
 }
 
 /* ── time window ────────────────────────────────────────────────────────── */

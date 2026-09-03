@@ -401,7 +401,12 @@ export async function mergeFbsOrders(
   window: DateWindow | null,
 ): Promise<{ orders: MergeOutcome; items: MergeOutcome }> {
   const account = accountFingerprint();
-  const mapped = orders.map((order) => fbsOrderToRecords(order, account, shopId));
+
+  /* An order with no date is filed at the start of the window it was fetched
+     for, so it stays inside the coverage that window is about to claim. An
+     unbounded read has no window to stay inside, and `0` is as good as any. */
+  const fallbackAt = window?.fromMs ?? 0;
+  const mapped = orders.map((order) => fbsOrderToRecords(order, account, shopId, fallbackAt));
 
   const orderOutcome = await mergeWindow(
     shopId,

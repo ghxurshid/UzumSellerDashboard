@@ -10,7 +10,7 @@ import { readApiSettings } from '@/services/storage/settings.service';
 import { useSessionStore } from '@/store/session.store';
 
 import { ApiError, type ApiFailureKind } from './errors';
-import { noteRateLimited, observeRateLimit, reserveSlot } from './rateLimit';
+import { headerValue, noteRateLimited, observeRateLimit, reserveSlot } from './rateLimit';
 
 /**
  * The single HTTP client for the Uzum seller OpenAPI.
@@ -55,11 +55,27 @@ function describeBody(data: unknown): string | null {
   return typeof single === 'string' && single !== '' ? single : null;
 }
 
+/**
+ * `Retry-After`, in milliseconds, in either shape the RFC allows.
+ *
+ * Delta-seconds is what the gateway normally sends, but the header is equally
+ * allowed to be an HTTP-date, and reading that as a number yields `NaN` — which
+ * used to fall through to the two-second default and start the retry storm the
+ * header existed to prevent. Read through `headerValue` so an `AxiosHeaders`
+ * instance and a plain record are both handled, as they are everywhere else.
+ */
 function readRetryAfter(headers: unknown): number | undefined {
-  if (typeof headers !== 'object' || headers === null) return undefined;
-  const raw = (headers as Record<string, unknown>)['retry-after'];
+  const raw = headerValue(headers, 'retry-after');
+  if (raw === null || raw.trim() === '') return undefined;
+
   const seconds = Number(raw);
-  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : undefined;
+  if (Number.isFinite(seconds)) return seconds > 0 ? seconds * 1_000 : undefined;
+
+  const at = Date.parse(raw);
+  if (!Number.isFinite(at)) return undefined;
+
+  const delta = at - Date.now();
+  return delta > 0 ? delta : undefined;
 }
 
 function classify(status: number): ApiFailureKind {
@@ -172,7 +188,11 @@ apiClient.interceptors.response.use(
     if (apiError.kind === 'forbidden') useSessionStore.getState().markForbidden();
     if (apiError.kind === 'network' || apiError.kind === 'timeout') {
       useSessionStore.getState().markUnreachable();
-    } else if (apiError.kind !== 'cancelled') {
+    } else if (apiError.kind !== 'cancelled' && apiError.kind !== 'unconfigured') {
+      /* `unconfigured` is raised by the request interceptor before anything is
+         sent, so it is not evidence of anything. Counting it as contact reset a
+         session already known to be expired back to `ok` and stamped a contact
+         time for a call that never left the machine. */
       useSessionStore.getState().markReachable();
     }
 

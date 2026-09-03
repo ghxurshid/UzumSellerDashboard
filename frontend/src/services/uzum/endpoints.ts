@@ -337,12 +337,21 @@ export function fetchFbsInvoices(context: RequestContext = {}): Promise<PageResu
     onProgress: context.onProgress,
     fetchPage: async (page, size) => {
       /* The route answers with a bare list on some deployments and a wrapped
-         one on others; both shapes are accepted rather than guessed at. */
-      const payload = await getPayload<unknown>(
+         one on others; both shapes are accepted rather than guessed at.
+         Read raw and unwrap here: `getPayload` rejects a body with no `payload`
+         key, so routing the bare-list case through it would throw before the
+         check below ever ran — the second shape would be accepted in the
+         comment only. */
+      const body = await getRaw<unknown>(
         '/v1/fbs/invoice',
         { statuses: FBS_INVOICE_STATUSES, page, size },
         context,
       );
+
+      const payload =
+        body !== null && typeof body === 'object' && !Array.isArray(body) && 'payload' in body
+          ? (body as { readonly payload: unknown }).payload
+          : body;
 
       if (Array.isArray(payload)) return { items: payload as readonly FbsInvoice[] };
 

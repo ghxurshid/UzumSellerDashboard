@@ -140,7 +140,7 @@ const TUPLES = {
     'Нажмите товар для полного разбора',
     "To'liq tahlil uchun mahsulotni bosing",
   ],
-  metaTpl: ['{n} of {m} productList', '{n} из {m} productList', '{n} / {m} productList'],
+  metaTpl: ['{n} of {m} products', '{n} из {m} товаров', '{n} / {m} mahsulot'],
   filters: ['Filters', 'Фильтры', 'Filtrlar'],
   exportCsv: ['Export CSV', 'Экспорт CSV', 'CSV eksport'],
   noMatch: [
@@ -167,7 +167,7 @@ const TUPLES = {
 
   /* — product detail — */
   skuList: ['SKU breakdown', 'Разбивка по SKU', 'SKU bo‘yicha'],
-  skuListSub: ['SkuForTable', 'SkuForTable', 'SkuForTable'],
+  skuListSub: ['Variants of this product', 'Варианты этого товара', 'Shu mahsulot variantlari'],
   priceFix: ['Apply price fix', 'Исправить цену', 'Narxni tuzatish'],
   updStock: ['Update stock', 'Обновить остаток', 'Qoldiqni yangilash'],
   printLabels: ['Print labels', 'Печать этикеток', 'Yorliq chop etish'],

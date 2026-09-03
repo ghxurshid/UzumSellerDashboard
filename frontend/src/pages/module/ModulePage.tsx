@@ -314,8 +314,18 @@ export default function ModulePage({ moduleKey }: { readonly moduleKey: ModuleKe
             search={table.search}
             searchable={definition.searchable}
             searchPlaceholder={definition.searchPlaceholder}
-            onTabChange={table.setActiveTab}
-            onSearchChange={table.setSearch}
+            /* Clearing on both is the point: the bulk bar counts rows the user
+               can no longer see, and its actions are real writes. Confirming
+               "3 selected" after switching tabs would confirm three orders
+               nobody is looking at. */
+            onTabChange={(tab) => {
+              table.setActiveTab(tab);
+              selection.clear();
+            }}
+            onSearchChange={(value) => {
+              table.setSearch(value);
+              selection.clear();
+            }}
             onExpandAll={table.expandAll}
             onCollapseAll={table.collapseAll}
           />

@@ -119,7 +119,13 @@ export function buildHeatmap(items: readonly FinanceOrderItem[]): readonly HeatC
  * Items that landed since midnight in the configured zone — what the live
  * ticker reports on. A seller's day starts in Tashkent, not in UTC.
  */
-export function itemsToday(items: readonly FinanceOrderItem[]): readonly FinanceOrderItem[] {
-  const today = formatDay(Date.now());
+export function itemsToday(
+  items: readonly FinanceOrderItem[],
+  now: number,
+): readonly FinanceOrderItem[] {
+  /* The instant is an argument, not a reading: everything in `derive/` is a
+     pure function of its input, which is what makes a number reproducible from
+     the same rows tomorrow. */
+  const today = formatDay(now);
   return items.filter((item) => formatDay(item.date) === today);
 }

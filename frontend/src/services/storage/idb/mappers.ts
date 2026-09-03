@@ -212,8 +212,15 @@ export function fbsOrderToRecords(
   order: FbsOrder,
   account: string,
   storeId: number,
+  fallbackAt: number,
 ): { order: FbsOrderRecord; items: readonly FbsOrderItemRecord[] } {
-  const at = order.dateCreated ?? 0;
+  /* An order with no date still has to land inside the window this read
+     covered: these two tables are windowed, coverage is about to claim that
+     window, and a row outside it is a row no later read can reach — the one
+     unrecoverable failure this archive is built to avoid. What the screen
+     prints comes from `date_created`, which stays null, so filing the row
+     somewhere findable invents nothing. */
+  const at = order.dateCreated ?? fallbackAt;
   const status = str(order.status);
   const lines = order.orderItems ?? [];
 
@@ -251,6 +258,7 @@ export function fbsOrderToRecords(
       account,
 
       order_id: order.id,
+      date_created: order.dateCreated ?? null,
       status,
       scheme: str(order.scheme),
       price: num(order.price),
@@ -286,7 +294,9 @@ export function recordToFbsOrder(
     status: record.status,
     scheme: record.scheme,
     shopId: record.store_id,
-    dateCreated: record.timestamp,
+    /* Rows written before `date_created` existed carry only `timestamp`, where
+       `0` was the old "never said". Both shapes read back as null. */
+    dateCreated: record.date_created ?? (record.timestamp === 0 ? null : record.timestamp),
     dateAcceptUntil: record.accept_until,
     dateDeliverUntil: record.deliver_until,
     price: record.price,

@@ -24,13 +24,13 @@ import { CommandPalette } from '@/features/palette/CommandPalette';
 import { useElementWidth } from '@/hooks/useElementWidth';
 import { useHotkeys } from '@/hooks/useHotkeys';
 import { useIsMobile } from '@/hooks/useMediaQuery';
-import { useProgressTask } from '@/hooks/useProgressTask';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { cn } from '@/lib/utils';
 import { useConnection } from '@/services/queries/useConnection';
 import { useSync } from '@/services/sync/useSync';
 import { subscribeToSyncResult } from '@/services/sync/syncEngine';
 import { selectUnreadCount, useNotificationsStore } from '@/store/notifications.store';
+import { useDialogStore } from '@/store/dialog.store';
 import { useSyncStore } from '@/store/sync.store';
 import { useToastStore } from '@/store/toast.store';
 import { useUiStore } from '@/store/ui.store';
@@ -86,7 +86,9 @@ export function AppShell(): ReactNode {
 
   const pushToast = useToastStore((state) => state.push);
   const notify = useNotificationsStore((state) => state.notify);
-  const progress = useProgressTask();
+  /* The overlay is global, so its Cancel goes to the store rather than to a
+     screen's own task handle — this shell never starts a task itself. */
+  const cancelProgress = useDialogStore((state) => state.cancelProgress);
   const sync = useSync();
   const connection = useConnection();
   const lastSyncAt = useSyncStore((state) => state.lastSyncAt);
@@ -208,7 +210,7 @@ export function AppShell(): ReactNode {
         <MobileNavDrawer open={navOpen} onOpenChange={setNavOpen} onSync={handleSync} />
         {chatOpen && <CopilotPanel />}
 
-        <ProgressOverlay onCancel={progress.cancel} />
+        <ProgressOverlay onCancel={cancelProgress} />
         <Toaster />
         <CommandPalette />
         <ConfirmDialog />
@@ -281,7 +283,7 @@ export function AppShell(): ReactNode {
           {chatOpen && <CopilotPanel />}
         </div>
 
-        <ProgressOverlay onCancel={progress.cancel} />
+        <ProgressOverlay onCancel={cancelProgress} />
         <Toaster />
       </div>
 

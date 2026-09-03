@@ -18,6 +18,14 @@ Bog'liq: [ENDPOINTS.md](../uzum/ENDPOINTS.md) — endpointlarning o'zi.
 > berardi va qaysi biri ko'rinishi ekran qaysi yo'ldan borganiga bog'liq edi.
 > Endi ekranlar faqat normalizatsiyalangan jadvallardan o'qiydi.
 
+> **`timestamp` — indeks, ko'rsatiladigan sana emas.** Marshrut sana bermagan
+> holatda windowed jadvalda `timestamp` **so'ralgan oynaning boshiga** qo'yiladi,
+> aks holda qator coverage da'vo qilgan oynadan tashqarida (1970-yilda) qolib,
+> hech qachon o'qilmaydi. Ko'rsatiladigan sana esa alohida ustunda saqlanadi
+> (`fbs_order.date_created`) va noma'lum bo'lsa `null` bo'ladi — ekran `—`
+> ko'rsatadi. Snapshot jadvallari cheksiz o'qiladi, shuning uchun ularda
+> noma'lum sana `0` bo'lib qolaveradi.
+
 Har bir entity yozuvida — **istisnosiz** — quyidagilar bor:
 
 | Ustun | Nima uchun |

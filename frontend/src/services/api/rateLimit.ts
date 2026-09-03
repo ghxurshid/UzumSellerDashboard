@@ -67,6 +67,18 @@ const DAILY_RECHECK_MS = 60_000;
 /** No single wait exceeds this — a wrong header should slow us, not hang us. */
 const MAX_WAIT_MS = 30_000;
 
+/**
+ * The longest hold a `Retry-After` can buy.
+ *
+ * Distinct from `MAX_WAIT_MS`, which bounds one *sleep*: `take()` re-checks the
+ * hold after each slice, so a long hold is served as a series of short waits.
+ * Clamping the hold itself to the slice length is what made a server asking for
+ * five minutes get thirty seconds, and every retry after that spend one more
+ * request from an already-exhausted budget to be told the same thing. This
+ * ceiling exists only so a nonsense header cannot park the app for a day.
+ */
+const MAX_HOLD_MS = 15 * 60_000;
+
 /* ── observed state ─────────────────────────────────────────────────────── */
 
 export interface RateLimitSnapshot {
@@ -120,7 +132,7 @@ const HEADER = {
  * `AxiosHeaders` instance on some adapters and a plain record on others, so
  * both shapes are read rather than assumed.
  */
-function headerValue(headers: unknown, name: string): string | null {
+export function headerValue(headers: unknown, name: string): string | null {
   if (typeof headers !== 'object' || headers === null) return null;
 
   const bag = headers as Record<string, unknown> & { get?: (key: string) => unknown };
@@ -181,7 +193,7 @@ export function observeRateLimit(headers: unknown): void {
  * it wrongly believed a moment ago.
  */
 export function noteRateLimited(retryAfterMs: number | undefined): void {
-  const cooldown = Math.min(MAX_WAIT_MS, retryAfterMs ?? DEFAULT_COOLDOWN_MS);
+  const cooldown = Math.min(MAX_HOLD_MS, retryAfterMs ?? DEFAULT_COOLDOWN_MS);
   holdUntil = Math.max(holdUntil, Date.now() + cooldown);
   tokens = 0;
   refilledAt = Date.now();

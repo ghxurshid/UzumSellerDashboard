@@ -136,32 +136,44 @@ function describe(error: unknown): string {
  * window is beyond what one request can express, and looping forever on it
  * would be worse than storing what fits and saying so.
  */
+/**
+ * A truncated read is halved and retried, and the half that landed is named.
+ *
+ * `covered` is the point of the return value. Coverage is committed for what
+ * this call reports, and an abort between the two halves means only the newer
+ * one was read — recording the caller's whole window then would mark a stretch
+ * covered that holds no rows, which is the one failure this archive cannot
+ * recover from. Naming the covered window instead keeps partial progress
+ * honest: the older half stays a gap and the next run plans it.
+ */
 async function readWindow<Row>(
   window: DateWindow,
   read: (window: DateWindow) => Promise<{ items: readonly Row[]; truncated: boolean }>,
   signal: AbortSignal | undefined,
   depth = 0,
-): Promise<{ rows: readonly Row[]; capped: boolean }> {
+): Promise<{ rows: readonly Row[]; capped: boolean; covered: DateWindow }> {
   const page = await read(window);
 
   if (!page.truncated || depth >= MAX_SPLIT_DEPTH) {
-    return { rows: page.items, capped: page.truncated };
+    return { rows: page.items, capped: page.truncated, covered: window };
   }
 
   const middle = Math.floor((window.fromMs + window.toMs) / 2);
   if (middle <= window.fromMs || middle >= window.toMs) {
-    return { rows: page.items, capped: true };
+    return { rows: page.items, capped: true, covered: window };
   }
 
   /* Newer half first, for the same reason chunks are ordered newest-first. */
   const newer = await readWindow({ fromMs: middle, toMs: window.toMs }, read, signal, depth + 1);
-  if (aborted(signal)) return { rows: newer.rows, capped: newer.capped };
+  /* Only the newer half was read, so only the newer half is covered. */
+  if (aborted(signal)) return { rows: newer.rows, capped: newer.capped, covered: newer.covered };
 
   const older = await readWindow({ fromMs: window.fromMs, toMs: middle }, read, signal, depth + 1);
 
   return {
     rows: [...newer.rows, ...older.rows],
     capped: newer.capped || older.capped,
+    covered: window,
   };
 }
 
@@ -195,6 +207,18 @@ export async function syncShopArchive(options: ArchiveSyncOptions): Promise<Shop
   let emptyBackfillChunks = 0;
   let reachedHorizon = false;
 
+  /**
+   * How far back this run actually got, across the backfill steps that landed.
+   *
+   * Deliberately not `plan.backfillFrom`: the plan says where the run *meant*
+   * to reach, and a run that was cancelled or rate-limited after its first
+   * chunk did not reach there. Writing the planned frontier would move the
+   * next run's starting point past chunks nobody ever fetched, and nothing
+   * plans them again — `recentSteps` only looks at the last ninety days and
+   * `backfillSteps` only at what is older than the frontier.
+   */
+  let backfillReached: number | null = null;
+
   /* Announced before the first request so the plan's size is on screen while it
      runs, not only once it has finished. */
   options.onStep?.(0, plan.steps.length, 'tail');
@@ -212,7 +236,10 @@ export async function syncShopArchive(options: ArchiveSyncOptions): Promise<Shop
         signal,
       );
 
-      ledger = sumMerge(ledger, await mergeLedger(shopId, orders.rows, step.window));
+      ledger = sumMerge(ledger, await mergeLedger(shopId, orders.rows, orders.covered));
+
+      let paymentRows = 0;
+      let fbsRows = 0;
 
       if (!aborted(signal)) {
         const payments = await readWindow(
@@ -224,7 +251,8 @@ export async function syncShopArchive(options: ArchiveSyncOptions): Promise<Shop
           signal,
         );
 
-        expenses = sumMerge(expenses, await mergeExpenses(shopId, payments.rows, step.window));
+        expenses = sumMerge(expenses, await mergeExpenses(shopId, payments.rows, payments.covered));
+        paymentRows = payments.rows.length;
       }
 
       if (!aborted(signal)) {
@@ -239,15 +267,27 @@ export async function syncShopArchive(options: ArchiveSyncOptions): Promise<Shop
           signal,
         );
 
-        const outcome = await mergeFbsOrders(shopId, fbs.rows, step.window);
+        const outcome = await mergeFbsOrders(shopId, fbs.rows, fbs.covered);
         fbsOrders = sumMerge(fbsOrders, outcome.orders);
+        fbsRows = fbs.rows.length;
       }
 
       /* Two consecutive empty months, walking backwards, is how the start of a
          shop's history is found — the API has no field that states it. */
       if (step.kind === 'backfill') {
-        emptyBackfillChunks = orders.rows.length === 0 ? emptyBackfillChunks + 1 : 0;
+        /* A month with no sales but real advertising charges is not the start
+           of the shop's history. Counting only the ledger declared such a month
+           empty and, two of them in, wrote the backfill off as complete — with
+           every earlier month, sales included, left unfetched for good. */
+        const empty = orders.rows.length === 0 && paymentRows === 0 && fbsRows === 0;
+
+        emptyBackfillChunks = empty ? emptyBackfillChunks + 1 : 0;
         if (step.window.fromMs <= backfillHorizon(now)) reachedHorizon = true;
+
+        backfillReached =
+          backfillReached === null
+            ? step.window.fromMs
+            : Math.min(backfillReached, step.window.fromMs);
       }
 
       windowsDone += 1;
@@ -278,8 +318,12 @@ export async function syncShopArchive(options: ArchiveSyncOptions): Promise<Shop
   const backfillComplete =
     plan.backfillComplete || backfillFinished(emptyBackfillChunks, reachedHorizon);
 
-  await recordBackfill(shopId, { from: plan.backfillFrom, complete: backfillComplete });
-  if (!aborted(signal)) await stampSynced(shopId, now);
+  await recordBackfill(shopId, { from: backfillReached, complete: backfillComplete });
+
+  /* Only a run that read something may claim the shop was synced. The stamp
+     suppresses the provisional tail for the whole freshness window, so a run
+     that failed every step would otherwise buy silence it did not earn. */
+  if (!aborted(signal) && windowsDone > 0) await stampSynced(shopId, now);
 
   return {
     shopId,

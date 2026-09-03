@@ -187,7 +187,10 @@ export function buildOverview(input: OverviewInput): OverviewSummary {
 
   /* The ticker reports on today only — it is the "live" strip, and yesterday's
      numbers in it would be a lie by omission. */
-  const today = summariseFinance(itemsToday(input.items), []);
+  /* `window.toMs` rather than the clock: the window was resolved once when the
+     range was chosen, so the ticker keeps describing the same day for as long
+     as that selection stands. */
+  const today = summariseFinance(itemsToday(input.items, input.window.toMs), []);
   const buyout =
     today.units === 0 ? 0 : ((today.units - today.returnedUnits) / today.units) * 100;
 
