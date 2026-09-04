@@ -62,9 +62,11 @@ function describeBody(data: unknown): string | null {
  * allowed to be an HTTP-date, and reading that as a number yields `NaN` — which
  * used to fall through to the two-second default and start the retry storm the
  * header existed to prevent. Read through `headerValue` so an `AxiosHeaders`
- * instance and a plain record are both handled, as they are everywhere else.
+ * instance, a `fetch` `Headers` and a plain record are all handled, as they are
+ * everywhere else — the AI stream reads the same header off a `fetch` response
+ * to decide how long to wait before asking a busy model again.
  */
-function readRetryAfter(headers: unknown): number | undefined {
+export function readRetryAfter(headers: unknown): number | undefined {
   const raw = headerValue(headers, 'retry-after');
   if (raw === null || raw.trim() === '') return undefined;
 

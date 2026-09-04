@@ -262,6 +262,15 @@ shakli savolga qarab o'zgaradi: qisqa savolga bir jumla, "nega" savoliga
 hisob-kitob zanjiri, "nima qilay" savoliga esa dalil va tugma. Chizmalarni ham,
 jadval yoki ko'rsatkich blokini ham model o'zi tanlaydi.
 
+**Provayder javob bermasa.** AI provayder band bo'lsa (`503`), so'rov chegarasi
+oshsa yoki ulanish uzilsa, panel so'rovni o'zi uch marta takrorlaydi — har
+safar oldingisidan uzunroq kutib, provayder aytgan vaqtni hisobga olib. Shunda
+ham bo'lmasa, javob ostida sabab va **Davom ettirish** tugmasi chiqadi: bosilsa,
+javob boshidan emas, to'xtagan bosqichidan davom etadi — o'qib bo'lingan
+so'rovlar qayta o'qilmaydi va o'sha bosqichgacha yozilgan matn joyida qoladi.
+Kalit noto'g'ri bo'lsa yoki so'rov rad etilsa tugma chiqmaydi: uni qayta bosish
+hech narsani o'zgartirmaydi.
+
 **Yozish amallari.** Model narx yoki qoldiqni o'zi o'zgartirmaydi. U tugma
 qo'yadi — tugmada qaysi route chaqirilishi va xavf darajasi yozilgan — bosishni
 sotuvchi hal qiladi, yuqori xavfli amal esa qo'shimcha tasdiq oynasidan o'tadi.

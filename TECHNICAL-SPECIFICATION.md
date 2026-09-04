@@ -454,8 +454,8 @@ npm run test:watch # vitest
 `vendor-react`, `vendor-query`, `vendor-motion`, `vendor-forms` — yuqori
 paneldagi o'zgarish grafik bundle keshini buzmasligi uchun.
 
-**Hozirgi holat:** typecheck ✅ · lint ✅ · test ✅ (110 ta) · build ✅ (~3s, asosiy
-bundle 463 KB / gzip 151 KB)
+**Hozirgi holat:** typecheck ✅ · lint ✅ · test ✅ (122 ta) · build ✅ (~3s, asosiy
+bundle 466 KB / gzip 152 KB)
 
 **IndexedDB testlari** (`fake-indexeddb` bilan qo'lda o'tkazilgan):
 - Sxema: 15 store yaratiladi, indekslar joyida, period indeksi do'konlarni
@@ -474,6 +474,8 @@ bundle 463 KB / gzip 151 KB)
 | `insights/alerts.test.ts` | Qoidalar — imzo, sovish vaqti, har bir tur |
 | `insights/template.test.ts` | `{{ref}}` yechish va narx hisobi (kesh chegirmasi bilan) |
 | `ai/jsonSchema.test.ts` | Zod → JSON Schema konvertatsiyasi |
+| `ai/stream.test.ts` | Qayta urinish qarori — qaysi xato takrorlanadi, `Retry-After`, chekinish oralig'i |
+| `insights/session.test.ts` | Javob sessiyasi — to'xtagan joydan davom ettirish uchun saqlanadigan holat |
 
 > ⚠️ IndexedDB va worker qatlamlari hali qoplanmagan — ular uchun
 > `fake-indexeddb` kerak bo'ladi.
@@ -502,7 +504,7 @@ bundle 463 KB / gzip 151 KB)
 Ustuvorlik tartibida:
 
 ### 1. Testlar boshlandi, lekin saqlash qatlami qoplanmagan
-Runner o'rnatildi va sof funksiyalar qoplandi (110 ta test) — jumladan
+Runner o'rnatildi va sof funksiyalar qoplandi (122 ta test) — jumladan
 `coverage.ts` interval algebrasi, ya'ni eng xavfli joy endi himoyalangan.
 Qolgani: `paginate()`, wire→row mapperlar, `missingRanges()` va v1→v2
 migratsiyasi. Bular IndexedDB talab qiladi, shuning uchun `fake-indexeddb`

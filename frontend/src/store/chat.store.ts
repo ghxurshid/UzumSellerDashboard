@@ -72,13 +72,24 @@ export interface ChatTurn {
    * block lands.
    */
   readonly draft?: string;
+  /**
+   * Why this turn stopped, when it stopped badly.
+   *
+   * On the turn rather than on the panel, because a failure that can be
+   * continued has to be shown where the thing to continue is. An empty failed
+   * turn is kept for the same reason: it used to be removed as a blank bubble
+   * that stated nothing, and a bubble carrying "the model was busy — continue"
+   * states quite a lot.
+   */
+  readonly failure?: string;
+  /** Whether the run behind `failure` can be picked up where it stopped. */
+  readonly resumable?: boolean;
   readonly meta?: AnswerMeta;
 }
 
 interface ChatState {
   readonly messages: readonly ChatTurn[];
   readonly pending: boolean;
-  readonly error: string | null;
   /**
    * A question asked from somewhere other than the composer.
    *
@@ -115,10 +126,27 @@ interface ChatState {
   append: (id: string, blocks: readonly Block[]) => void;
   /** Streaming: the line the model is still writing. Display only. */
   draft: (id: string, text: string) => void;
+  /**
+   * Cut a turn's blocks back to a length.
+   *
+   * The one writer is a resumed answer: a round that failed part-way may have
+   * already put a paragraph or a trace on screen, and re-running it would write
+   * them again underneath. The agent says how far back its last complete round
+   * reached; this is that instruction carried out.
+   */
+  truncate: (id: string, count: number) => void;
+  /** Put a failed turn back into flight, before its run is started again. */
+  resume: (id: string) => void;
   /** Give the pending turn the tables its refs resolve against. */
   ground: (id: string, facts: FactTable, series: SeriesTable) => void;
   settle: (id: string, meta: AnswerMeta) => void;
-  fail: (id: string, reason: string) => void;
+  /**
+   * Stop a turn badly.
+   *
+   * `resumable` is the difference between a dead end and a pause: a 503 that
+   * three retries could not get past is worth a button, a wrong API key is not.
+   */
+  fail: (id: string, reason: string, resumable?: boolean) => void;
   queue: (question: string) => void;
   claim: () => string | null;
   setDeep: (deep: boolean) => void;
@@ -138,7 +166,6 @@ const EMPTY_FACTS: FactTable = new Map();
 export const useChatStore = create<ChatState>()((set, get) => ({
   messages: [],
   pending: false,
-  error: null,
   queued: null,
   deep: true,
   grants: new Set<Capability>(),
@@ -148,7 +175,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     set((state) => ({
       pending: true,
-      error: null,
       messages: [
         ...state.messages,
         {
@@ -199,6 +225,25 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }));
   },
 
+  truncate: (id, count) =>
+    set((state) => ({
+      messages: state.messages.map((message) =>
+        message.id === id && message.blocks.length > count
+          ? { ...message, blocks: message.blocks.slice(0, count) }
+          : message,
+      ),
+    })),
+
+  resume: (id) =>
+    set((state) => ({
+      pending: true,
+      messages: state.messages.map((message) =>
+        message.id === id
+          ? { ...message, pending: true, draft: '', failure: undefined, resumable: false }
+          : message,
+      ),
+    })),
+
   ground: (id, facts, series) =>
     set((state) => ({
       messages: state.messages.map((message) =>
@@ -209,34 +254,30 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   settle: (id, meta) =>
     set((state) => ({
       pending: false,
-      error: null,
       messages: state.messages.map((message) =>
-        message.id === id ? { ...message, pending: false, draft: '', meta } : message,
+        message.id === id
+          ? { ...message, pending: false, draft: '', failure: undefined, resumable: false, meta }
+          : message,
       ),
     })),
 
-  fail: (id, reason) =>
-    set((state) => {
-      const turn = state.messages.find((message) => message.id === id);
-
-      /* A stream that failed part-way has already put blocks on screen, and
-         throwing them away would be a worse answer than the partial one. So a
-         turn with content is kept and merely stops being pending; only an empty
-         one is removed, because a blank bubble states nothing. */
-      const keep = turn !== undefined && turn.blocks.length > 0;
-
-      return {
-        pending: false,
-        error: reason,
-        messages: keep
-          ? state.messages.map((message) =>
-              /* A stream cut mid-sentence leaves a draft that will never be
-                 completed by a block. It goes with the pending flag. */
-              message.id === id ? { ...message, pending: false, draft: '' } : message,
-            )
-          : state.messages.filter((message) => message.id !== id),
-      };
-    }),
+  /**
+   * The run stopped and the seller has to decide what happens next.
+   *
+   * Blocks already on screen are kept — a partial answer is worth more than a
+   * blank one, and the lookups behind it have been paid for. A draft is not: a
+   * sentence cut mid-word will never be completed by the block that was going
+   * to carry it, so it goes with the pending flag.
+   */
+  fail: (id, reason, resumable = false) =>
+    set((state) => ({
+      pending: false,
+      messages: state.messages.map((message) =>
+        message.id === id
+          ? { ...message, pending: false, draft: '', failure: reason, resumable }
+          : message,
+      ),
+    })),
 
   queue: (question) => set({ queued: question }),
 
@@ -252,7 +293,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     set({
       messages: [],
       pending: false,
-      error: null,
       queued: null,
       /* A cleared thread is a new conversation, and a new conversation starts
          with the model knowing nothing again — including that a toolkit

@@ -1,4 +1,4 @@
-import { ApiError } from '@/services/api/client';
+import { ApiError, readRetryAfter } from '@/services/api/client';
 import type { AiSettings } from '@/types/settings';
 
 import type { JsonSchema } from './jsonSchema';
@@ -631,14 +631,122 @@ function dialectFor(settings: AiSettings, request: StreamRequest): Dialect {
   };
 }
 
+/* ── retrying ─────────────────────────────────────────────────────── */
+
+/** How many times a failed request is repeated before the seller is asked. */
+export const RETRIES = 3;
+
+const BACKOFF_MS = 1_000;
+const MAX_BACKOFF_MS = 8_000;
+
 /**
- * Stream one completion.
+ * How long to wait before asking again.
+ *
+ * The provider's own `Retry-After` wins when it sends one — it knows when its
+ * window reopens and guessing shorter only spends the budget the header exists
+ * to protect. Otherwise the wait doubles, because the failure this exists for
+ * is a model under load and the answer to load is to stop adding to it.
+ *
+ * The jitter is small and deliberate: two tabs that failed on the same overload
+ * would otherwise come back in lockstep, which is the same request spike again.
+ */
+export function retryDelay(attempt: number, retryAfterMs?: number): number {
+  if (retryAfterMs !== undefined && retryAfterMs > 0) return Math.min(retryAfterMs, MAX_BACKOFF_MS);
+
+  const base = Math.min(BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS);
+  return base + Math.floor(Math.random() * 250);
+}
+
+/**
+ * Whether to ask again, and the one condition that is not about the error.
+ *
+ * `isRetryable` already says which failures repeating could fix — a 429, a 503,
+ * a dropped connection — and which it could not: a 401 is the same 401 every
+ * time. What it cannot know is whether the caller has already *seen* part of
+ * the answer. Once a delta has been delivered, the words are on screen and a
+ * second attempt would write them again underneath the first, so a stream that
+ * died mid-sentence is handed back to the seller rather than silently doubled.
+ */
+export function shouldRetry(
+  error: unknown,
+  state: { readonly attempt: number; readonly produced: boolean },
+): boolean {
+  if (!(error instanceof ApiError) || !error.isRetryable) return false;
+  return !state.produced && state.attempt < RETRIES;
+}
+
+/** A wait that a cancel can cut short, rather than one the user waits out. */
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted === true) {
+      reject(new ApiError('Cancelled', { kind: 'cancelled' }));
+      return;
+    }
+
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(new ApiError('Cancelled', { kind: 'cancelled' }));
+    };
+
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
+ * Stream one completion, asking again when the provider says to come back.
+ *
+ * `503 UNAVAILABLE` from a model under load, a 429, a connection that dropped
+ * before it carried anything — all three are answered by waiting and repeating
+ * the identical request, and all three used to end the seller's question. The
+ * retries happen here rather than in the agent because this is the only layer
+ * that knows nothing has been shown yet: above it, a round is a round whether
+ * it took one request or four.
+ *
+ * What is deliberately not retried is a failure the seller must act on. A key
+ * that is wrong stays wrong, and repeating a 401 three times only makes the
+ * error arrive later.
+ */
+export async function streamComplete(options: StreamOptions): Promise<StreamResult> {
+  /**
+   * Whether any of this answer has reached the screen.
+   *
+   * Tracked across attempts rather than per attempt: once a word has been
+   * delivered there is no attempt that can undo it, so from that point the
+   * failure belongs to the caller.
+   */
+  let produced = false;
+
+  const attemptOptions: StreamOptions = {
+    ...options,
+    onDelta: (text) => {
+      produced = true;
+      options.onDelta(text);
+    },
+  };
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await attemptStream(attemptOptions);
+    } catch (error) {
+      if (!shouldRetry(error, { attempt, produced })) throw error;
+      await pause(retryDelay(attempt, (error as ApiError).retryAfterMs), options.request.signal);
+    }
+  }
+}
+
+/**
+ * One request, from the connection to the last frame.
  *
  * Throws `ApiError` with the same `kind` vocabulary the rest of the app maps to
  * on-screen states, so a caller does not have to know this went out over
  * `fetch` rather than axios.
  */
-export async function streamComplete(options: StreamOptions): Promise<StreamResult> {
+async function attemptStream(options: StreamOptions): Promise<StreamResult> {
   const { settings, request, onDelta } = options;
 
   if (settings.apiKey.trim() === '' || settings.baseUrl.trim() === '' || settings.model.trim() === '') {
@@ -708,6 +816,9 @@ export async function streamComplete(options: StreamOptions): Promise<StreamResu
     /* The body is the only place these providers explain themselves, and it is
        short — reading it costs nothing and turns a bare 401 into a sentence. */
     const detail = await response.text().catch(() => '');
+    /* A provider that says when to come back is believed — see `retryDelay`. */
+    const retryAfterMs = readRetryAfter(response.headers);
+
     throw new ApiError(detail.slice(0, 300) || `The model returned ${response.status}`, {
       kind:
         response.status === 401
@@ -716,8 +827,11 @@ export async function streamComplete(options: StreamOptions): Promise<StreamResu
             ? 'forbidden'
             : response.status === 429
               ? 'rateLimited'
-              : 'server',
+              : response.status >= 500
+                ? 'server'
+                : 'client',
       status: response.status,
+      ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
     });
   }
 

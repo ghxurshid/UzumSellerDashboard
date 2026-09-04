@@ -5,6 +5,7 @@ import {
   FileSpreadsheet,
   Pin,
   Printer,
+  RotateCcw,
   Send,
   Settings2,
   Sparkles,
@@ -58,12 +59,11 @@ export function CopilotPanel(): ReactNode {
   const navigate = useNavigate();
   const messages = useChatStore((state) => state.messages);
   const pending = useChatStore((state) => state.pending);
-  const error = useChatStore((state) => state.error);
   const reset = useChatStore((state) => state.reset);
   const deep = useChatStore((state) => state.deep);
   const setDeep = useChatStore((state) => state.setDeep);
 
-  const { ask, cancel, suggestions, unconfigured } = useCopilotAnswers();
+  const { ask, retry, cancel, suggestions, unconfigured } = useCopilotAnswers();
   const runner = useInsightActionRunner();
   const [draft, setDraft] = useState('');
   const logRef = useRef<HTMLDivElement | null>(null);
@@ -158,15 +158,6 @@ export function CopilotPanel(): ReactNode {
           </div>
         )}
 
-        {error !== null && (
-          <p
-            role="alert"
-            className="m-0 rounded-9 border border-neg-line bg-neg-soft px-11 py-9 text-xs-plus text-neg"
-          >
-            {error}
-          </p>
-        )}
-
         {messages.length === 0 ? (
           <div className="flex flex-col gap-11">
             <p className="m-0 text-xs-plus leading-[1.6] text-dim">{t('copilotEmpty')}</p>
@@ -207,6 +198,7 @@ export function CopilotPanel(): ReactNode {
                 onAction={runner.run}
                 onAsk={ask}
                 onCancel={cancel}
+                onRetry={retry}
               />
             ),
           )
@@ -292,6 +284,8 @@ interface AnswerTurnProps {
   readonly t: Translator;
   readonly language: Language;
   readonly onAction: ReturnType<typeof useInsightActionRunner>['run'];
+  /** Continue this answer from the round it stopped in. */
+  readonly onRetry: (id: string) => void;
   readonly onAsk: (question: string) => void;
   readonly onCancel: () => void;
 }
@@ -314,6 +308,7 @@ function AnswerTurn({
   onAction,
   onAsk,
   onCancel,
+  onRetry,
 }: AnswerTurnProps): ReactNode {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const addPin = usePinsStore((state) => state.add);
@@ -378,6 +373,28 @@ function AnswerTurn({
 
         {writing !== '' && turn.pending === true && (
           <DraftText text={writing} facts={turn.facts} language={language} />
+        )}
+
+        {/* What stopped, and the offer to carry on. The button is only drawn
+            when the run can actually be resumed — a wrong key is not something
+            pressing again would fix, so that failure is stated and left. */}
+        {turn.failure !== undefined && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center gap-8 rounded-8 border border-neg-line bg-neg-soft px-9 py-8 text-tiny leading-[1.5] text-neg"
+          >
+            <span className="min-w-0 flex-1">{turn.failure}</span>
+            {turn.resumable === true && (
+              <button
+                type="button"
+                onClick={() => onRetry(turn.id)}
+                className="tap flex h-26 shrink-0 cursor-pointer items-center gap-5 rounded-6 border border-neg-line bg-transparent px-9 text-tiny text-neg hover:bg-neg-soft"
+              >
+                <RotateCcw aria-hidden className="size-11" />
+                {t('cResume')}
+              </button>
+            )}
+          </div>
         )}
 
         {/* Still streaming, but there is already something to read. */}

@@ -797,6 +797,24 @@ const TUPLES = {
   tSkuCopied: ['Copied', 'Скопировано', 'Nusxalandi'],
   tHidden: ['Row hidden', 'Строка скрыта', 'Qator yashirildi'],
   tCancelled: ['Cancelled', 'Отменено', 'Bekor qilindi'],
+  aiBusy: [
+    'The model is overloaded and did not answer after three attempts.',
+    'Модель перегружена и не ответила после трёх попыток.',
+    "Model band — uch marta urinildi, javob bo'lmadi.",
+  ],
+  aiOffline: [
+    'The model could not be reached after three attempts.',
+    'До модели не удалось достучаться за три попытки.',
+    "Modelga uch urinishda ham ulanib bo'lmadi.",
+  ],
+  aiSlow: [
+    'The model stopped responding part-way.',
+    'Модель перестала отвечать на середине.',
+    "Model javob berishni yarmida to'xtatdi.",
+  ],
+  /* "Continue", not "Retry": the lookups already run are kept, and only the
+     round that failed is asked again. */
+  cResume: ['Continue', 'Продолжить', 'Davom ettirish'],
   tStockSent: [
     'Stock update sent · POST /v2/fbs/sku/stocks',
     'Остатки отправлены · POST /v2/fbs/sku/stocks',

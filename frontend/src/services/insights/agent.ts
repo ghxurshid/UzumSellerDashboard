@@ -142,9 +142,14 @@ export interface ExecutedCall {
 export interface AgentOptions {
   readonly settings: AiSettings;
   readonly system: string;
-  readonly question: string;
-  /** Earlier turns of this thread, flattened to prose. */
-  readonly history: readonly AgentMessage[];
+  /**
+   * Everything this question has collected, carried between attempts.
+   *
+   * Built by `createSession` and owned by the caller precisely so that a run
+   * which threw can be run again without losing what it had — see
+   * `AgentSession`.
+   */
+  readonly session: AgentSession;
   readonly context: ToolContext;
   readonly language: Language;
   /**
@@ -154,8 +159,6 @@ export interface AgentOptions {
    * a round re-asking for a document that is already in the transcript.
    */
   readonly granted: Set<Capability>;
-  /** Facts that resolve before any lookup runs — the screen's own totals. */
-  readonly seed: FactTable;
   readonly signal: AbortSignal;
   /** Blocks, as they parse. The transcript grows while the model is writing. */
   readonly onBlocks: (blocks: readonly Block[]) => void;
@@ -197,6 +200,84 @@ export interface AgentOutcome {
   readonly plan: readonly ExecutedCall[];
 }
 
+/**
+ * Everything one question has collected so far.
+ *
+ * The loop used to hold all of this in local variables, which was fine while
+ * the only two ways out were an answer and an error. A failure the seller can
+ * *resume* needs a third: the work already done has to outlive the throw, or
+ * "try again" means re-reading the archive, re-spending the tokens and asking
+ * the model to write the same three paragraphs a second time.
+ *
+ * So the run's state is an object the caller owns. `runAgent` mutates it, and a
+ * second call with the same session picks up at the round that failed — with
+ * the documents it was handed, the lookups it ran and the facts they produced
+ * all still there.
+ */
+export interface AgentSession {
+  /** The conversation so far. A round is appended only once it has completed. */
+  readonly messages: ChatMessage[];
+  readonly facts: Map<string, Fact>;
+  readonly series: Map<string, FactSeries>;
+  readonly routes: Set<string>;
+  readonly plan: ExecutedCall[];
+  /**
+   * Lookups already answered during this question.
+   *
+   * A model three rounds deep does not always remember that it read the window
+   * totals in round one, and asking again costs a worker job, possibly a fetch,
+   * and the tokens of a result it already holds. Keyed on the arguments, so a
+   * different window is a different lookup — and scoped to one question, so the
+   * next question reads current rows rather than a stale answer.
+   *
+   * It is also what makes a resumed round cheap: the lookups it already ran are
+   * served from here rather than from the archive.
+   */
+  readonly answered: Map<string, string>;
+  /** The round to run next. Advanced only by a round that finished. */
+  round: number;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  dropped: number;
+  /** Blocks handed to `onBlocks`, ever. */
+  emitted: number;
+  /**
+   * What `emitted` was when the current round began.
+   *
+   * A round that fails part-way may have already put a paragraph or a trace on
+   * screen, and resuming re-runs that round from its own beginning — so the
+   * caller trims the transcript back to here first, and nothing is written
+   * twice. See `truncate` in the chat store.
+   */
+  checkpoint: number;
+}
+
+export function createSession(input: {
+  readonly question: string;
+  readonly history: readonly AgentMessage[];
+  /** Facts that resolve before any lookup runs — the screen's own totals. */
+  readonly seed: FactTable;
+}): AgentSession {
+  return {
+    messages: [...input.history, { role: 'user', content: input.question }],
+    facts: new Map(input.seed),
+    series: new Map(),
+    routes: new Set(),
+    plan: [],
+    answered: new Map(),
+    round: 0,
+    calls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedInputTokens: 0,
+    dropped: 0,
+    emitted: 0,
+    checkpoint: 0,
+  };
+}
+
 /** How many times the model may ask for something before it must answer. */
 const MAX_ROUNDS = 5;
 /** How many lookups one question may spend, across all rounds. */
@@ -207,36 +288,33 @@ const ECHO_LIMIT = 6_000;
 /* ── the loop ───────────────────────────────────────────────────────────── */
 
 export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
-  const facts = new Map<string, Fact>(options.seed);
-  const series = new Map<string, FactSeries>();
-  const routes = new Set<string>();
-  const plan: ExecutedCall[] = [];
-
-  /**
-   * Lookups already answered during this question.
-   *
-   * A model three rounds deep does not always remember that it read the window
-   * totals in round one, and asking again costs a worker job, possibly a fetch,
-   * and the tokens of a result it already holds. Keyed on the arguments, so a
-   * different window is a different lookup — and scoped to one question, so the
-   * next question reads current rows rather than a stale answer.
-   */
-  const answered = new Map<string, string>();
+  const { session } = options;
+  const { facts, series, routes, plan, answered, messages } = session;
 
   const native = supportsNativeTools(options.settings.provider);
 
-  const messages: ChatMessage[] = [
-    ...options.history,
-    { role: 'user', content: options.question },
-  ];
+  /**
+   * Blocks reach the transcript through here and nowhere else.
+   *
+   * Counting them is what makes a resume possible: the round that failed is
+   * re-run from its beginning, so the caller has to know how much of the
+   * transcript belongs to it.
+   */
+  const emit = (blocks: readonly Block[]): void => {
+    if (blocks.length === 0) return;
+    session.emitted += blocks.length;
+    options.onBlocks(blocks);
+  };
 
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let cachedInputTokens = 0;
-  let dropped = 0;
-  let calls = 0;
-  let rounds = 0;
-  let emitted = 0;
+  /**
+   * A resumed run rejoins the transcript where its last complete round left it.
+   *
+   * The caller has already trimmed the turn back to `checkpoint` — that is the
+   * contract of resuming — so the counter comes back with it. Without this the
+   * next checkpoint would be measured against blocks that are no longer on
+   * screen, and a second failure would trim the wrong amount.
+   */
+  session.emitted = session.checkpoint;
 
   const maxRounds = Math.max(1, Math.min(MAX_ROUNDS, options.budget?.rounds ?? MAX_ROUNDS));
   const maxCalls = Math.max(1, Math.min(MAX_CALLS, options.budget?.calls ?? MAX_CALLS));
@@ -249,17 +327,13 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
    * that block here rather than putting an unverifiable number in front of a
    * seller. Dropping is counted and reported under the answer.
    */
-  const accept = (blocks: readonly Block[]): readonly Block[] => {
-    const kept = blocks.filter((block) => {
+  const accept = (blocks: readonly Block[]): readonly Block[] =>
+    blocks.filter((block) => {
       if (block.kind !== 'text' || typeof block.text !== 'string') return true;
       if (!statesRawNumber(block.text)) return true;
-      dropped += 1;
+      session.dropped += 1;
       return false;
     });
-
-    emitted += kept.length;
-    return kept;
-  };
 
   /**
    * One request per iteration, plus one at the end.
@@ -269,20 +343,22 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
    * the last thing it did was request a lookup, and the seller would watch a
    * question end on a tool result nobody wrote an answer for.
    */
-  for (let round = 0; ; round += 1) {
+  for (let round = session.round; ; round += 1) {
     const answering = round >= maxRounds;
-    rounds = round + 1;
+    session.round = round;
+    /* Where this round's output begins, so a failure can be rolled back to here
+       and the round re-run without repeating a word of it. */
+    session.checkpoint = session.emitted;
 
     const stream = createBlockStream();
     const asked: Request[] = [];
 
     const harvest = (value: { blocks: readonly Block[]; other: readonly unknown[] }): void => {
-      const kept = accept(value.blocks);
-      if (kept.length > 0) options.onBlocks(kept);
+      emit(accept(value.blocks));
 
       for (const entry of value.other) {
         const directive = readDirective(entry);
-        if (directive === null) dropped += 1;
+        if (directive === null) session.dropped += 1;
         else asked.push(directive);
       }
     };
@@ -307,9 +383,9 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
     harvest(flush(stream));
     options.onDraft?.('');
 
-    inputTokens += completion.inputTokens;
-    outputTokens += completion.outputTokens;
-    cachedInputTokens += completion.cachedInputTokens;
+    session.inputTokens += completion.inputTokens;
+    session.outputTokens += completion.outputTokens;
+    session.cachedInputTokens += completion.cachedInputTokens;
 
     /* Calls the provider parsed for us come first — a model that used both the
        tool API and the text protocol in one turn meant the tool API. */
@@ -324,12 +400,16 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
        still answered. Keeping it is better than an empty bubble — and it goes
        through the same number guard as anything else it writes. */
     const prose = takeProse(stream);
-    if (requests.length === 0 && emitted === 0 && prose !== '') {
-      const rescued = accept([{ kind: 'text', text: prose }]);
-      if (rescued.length > 0) options.onBlocks(rescued);
+    if (requests.length === 0 && session.emitted === 0 && prose !== '') {
+      emit(accept([{ kind: 'text', text: prose }]));
     }
 
-    if (answering || requests.length === 0) break;
+    if (answering || requests.length === 0) {
+      /* Answered. Nothing is owed, and a session reused by accident would not
+         re-ask the round that produced this. */
+      session.round = round + 1;
+      break;
+    }
 
     /* ── serve what was asked for ──────────────────────────────────────── */
 
@@ -357,11 +437,11 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
           options.granted.add(capability);
           text = capability === 'tools' ? describeToolkit(options.context) : WIDGET_GUIDE;
         }
-      } else if (calls >= maxCalls) {
+      } else if (session.calls >= maxCalls) {
         text = `[${request.tool}] not run — this question has spent its ${maxCalls} lookups. Answer with what you have.`;
       } else {
-        calls += 1;
-        text = await serve(request, options, { facts, series, routes, plan, answered });
+        session.calls += 1;
+        text = await serve(request, options, emit, { facts, series, routes, plan, answered });
       }
 
       if (request.call !== null) {
@@ -402,18 +482,22 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
     if (textReplies.length > 0) {
       messages.push({ role: 'user', content: textReplies.join('\n\n') });
     }
+
+    /* The round is complete and in the transcript. A resume picks up at the
+       next one rather than repeating this. */
+    session.round = round + 1;
   }
 
   options.onGround(new Map(facts) as FactTable, new Map(series) as SeriesTable);
 
   return {
     routes: [...routes],
-    inputTokens,
-    outputTokens,
-    cachedInputTokens,
-    dropped,
-    rounds,
-    calls,
+    inputTokens: session.inputTokens,
+    outputTokens: session.outputTokens,
+    cachedInputTokens: session.cachedInputTokens,
+    dropped: session.dropped,
+    rounds: session.round,
+    calls: session.calls,
     plan,
   };
 }
@@ -448,7 +532,13 @@ export function cacheKey(tool: string, args: unknown): string {
  * a lookup answers in — including that a button is *not* a completed write, so
  * it does not go on to report a price change that has not happened.
  */
-async function serve(request: Request, options: AgentOptions, ledger: Ledger): Promise<string> {
+async function serve(
+  request: Request,
+  options: AgentOptions,
+  /** The counting emitter — a trace or a button is transcript like any block. */
+  emit: (blocks: readonly Block[]) => void,
+  ledger: Ledger,
+): Promise<string> {
   const { tool, args } = request;
 
   if (tool in INSIGHT_ACTIONS) {
@@ -464,7 +554,7 @@ async function serve(request: Request, options: AgentOptions, ledger: Ledger): P
       return `[${tool}] done. It changed nothing at Uzum — mention it in passing, do not make it the answer.`;
     }
 
-    options.onBlocks([{ kind: 'action', actionId: resolved.actionId, params: resolved.params }]);
+    emit([{ kind: 'action', actionId: resolved.actionId, params: resolved.params }]);
     return [
       `[${tool}] button placed in your answer · ${definition.endpoint ?? 'local'} · risk ${definition.risk}.`,
       'The seller has NOT pressed it and may never. Say what it would do, never that it is done.',
@@ -475,7 +565,7 @@ async function serve(request: Request, options: AgentOptions, ledger: Ledger): P
   const key = cacheKey(tool, args);
   const cached = ledger.answered.get(key);
   if (cached !== undefined) {
-    options.onBlocks([{ kind: 'trace', tool, detail: 'cached' }]);
+    emit([{ kind: 'trace', tool, detail: 'cached' }]);
     return `${cached}\n\n(You already ran this lookup for this question — this is the same result.)`;
   }
 
@@ -484,7 +574,7 @@ async function serve(request: Request, options: AgentOptions, ledger: Ledger): P
   /* The transcript shows what was read, in the order it was read. A figure the
      seller can trace back to a named lookup over a named window is a different
      claim from the same figure appearing on its own. */
-  options.onBlocks([{ kind: 'trace', tool, detail: result.trace ?? '' }]);
+  emit([{ kind: 'trace', tool, detail: result.trace ?? '' }]);
 
   for (const fact of result.facts ?? []) ledger.facts.set(fact.ref, fact);
   for (const entry of result.series ?? []) ledger.series.set(entry.ref, entry);
