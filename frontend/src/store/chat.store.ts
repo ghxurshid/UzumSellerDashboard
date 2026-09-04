@@ -61,6 +61,17 @@ export interface ChatTurn {
   readonly series: SeriesTable;
   readonly time: string;
   readonly pending?: boolean;
+  /**
+   * The sentence still arriving, outside the block list.
+   *
+   * A block is only a block once its line ends, so prose that is halfway
+   * written has nowhere legitimate to live — and putting it in `blocks` would
+   * make every consumer of a turn handle a paragraph that is about to be
+   * replaced. It sits here instead: rendered, never exported, never pinned,
+   * never summarised back to the model, and empty again the moment the real
+   * block lands.
+   */
+  readonly draft?: string;
   readonly meta?: AnswerMeta;
 }
 
@@ -102,6 +113,8 @@ interface ChatState {
   begin: (question: string) => string;
   /** Streaming: attach blocks to the pending turn as they parse. */
   append: (id: string, blocks: readonly Block[]) => void;
+  /** Streaming: the line the model is still writing. Display only. */
+  draft: (id: string, text: string) => void;
   /** Give the pending turn the tables its refs resolve against. */
   ground: (id: string, facts: FactTable, series: SeriesTable) => void;
   settle: (id: string, meta: AnswerMeta) => void;
@@ -163,6 +176,20 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     return answerId;
   },
 
+  draft: (id, text) => {
+    /* Called on every chunk of every stream, and most chunks leave the readable
+       text unchanged — an unconditional `set` would re-render the whole
+       transcript for a paragraph that did not move. */
+    const current = get().messages.find((message) => message.id === id);
+    if (current === undefined || (current.draft ?? '') === text) return;
+
+    set((state) => ({
+      messages: state.messages.map((message) =>
+        message.id === id ? { ...message, draft: text } : message,
+      ),
+    }));
+  },
+
   append: (id, blocks) => {
     if (blocks.length === 0) return;
     set((state) => ({
@@ -184,7 +211,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       pending: false,
       error: null,
       messages: state.messages.map((message) =>
-        message.id === id ? { ...message, pending: false, meta } : message,
+        message.id === id ? { ...message, pending: false, draft: '', meta } : message,
       ),
     })),
 
@@ -203,7 +230,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         error: reason,
         messages: keep
           ? state.messages.map((message) =>
-              message.id === id ? { ...message, pending: false } : message,
+              /* A stream cut mid-sentence leaves a draft that will never be
+                 completed by a block. It goes with the pending flag. */
+              message.id === id ? { ...message, pending: false, draft: '' } : message,
             )
           : state.messages.filter((message) => message.id !== id),
       };

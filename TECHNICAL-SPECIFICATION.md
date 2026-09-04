@@ -454,8 +454,8 @@ npm run test:watch # vitest
 `vendor-react`, `vendor-query`, `vendor-motion`, `vendor-forms` — yuqori
 paneldagi o'zgarish grafik bundle keshini buzmasligi uchun.
 
-**Hozirgi holat:** typecheck ✅ · lint ✅ · test ✅ (98 ta) · build ✅ (~3s, asosiy
-bundle 461 KB / gzip 150 KB)
+**Hozirgi holat:** typecheck ✅ · lint ✅ · test ✅ (110 ta) · build ✅ (~3s, asosiy
+bundle 463 KB / gzip 151 KB)
 
 **IndexedDB testlari** (`fake-indexeddb` bilan qo'lda o'tkazilgan):
 - Sxema: 15 store yaratiladi, indekslar joyida, period indeksi do'konlarni
@@ -468,6 +468,7 @@ bundle 461 KB / gzip 150 KB)
 |---|---|
 | `archive/coverage.test.ts` | Interval algebrasi — `normalize`, `missing`, `unseal`, `clip`, `chunk`. Eng xavfli joy: noto'g'ri qoplama = hech qachon to'lmaydigan teshik |
 | `insights/plaintext.test.ts` | Tool natijasi formati — sana chegaralari, jadval qatorlari, `\|` belgisi bo'lgan nom |
+| `insights/ndjson.test.ts` | Oqim parseri va yozilayotgan qatorning oldindan ko'rinishi — bloklar o'zgarmasligi, raqam qo'riqchisi, yarim escape |
 | `insights/agent.test.ts` | Matnli protokol — direktivani o'qish, kesh kaliti |
 | `insights/actions.test.ts` | Registr darvozasi — noto'g'ri yozishni rad etish, raqam qo'riqchisi, pin filtri |
 | `insights/alerts.test.ts` | Qoidalar — imzo, sovish vaqti, har bir tur |
@@ -501,7 +502,7 @@ bundle 461 KB / gzip 150 KB)
 Ustuvorlik tartibida:
 
 ### 1. Testlar boshlandi, lekin saqlash qatlami qoplanmagan
-Runner o'rnatildi va sof funksiyalar qoplandi (98 ta test) — jumladan
+Runner o'rnatildi va sof funksiyalar qoplandi (110 ta test) — jumladan
 `coverage.ts` interval algebrasi, ya'ni eng xavfli joy endi himoyalangan.
 Qolgani: `paginate()`, wire→row mapperlar, `missingRanges()` va v1→v2
 migratsiyasi. Bular IndexedDB talab qiladi, shuning uchun `fake-indexeddb`

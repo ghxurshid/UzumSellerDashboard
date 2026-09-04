@@ -56,6 +56,7 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
 
   const begin = useChatStore((state) => state.begin);
   const append = useChatStore((state) => state.append);
+  const draft = useChatStore((state) => state.draft);
   const ground = useChatStore((state) => state.ground);
   const settle = useChatStore((state) => state.settle);
   const fail = useChatStore((state) => state.fail);
@@ -146,6 +147,10 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
            still needs one lookup to answer honestly. */
         budget: deep ? { rounds: 5, calls: 12 } : { rounds: 2, calls: 4 },
         onBlocks: (blocks) => append(id, blocks),
+        /* The half-written sentence, so the panel reads like something is being
+           written rather than staying blank until the line ends. It resolves to
+           nothing the moment `onBlocks` delivers the same text as a block. */
+        onDraft: (text) => draft(id, text),
         onGround: (facts, series) => ground(id, facts, series),
         onRun: runAction,
       })
@@ -178,6 +183,7 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
       ai,
       append,
       begin,
+      draft,
       fail,
       ground,
       language,

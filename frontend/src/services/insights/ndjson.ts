@@ -1,4 +1,4 @@
-import { blockLineSchema, type Block } from './blocks';
+import { blockLineSchema, statesRawNumber, type Block } from './blocks';
 
 /**
  * Reading a document that has not finished being written.
@@ -124,4 +124,119 @@ export function takeProse(state: BlockStreamState): string {
   const prose = state.prose;
   state.prose = '';
   return prose;
+}
+
+/* ── the line still being written ───────────────────────────────────────── */
+
+/**
+ * The first `"kind"` a line declares, and where its `"text"` value begins.
+ *
+ * Read in that order on purpose. A callout carries text blocks inside itself,
+ * so a line that opens as a callout would otherwise have its inner prose lifted
+ * out and drawn as a bare paragraph — and then drawn again, correctly, inside
+ * its box a moment later. Taking the first kind a line declares as the kind of
+ * the line is what keeps the preview to the one shape it is safe for.
+ */
+const FIRST_KIND = /"kind"\s*:\s*"([a-z]+)"/;
+const TEXT_FIELD = /"text"\s*:\s*"/;
+
+/**
+ * A JSON string body, decoded as far as it goes.
+ *
+ * `JSON.parse` is no help here: the string has no closing quote yet, which is
+ * the entire point. So the escapes are walked by hand — and an escape split
+ * across a chunk boundary (a trailing backslash, or half of a `\uXXXX`) ends
+ * the decode rather than producing a wrong character. It arrives whole on the
+ * next chunk, a few milliseconds later.
+ */
+function decodePartial(body: string): string {
+  let out = '';
+
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+
+    /* The value closed. What follows is another field, not more sentence. */
+    if (char === '"') break;
+
+    if (char !== '\\') {
+      out += char;
+      continue;
+    }
+
+    const escape = body[index + 1];
+    if (escape === undefined) break;
+    index += 1;
+
+    switch (escape) {
+      case 'n':
+        out += '\n';
+        break;
+      case 't':
+        out += ' ';
+        break;
+      case 'r':
+        break;
+      case 'u': {
+        const hex = body.slice(index + 1, index + 5);
+        if (!/^[0-9a-fA-F]{4}$/.test(hex)) return out;
+        out += String.fromCharCode(Number.parseInt(hex, 16));
+        index += 4;
+        break;
+      }
+      /* An escaped quote, backslash or solidus — the character itself. */
+      default:
+        out += escape;
+    }
+  }
+
+  return out;
+}
+
+/**
+ * The sentence in the buffer, before its line has ended.
+ *
+ * A block only becomes a block when its newline arrives, which is the property
+ * the rest of this file is built on — and it is also why an answer appeared a
+ * whole paragraph at a time however fast the model was actually writing.
+ * Nothing was being buffered by the network. The words were simply inside a
+ * JSON string that had not closed yet.
+ *
+ * So the unfinished line is read as well, for the one shape where a partial
+ * value means anything: a `text` block. A half-built table has no honest
+ * intermediate state — three of eight columns is not a smaller table, it is a
+ * wrong one — and a chart missing its last step is a chart that does not
+ * arrive. Prose is the exception, because half a sentence is exactly half a
+ * sentence, and reading it as it is written is what the seller is waiting for.
+ *
+ * The draft is committed to nothing. When the line completes it parses as an
+ * ordinary block, the buffer empties, and this returns `''` in the same call —
+ * so the preview disappears in the frame the real block appears, and no
+ * sentence is ever drawn twice.
+ */
+export function previewText(state: BlockStreamState): string {
+  const line = state.buffer.trimStart();
+  if (!line.startsWith('{')) return '';
+
+  const kind = FIRST_KIND.exec(line);
+  if (kind === null || kind[1] !== 'text') return '';
+
+  const opening = TEXT_FIELD.exec(line.slice(kind.index));
+  if (opening === null) return '';
+
+  const body = line.slice(kind.index + opening.index + opening[0].length);
+
+  /**
+   * A placeholder is only worth showing whole.
+   *
+   * `{{totals.netPro` is a fact reference the model is halfway through typing.
+   * Rendering it literally would flash braces into the middle of a sentence for
+   * a frame or two, and cutting the fragment costs nothing — the next chunk
+   * brings it back complete and it resolves to a figure.
+   */
+  const text = decodePartial(body).replace(/\{\{[^}]*$/, '');
+
+  /* The number guard holds for a draft exactly as it holds for a block: a
+     figure the model typed itself must not reach the screen, not even for the
+     moment before the line carrying it is dropped. */
+  return statesRawNumber(text) ? '' : text;
 }

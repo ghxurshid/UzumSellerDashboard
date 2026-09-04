@@ -251,6 +251,11 @@ bo'lsa, faqat yetishmagan qismini Uzum API'dan olib, saqlab, keyin javob
 beradi. Model bir savol ustida bir necha marta o'qishi mumkin: birinchi natija
 ikkinchi savolni tug'dirsa, yana so'raydi.
 
+Javob yozilishi bilan ekranda paydo bo'la boshlaydi: model gapni tugatishini
+kutmasdan, yozilayotgan jumla kursor bilan ko'rinib turadi va jumla tugagach
+o'z o'rnida to'liq blokka aylanadi. Jadval, chizma va ko'rsatkich bloklari esa
+faqat butun holda chiqadi — yarim jadval kichik jadval emas, noto'g'ri jadval.
+
 Suhbatda o'qilgan har bir so'rov ko'rinib turadi — qaysi davr, nechta qator —
 shuning uchun javobdagi raqamni qayerdan kelganini tekshirsa bo'ladi. Javob
 shakli savolga qarab o'zgaradi: qisqa savolga bir jumla, "nega" savoliga

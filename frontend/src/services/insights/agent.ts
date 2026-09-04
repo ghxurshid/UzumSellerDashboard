@@ -17,7 +17,7 @@ import {
 } from './actions';
 import { statesRawNumber, type Block } from './blocks';
 import { formatFact, type Fact, type FactSeries, type FactTable, type SeriesTable } from './facts';
-import { createBlockStream, flush, pushChunk, takeProse } from './ndjson';
+import { createBlockStream, flush, previewText, pushChunk, takeProse } from './ndjson';
 import { renderTemplate } from './template';
 import {
   describeToolkit,
@@ -159,6 +159,16 @@ export interface AgentOptions {
   readonly signal: AbortSignal;
   /** Blocks, as they parse. The transcript grows while the model is writing. */
   readonly onBlocks: (blocks: readonly Block[]) => void;
+  /**
+   * The sentence being written, before the line carrying it has ended.
+   *
+   * Display only, and deliberately outside everything else this loop does: the
+   * draft is never validated, never counted, never sent back to the model and
+   * never becomes a block. The same text arrives a second time through
+   * `onBlocks` when its line completes, which is the copy that counts — so a
+   * caller that ignores this option gets exactly the behaviour it had before.
+   */
+  readonly onDraft?: (text: string) => void;
   /** The tables the answer's refs resolve against, after every round. */
   readonly onGround: (facts: FactTable, series: SeriesTable) => void;
   /** An action the model may perform outright — navigation and the like. */
@@ -285,10 +295,17 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
         ...(native ? { tools: nativeToolSchemas(options.granted) } : {}),
         signal: options.signal,
       },
-      onDelta: (chunk) => harvest(pushChunk(stream, chunk)),
+      onDelta: (chunk) => {
+        harvest(pushChunk(stream, chunk));
+        /* Read after the harvest, so a line that completed on this chunk has
+           already left the buffer and the draft clears itself in the same call
+           the finished block is emitted. */
+        options.onDraft?.(previewText(stream));
+      },
     });
 
     harvest(flush(stream));
+    options.onDraft?.('');
 
     inputTokens += completion.inputTokens;
     outputTokens += completion.outputTokens;

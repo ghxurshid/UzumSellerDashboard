@@ -116,6 +116,35 @@ function Templated({
   );
 }
 
+/**
+ * The paragraph that has not finished arriving.
+ *
+ * Drawn here rather than in the panel so a sentence looks the same while it is
+ * being written as it will the moment it becomes a block — same size, same
+ * leading, same placeholder resolution. The only difference is the caret, and
+ * the fact that this text is never a `Block`: it is not exported, not pinned,
+ * not read back to the model, and it is replaced rather than appended to.
+ */
+export function DraftText({
+  text,
+  facts,
+  language,
+}: {
+  readonly text: string;
+  readonly facts: FactTable;
+  readonly language: Language;
+}): ReactNode {
+  return (
+    <p className="m-0 text-xs leading-[1.55] text-dim">
+      <Templated text={text} facts={facts} language={language} />
+      <span
+        aria-hidden
+        className="ml-3 inline-block h-11 w-2 translate-y-[1px] animate-caret rounded-[1px] bg-acc align-middle"
+      />
+    </p>
+  );
+}
+
 interface BlockViewProps {
   readonly block: Block;
   readonly facts: FactTable;

@@ -190,6 +190,8 @@
   --animate-pop: pop 0.14s ease both;
   --animate-toast: toast 0.2s ease both;
   --animate-sheet: sheet 0.28s var(--ease-out-soft) both;
+  /* Two states rather than a fade: a text cursor blinks, it does not breathe. */
+  --animate-caret: caret 1.1s steps(2, start) infinite;
 }
 
 @keyframes shimmer {
@@ -262,6 +264,19 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* The caret at the end of a sentence the model is still writing. */
+@keyframes caret {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
   }
 }
 

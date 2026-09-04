@@ -20,7 +20,7 @@ import { formatCost } from '@/services/ai/pricing';
 import { useTranslation, type Translator } from '@/lib/i18n/useTranslation';
 import { cn } from '@/lib/utils';
 import { ActionConfirmDialog } from '@/features/insights/ActionConfirmDialog';
-import { BlockRenderer } from '@/features/insights/BlockRenderer';
+import { BlockRenderer, DraftText } from '@/features/insights/BlockRenderer';
 import { useInsightActionRunner } from '@/features/insights/useInsightActionRunner';
 import { resolveAction } from '@/services/insights/actions';
 import type { Block } from '@/services/insights/blocks';
@@ -332,6 +332,9 @@ function AnswerTurn({
   });
 
   const meta = turn.meta;
+  /* The line the model has not finished writing. It is not a block and never
+     becomes one — the block arrives separately when the line ends. */
+  const writing = turn.draft ?? '';
 
   return (
     <div className="flex w-full flex-col gap-9 self-start">
@@ -348,7 +351,9 @@ function AnswerTurn({
         ref={bodyRef}
         className="flex flex-col gap-9 rounded-9 border border-line bg-panel px-11 py-10"
       >
-        {turn.blocks.length === 0 && turn.pending === true ? (
+        {/* "Thinking" is what there is to say only while there is nothing to
+            read. A first sentence half-written counts as something to read. */}
+        {turn.blocks.length === 0 && writing === '' && turn.pending === true ? (
           <span className="flex items-center gap-7 text-xs-plus text-faint">
             <span className="size-9 animate-[pulse-ring_1.4s_infinite] rounded-full bg-acc" />
             {t('copilotThinking')}
@@ -371,8 +376,12 @@ function AnswerTurn({
           />
         )}
 
+        {writing !== '' && turn.pending === true && (
+          <DraftText text={writing} facts={turn.facts} language={language} />
+        )}
+
         {/* Still streaming, but there is already something to read. */}
-        {turn.blocks.length > 0 && turn.pending === true && (
+        {(turn.blocks.length > 0 || writing !== '') && turn.pending === true && (
           <span className="flex items-center gap-6 text-tiny text-faint">
             <span className="size-7 animate-[pulse-ring_1.4s_infinite] rounded-full bg-acc" />
             <button
