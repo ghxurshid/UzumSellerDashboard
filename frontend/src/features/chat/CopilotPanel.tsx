@@ -3,6 +3,7 @@ import {
   Brain,
   Database,
   FileSpreadsheet,
+  Pin,
   Printer,
   Send,
   Settings2,
@@ -18,11 +19,14 @@ import { useIsTouch } from '@/hooks/useMediaQuery';
 import { formatCost } from '@/services/ai/pricing';
 import { useTranslation, type Translator } from '@/lib/i18n/useTranslation';
 import { cn } from '@/lib/utils';
+import { ActionConfirmDialog } from '@/features/insights/ActionConfirmDialog';
 import { BlockRenderer } from '@/features/insights/BlockRenderer';
 import { useInsightActionRunner } from '@/features/insights/useInsightActionRunner';
 import { resolveAction } from '@/services/insights/actions';
 import type { Block } from '@/services/insights/blocks';
 import { exportAnswerCsv, printAnswer } from '@/services/insights/export';
+import { pinnableBlocks } from '@/services/insights/pins';
+import { usePinsStore } from '@/store/pins.store';
 import { useChatStore, type ChatTurn } from '@/store/chat.store';
 import { useAiModelLabel } from '@/store/settings.store';
 import { useUiStore } from '@/store/ui.store';
@@ -181,7 +185,7 @@ export function CopilotPanel(): ReactNode {
             </div>
           </div>
         ) : (
-          messages.map((message) =>
+          messages.map((message, index) =>
             message.role === 'user' ? (
               <div
                 key={message.id}
@@ -194,6 +198,10 @@ export function CopilotPanel(): ReactNode {
               <AnswerTurn
                 key={message.id}
                 turn={message}
+                /* The question this answered — the pinned card's heading, and
+                   the only place the assistant turn can learn it, since an
+                   answer carries blocks rather than a prompt. */
+                question={messages[index - 1]?.text ?? ''}
                 t={t}
                 language={language}
                 onAction={runner.run}
@@ -204,6 +212,11 @@ export function CopilotPanel(): ReactNode {
           )
         )}
       </div>
+
+      {/* The gate in front of a write the model proposed. Held at the panel so
+          one dialog serves every answer, and so the held action survives the
+          transcript scrolling under it. */}
+      <ActionConfirmDialog runner={runner} />
 
       <form
         onSubmit={submit}
@@ -275,6 +288,7 @@ export function CopilotPanel(): ReactNode {
 
 interface AnswerTurnProps {
   readonly turn: ChatTurn;
+  readonly question: string;
   readonly t: Translator;
   readonly language: Language;
   readonly onAction: ReturnType<typeof useInsightActionRunner>['run'];
@@ -294,6 +308,7 @@ interface AnswerTurnProps {
  */
 function AnswerTurn({
   turn,
+  question,
   t,
   language,
   onAction,
@@ -301,6 +316,8 @@ function AnswerTurn({
   onCancel,
 }: AnswerTurnProps): ReactNode {
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  const addPin = usePinsStore((state) => state.add);
+  const pinned = usePinsStore((state) => state.pins.some((pin) => pin.id === turn.id));
 
   const isFollowUp = (block: Block): boolean =>
     block.kind === 'action' && block.actionId === 'copilot.ask';
@@ -395,6 +412,30 @@ function AnswerTurn({
               {t('exportPdf')}
             </button>
 
+            {/* Keeping an answer keeps the lookups behind it, not the figures —
+                the card on the dashboard re-reads them. Offered only when there
+                are lookups to replay: an answer composed from nothing would pin
+                as a card that can never refresh. */}
+            {meta !== undefined && meta.plan.length > 0 && (
+              <button
+                type="button"
+                disabled={pinned}
+                onClick={() =>
+                  addPin({
+                    id: turn.id,
+                    title: question === '' ? t('askCopilot') : question,
+                    blocks: pinnableBlocks(turn.blocks),
+                    plan: meta.plan,
+                    createdAt: Date.now(),
+                  })
+                }
+                className="tap flex h-26 cursor-pointer items-center gap-5 rounded-6 border border-line-2 bg-transparent px-8 text-tiny text-dim hover:border-acc-line hover:text-acc-dim disabled:cursor-default disabled:text-faint"
+              >
+                <Pin aria-hidden className="size-11" />
+                {t(pinned ? 'pinned' : 'pinAnswer')}
+              </button>
+            )}
+
             <div className="flex-1" />
 
             <span data-numeric className="text-tiny text-faint">
@@ -402,6 +443,7 @@ function AnswerTurn({
                 n: meta.routes.length,
                 s: (meta.elapsedMs / 1000).toFixed(1),
               })}
+              {meta.calls > 0 && ` · ${t('lookups', { n: meta.calls })}`}
               {meta.costUsd !== null && ` · ≈ ${formatCost(meta.costUsd)}`}
             </span>
           </div>

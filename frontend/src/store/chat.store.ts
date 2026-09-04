@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { formatClock } from '@/lib/format';
+import type { Capability, ExecutedCall } from '@/services/insights/agent';
 import type { Block } from '@/services/insights/blocks';
 import type { FactTable, SeriesTable } from '@/services/insights/facts';
 import { EMPTY_SERIES } from '@/services/insights/facts';
@@ -33,6 +34,21 @@ export interface AnswerMeta {
   /** Lines the model sent that did not validate. Shown, never hidden. */
   readonly dropped: number;
   readonly deep: boolean;
+  /** How many times the model went round before it answered. */
+  readonly rounds: number;
+  /** Lookups it ran on the way. */
+  readonly calls: number;
+  /** Prefix tokens the provider served from its cache. */
+  readonly cachedInputTokens: number;
+  /**
+   * The lookups behind this answer, in order.
+   *
+   * Kept because it is what makes an answer *reproducible*: pinning one to the
+   * dashboard replays these against whatever period is selected then, so the
+   * card shows today's figures rather than a photograph of the day it was
+   * written. See `insights/pins.ts`.
+   */
+  readonly plan: readonly ExecutedCall[];
 }
 
 export interface ChatTurn {
@@ -72,6 +88,16 @@ interface ChatState {
    * totals do not already contain.
    */
   readonly deep: boolean;
+  /**
+   * Capability documents this thread has already been handed.
+   *
+   * The toolkit and the widget guide are asked for, not pushed — but asking
+   * costs a round trip, and a seller's third question should not spend one
+   * re-requesting a document that is already three messages up the transcript.
+   * So a grant is remembered for the life of the thread and forgotten when the
+   * thread is cleared. Mutated in place by the agent; nothing renders it.
+   */
+  readonly grants: Set<Capability>;
 
   begin: (question: string) => string;
   /** Streaming: attach blocks to the pending turn as they parse. */
@@ -102,6 +128,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   error: null,
   queued: null,
   deep: true,
+  grants: new Set<Capability>(),
 
   begin: (question) => {
     const answerId = createId();
@@ -192,5 +219,15 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   setDeep: (deep) => set({ deep }),
 
-  reset: () => set({ messages: [], pending: false, error: null, queued: null }),
+  reset: () =>
+    set({
+      messages: [],
+      pending: false,
+      error: null,
+      queued: null,
+      /* A cleared thread is a new conversation, and a new conversation starts
+         with the model knowing nothing again — including that a toolkit
+         exists. */
+      grants: new Set<Capability>(),
+    }),
 }));

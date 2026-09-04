@@ -1,3 +1,4 @@
+import { Database } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Pill } from '@/components/ui/Pill';
@@ -282,6 +283,19 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
 
     case 'action':
       return <ActionButton block={block} t={t} onAction={onAction} />;
+
+    /* The application's own working, not the answer's. Quiet on purpose: it is
+       there to be checked, not read. */
+    case 'trace':
+      return (
+        <span className="flex items-center gap-6 font-mono text-tiny text-faint">
+          <Database aria-hidden className="size-11 shrink-0" />
+          <span className="min-w-0 truncate">
+            {block.tool}
+            {block.detail === '' ? '' : ` · ${block.detail}`}
+          </span>
+        </span>
+      );
   }
 }
 
@@ -330,7 +344,9 @@ function ActionButton({ block, t, onAction }: ActionButtonProps): ReactNode {
           {t(definition.labelKey)}
         </button>
 
-        {definition.risk !== 'none' && (
+        {/* A `low` action sends a request that only reads — a label, an act —
+            so it needs a press but not a warning beside it. */}
+        {(definition.risk === 'mid' || definition.risk === 'high') && (
           <Pill size="sm" tone={definition.risk === 'high' ? 'negative' : 'warning'}>
             {t(definition.risk === 'high' ? 'riskHigh' : 'riskMid')}
           </Pill>

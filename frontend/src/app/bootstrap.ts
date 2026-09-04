@@ -2,6 +2,8 @@ import { isAvailable, requestPersistence } from '@/services/storage/idb/db';
 import { hydrateSettings } from '@/services/storage/settings.service';
 import { useArchiveStore } from '@/store/archive.store';
 import { restoreNotifications } from '@/store/notifications.store';
+import { restoreAlerts } from '@/store/alerts.store';
+import { restorePins } from '@/store/pins.store';
 import { restoreSyncLog } from '@/store/sync.store';
 
 /**
@@ -82,6 +84,8 @@ async function run(): Promise<BootstrapReport> {
   await Promise.all([
     restoreSyncLog(),
     restoreNotifications(),
+    restorePins(),
+    restoreAlerts(),
     useArchiveStore.getState().refresh(),
   ]);
 

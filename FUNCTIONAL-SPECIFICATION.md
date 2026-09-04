@@ -241,6 +241,51 @@ tilda savol beradi — "shu oy qaysi mahsulot eng ko'p foyda keltirdi?", "qaytar
 foizi nega oshdi?" — va javob ekrandagi davr va do'konlar bo'yicha hisoblangan
 haqiqiy raqamlardan tuziladi.
 
+**Suhbat qanday kechadi.** Model suhbat boshida faqat bitta qisqa ko'rsatma
+oladi: u kimligi, qaysi mavzular chegarasida gaplashishi va hech qanday
+ma'lumotga hali ega emasligi. Kerak bo'lsa o'zi so'raydi — avval qaysi
+so'rovlarni yubora olishi va ularni qanday chaqirishi haqidagi ro'yxatni, keyin
+javobni ekranda qanday chizish mumkinligi haqidagi qo'llanmani. So'rov
+yuborilganda panel avval shu mashinadagi arxivga qaraydi; davr saqlanmagan
+bo'lsa, faqat yetishmagan qismini Uzum API'dan olib, saqlab, keyin javob
+beradi. Model bir savol ustida bir necha marta o'qishi mumkin: birinchi natija
+ikkinchi savolni tug'dirsa, yana so'raydi.
+
+Suhbatda o'qilgan har bir so'rov ko'rinib turadi — qaysi davr, nechta qator —
+shuning uchun javobdagi raqamni qayerdan kelganini tekshirsa bo'ladi. Javob
+shakli savolga qarab o'zgaradi: qisqa savolga bir jumla, "nega" savoliga
+hisob-kitob zanjiri, "nima qilay" savoliga esa dalil va tugma. Chizmalarni ham,
+jadval yoki ko'rsatkich blokini ham model o'zi tanlaydi.
+
+**Yozish amallari.** Model narx yoki qoldiqni o'zi o'zgartirmaydi. U tugma
+qo'yadi — tugmada qaysi route chaqirilishi va xavf darajasi yozilgan — bosishni
+sotuvchi hal qiladi, yuqori xavfli amal esa qo'shimcha tasdiq oynasidan o'tadi.
+Ekranni almashtirish yoki davrni o'zgartirish kabi hech narsani yozmaydigan
+amallarni model darhol bajaradi.
+
+Ko'p SKU'ni bir yo'la o'zgartiradigan taklif esa ro'yxat bilan ochiladi: qaysi
+SKU, hozirgi qiymat, yangi qiymat — har qatorni belgisidan olib tashlash mumkin,
+va yuboriladigan narsa aynan sotuvchi ko'rgan narsa bo'ladi.
+
+> Uzum sotuvchi API'sida mahsulot nomini o'zgartirish va sharhlarga javob berish
+> uchun route yo'q. Model bu haqda so'ralganda API bunday imkoniyat bermasligini
+> aytadi — o'ylab topmaydi.
+
+**Javobni panelga qadash.** Yoqqan javobni "Panelga qadash" tugmasi bilan
+Overview'ga qo'yish mumkin. Karta javobning suratini emas, uning ortidagi
+so'rovlarni saqlaydi — shuning uchun davr almashtirilganda raqamlar o'zi qayta
+o'qiladi. Avgustda qadalgan "qaysi mahsulot zarar keltiryapti" kartasi
+sentyabrda sentyabr haqida gapiradi. Karta ichida tugma qolmaydi: eski
+parametrlar bilan turgan narx yozish tugmasi tuzoq bo'lardi.
+
+**Doimiy qoidalar.** Sotuvchi chatda "SKU tugasa ayt" yoki "buyurtma tasdig'iga
+6 soat qolganda ayt" desa, bu qoida bo'lib saqlanadi va har sinxronizatsiyadan
+keyin tekshiriladi — qo'ng'iroq belgisi ostida xabar chiqadi. Qoida o'zi hech
+narsa yuklab olmaydi: mavjud ma'lumot ustidan hisoblanadi. Bir xil topilma
+bo'yicha o'zini takrorlamaydi, lekin topilma o'zgarsa (yana bitta SKU tugasa)
+darhol aytadi. Qo'yilgan qoidalarni Sozlamalar → AI bo'limida ko'rish va
+o'chirish mumkin.
+
 AI kaliti kiritilmagan bo'lsa, panel ushbu funksiyasiz to'liq ishlaydi.
 
 ### Buyruqlar palitrasi

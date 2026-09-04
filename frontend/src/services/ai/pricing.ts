@@ -70,14 +70,40 @@ function priceOf(model: string): ModelPrice | null {
  */
 export function estimateCost(
   settings: AiSettings,
-  usage: { readonly inputTokens: number; readonly outputTokens: number },
+  usage: {
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    /** Prefix tokens the provider served from its own cache. */
+    readonly cachedInputTokens?: number;
+  },
 ): number | null {
   if (settings.provider === 'ollama') return 0;
 
   const price = priceOf(settings.model);
   if (price === null) return null;
 
-  return (usage.inputTokens * price.input + usage.outputTokens * price.output) / 1_000_000;
+  /**
+   * A cached prefix is billed at about a tenth of the input rate.
+   *
+   * All three providers that cache converge on roughly that ratio, and the
+   * agent loop is where it matters: the toolkit document is re-sent on every
+   * round, and without this the cost line would charge full price for tokens
+   * the provider explicitly did not charge full price for — which is the one
+   * direction an estimate must not be wrong in, because it would make the
+   * caching work look like it had not.
+   *
+   * The write side is folded into ordinary input rather than marked up, so a
+   * thread's first round reads slightly low and every round after it reads
+   * true. Hence the "≈" the composer prints.
+   */
+  const cached = usage.cachedInputTokens ?? 0;
+
+  return (
+    (usage.inputTokens * price.input +
+      cached * price.input * 0.1 +
+      usage.outputTokens * price.output) /
+    1_000_000
+  );
 }
 
 /** `≈ $0.004` — three decimals, because a query is rarely more than cents. */

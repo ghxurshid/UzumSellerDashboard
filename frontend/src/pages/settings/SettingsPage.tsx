@@ -3,6 +3,7 @@ import { useCallback, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/Button';
 import { AiSettings } from '@/features/settings/AiSettings';
+import { AlertRules } from '@/features/settings/AlertRules';
 import { ApiSettings } from '@/features/settings/ApiSettings';
 import { DataSettings } from '@/features/settings/DataSettings';
 import { GeneralSettings } from '@/features/settings/GeneralSettings';
@@ -180,7 +181,15 @@ export default function SettingsPage(): ReactNode {
              no-op. */
           <DataSettings onBackfill={handleBackfill} backfilling={backfilling || syncing} />
         )}
-        {tab === 'ai' && <AiSettings />}
+        {tab === 'ai' && (
+          /* The provider, then the rules that provider's answers can set up —
+             both are about what the analysis layer does when nobody is
+             watching it. */
+          <div className="flex flex-col gap-12">
+            <AiSettings />
+            <AlertRules />
+          </div>
+        )}
         {tab === 'keys' && <KeyboardSettings />}
       </div>
     </div>

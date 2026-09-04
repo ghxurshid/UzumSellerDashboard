@@ -88,48 +88,60 @@ function put(table: Map<string, Fact>, fact: Fact): void {
   table.set(fact.ref, fact);
 }
 
-export function buildFacts(input: FactInput): FactTable {
-  const { totals, products } = input;
-  const table = new Map<string, Fact>();
-  const skus = flattenSkus(products);
+/**
+ * The money model of one window, as facts under a chosen prefix.
+ *
+ * Extracted from `buildFacts` because the chat can now hold more than one
+ * window at a time: a question comparing July with August needs both sets of
+ * figures citable at once, and a single `totals.netProfit` cannot be two
+ * numbers. The tool that fetched the window names it — `jul`, `aug` — and its
+ * figures arrive as `jul.netProfit`, `aug.netProfit`.
+ *
+ * The default id reproduces the original refs exactly, including the separate
+ * `expense.*` namespace the rules in `derive/insights.ts` cite by name.
+ */
+export function moneyFacts(totals: FinanceTotals, id = 'totals'): readonly Fact[] {
+  const facts: Fact[] = [];
+  const m = id;
+  const e = id === 'totals' ? 'expense' : `${id}.expense`;
 
   /* ── the window's money ───────────────────────────────────────────────── */
 
-  put(table, { ref: 'totals.sellPrice', label: 'Sum sellPrice (revenue)', value: totals.sellPrice, format: 'money' });
-  put(table, { ref: 'totals.purchasePrice', label: 'Sum purchasePrice (cost of goods)', value: totals.purchasePrice, format: 'money' });
-  put(table, { ref: 'totals.commission', label: 'Sum commission', value: totals.commission, format: 'money' });
-  put(table, { ref: 'totals.logistics', label: 'Sum logisticDeliveryFee', value: totals.logisticDeliveryFee, format: 'money' });
-  put(table, { ref: 'totals.sellerProfit', label: 'Sum sellerProfit', value: totals.sellerProfit, format: 'money' });
-  put(table, { ref: 'totals.withdrawnProfit', label: 'Sum withdrawnProfit', value: totals.withdrawnProfit, format: 'money' });
-  put(table, { ref: 'totals.netProfit', label: 'Net profit (sellerProfit - purchasePrice - expenses)', value: totals.netProfit, format: 'money' });
-  put(table, { ref: 'totals.netMargin', label: 'Net margin, percent of sellPrice', value: totals.netMargin, format: 'percent' });
-  put(table, { ref: 'totals.aov', label: 'Average order value', value: totals.averageOrderValue, format: 'money' });
+  facts.push({ ref: `${m}.sellPrice`, label: 'Sum sellPrice (revenue)', value: totals.sellPrice, format: 'money' });
+  facts.push({ ref: `${m}.purchasePrice`, label: 'Sum purchasePrice (cost of goods)', value: totals.purchasePrice, format: 'money' });
+  facts.push({ ref: `${m}.commission`, label: 'Sum commission', value: totals.commission, format: 'money' });
+  facts.push({ ref: `${m}.logistics`, label: 'Sum logisticDeliveryFee', value: totals.logisticDeliveryFee, format: 'money' });
+  facts.push({ ref: `${m}.sellerProfit`, label: 'Sum sellerProfit', value: totals.sellerProfit, format: 'money' });
+  facts.push({ ref: `${m}.withdrawnProfit`, label: 'Sum withdrawnProfit', value: totals.withdrawnProfit, format: 'money' });
+  facts.push({ ref: `${m}.netProfit`, label: 'Net profit (sellerProfit - purchasePrice - expenses)', value: totals.netProfit, format: 'money' });
+  facts.push({ ref: `${m}.netMargin`, label: 'Net margin, percent of sellPrice', value: totals.netMargin, format: 'percent' });
+  facts.push({ ref: `${m}.aov`, label: 'Average order value', value: totals.averageOrderValue, format: 'money' });
 
   /* ── the window's counts ──────────────────────────────────────────────── */
 
-  put(table, { ref: 'totals.orders', label: 'Distinct orders', value: totals.orders, format: 'count' });
-  put(table, { ref: 'totals.units', label: 'Units sold', value: totals.units, format: 'count' });
-  put(table, { ref: 'totals.liveItems', label: 'Order items not cancelled', value: totals.liveItems, format: 'count' });
-  put(table, { ref: 'totals.cancelledItems', label: 'Order items cancelled', value: totals.cancelledItems, format: 'count' });
-  put(table, { ref: 'totals.cancellationRate', label: 'Cancellation rate, percent of order items', value: totals.cancellationRate, format: 'percent' });
-  put(table, { ref: 'totals.returnedUnits', label: 'Units returned', value: totals.returnedUnits, format: 'count' });
+  facts.push({ ref: `${m}.orders`, label: 'Distinct orders', value: totals.orders, format: 'count' });
+  facts.push({ ref: `${m}.units`, label: 'Units sold', value: totals.units, format: 'count' });
+  facts.push({ ref: `${m}.liveItems`, label: 'Order items not cancelled', value: totals.liveItems, format: 'count' });
+  facts.push({ ref: `${m}.cancelledItems`, label: 'Order items cancelled', value: totals.cancelledItems, format: 'count' });
+  facts.push({ ref: `${m}.cancellationRate`, label: 'Cancellation rate, percent of order items', value: totals.cancellationRate, format: 'percent' });
+  facts.push({ ref: `${m}.returnedUnits`, label: 'Units returned', value: totals.returnedUnits, format: 'count' });
 
   /* ── the expense ledger ───────────────────────────────────────────────── */
 
-  put(table, { ref: 'expense.logistics', label: 'Expense ledger, logistics', value: totals.expenseLogistics, format: 'money' });
-  put(table, { ref: 'expense.other', label: 'Expense ledger, everything except logistics', value: totals.expenseOther, format: 'money' });
+  facts.push({ ref: `${e}.logistics`, label: 'Expense ledger, logistics', value: totals.expenseLogistics, format: 'money' });
+  facts.push({ ref: `${e}.other`, label: 'Expense ledger, everything except logistics', value: totals.expenseOther, format: 'money' });
 
   for (const [source, value] of totals.expenseBySource) {
     if (source === LOGISTICS_SOURCE) continue;
-    put(table, {
-      ref: `expense.${slug(source)}`,
+    facts.push({
+      ref: `${e}.${slug(source)}`,
       label: `Expense ledger, ${source}`,
       value,
       format: 'money',
     });
     if (totals.sellPrice > 0) {
-      put(table, {
-        ref: `expense.${slug(source)}.share`,
+      facts.push({
+        ref: `${e}.${slug(source)}.share`,
         label: `Expense ${source} as a share of revenue`,
         value: (value / totals.sellPrice) * 100,
         format: 'percent',
@@ -161,8 +173,8 @@ export function buildFacts(input: FactInput): FactTable {
    * order lands on `totals.netProfit` exactly.
    */
   const sellerBase = totals.sellPrice - totals.commission - totals.logisticDeliveryFee;
-  put(table, {
-    ref: 'totals.sellerAdjustment',
+  facts.push({
+    ref: `${m}.sellerAdjustment`,
     label:
       '(sellPrice - commission - logisticDeliveryFee) - sellerProfit: the residual that closes a ' +
       'revenue-to-net-profit chain, signed as a deduction like the other steps. Negative means ' +
@@ -174,13 +186,23 @@ export function buildFacts(input: FactInput): FactTable {
   /* The marketplace's own cut, which is the one figure a seller cannot change
      by buying better — it is worth naming rather than leaving to be derived. */
   const take = totals.commission + totals.logisticDeliveryFee;
-  put(table, { ref: 'totals.take', label: 'Marketplace take (commission + delivery)', value: take, format: 'money' });
-  put(table, {
-    ref: 'totals.takeRate',
+  facts.push({ ref: `${m}.take`, label: 'Marketplace take (commission + delivery)', value: take, format: 'money' });
+  facts.push({
+    ref: `${m}.takeRate`,
     label: 'Marketplace take as a share of revenue',
     value: totals.sellPrice === 0 ? 0 : (take / totals.sellPrice) * 100,
     format: 'percent',
   });
+
+  return facts;
+}
+
+export function buildFacts(input: FactInput): FactTable {
+  const { totals, products } = input;
+  const table = new Map<string, Fact>();
+  const skus = flattenSkus(products);
+
+  for (const fact of moneyFacts(totals)) put(table, fact);
 
   /* ── the catalogue ────────────────────────────────────────────────────── */
 

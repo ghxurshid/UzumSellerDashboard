@@ -5,6 +5,7 @@ import { ScreenFrame } from '@/components/common/ScreenFrame';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { SkeletonTiles } from '@/components/ui/Skeleton';
+import { PinnedCards } from '@/features/insights/PinnedCards';
 import { DemandHeatmap } from '@/features/overview/DemandHeatmap';
 import { KpiStrip } from '@/features/overview/KpiStrip';
 import { LiveTicker } from '@/features/overview/LiveTicker';
@@ -88,6 +89,12 @@ export default function OverviewPage(): ReactNode {
             />
             <DemandHeatmap cells={summary.heatmap} sampleCount={summary.totals.liveItems} />
           </div>
+
+          {/* Answers the seller kept. They sit below the fixed dashboard rather
+              than inside it, because what they show is whatever this particular
+              seller decided was worth watching — and they re-read their own
+              figures against the period selected above. */}
+          <PinnedCards />
 
           <Dialog
             open={methodOpen}

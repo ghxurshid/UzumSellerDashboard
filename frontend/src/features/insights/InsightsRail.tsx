@@ -1,8 +1,6 @@
 import { ChevronRight, ListTree, Sparkles, X } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/Button';
-import { Dialog } from '@/components/ui/Dialog';
 import { IconButton } from '@/components/ui/IconButton';
 import { Pill } from '@/components/ui/Pill';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -23,6 +21,7 @@ import { useToastStore } from '@/store/toast.store';
 import { useUiStore } from '@/store/ui.store';
 import type { InsightSeverity, Language, Tone } from '@/types/domain';
 
+import { ActionConfirmDialog } from './ActionConfirmDialog';
 import { BlockRenderer } from './BlockRenderer';
 import { useInsightActionRunner } from './useInsightActionRunner';
 
@@ -220,7 +219,7 @@ export function InsightsRail(): ReactNode {
         })}
       </div>
 
-      <ConfirmDialog runner={runner} t={t} />
+      <ActionConfirmDialog runner={runner} />
     </aside>
   );
 }
@@ -347,46 +346,4 @@ function CardView({
   );
 }
 
-/**
- * The confirmation in front of a write.
- *
- * Held at the rail rather than inside the button, so one dialog serves every
- * card and the held action survives the card being filtered out from under it.
- * The route is printed, because "Apply" without the request it sends is a
- * button asking for trust it has not earned.
- */
-function ConfirmDialog({
-  runner,
-  t,
-}: {
-  readonly runner: ReturnType<typeof useInsightActionRunner>;
-  readonly t: Translator;
-}): ReactNode {
-  const held = runner.pending;
-
-  return (
-    <Dialog
-      open={held !== null}
-      onOpenChange={(open) => {
-        if (!open) runner.cancel();
-      }}
-      title={t('insConfirmT')}
-      description={t('insConfirmB')}
-      footer={
-        <>
-          <Button variant="secondary" onClick={runner.cancel}>
-            {t('cancel')}
-          </Button>
-          <Button variant="primary" onClick={runner.confirm}>
-            {t('apply')}
-          </Button>
-        </>
-      }
-    >
-      {held !== null && held.definition.endpoint !== null && (
-        <span className="font-mono text-xs text-faint">{held.definition.endpoint}</span>
-      )}
-    </Dialog>
-  );
-}
 

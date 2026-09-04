@@ -19,6 +19,7 @@ import { SkeletonTiles } from '@/components/ui/Skeleton';
 import { Toaster } from '@/components/ui/Toaster';
 import { WINDOW } from '@/constants/app';
 import { CopilotPanel } from '@/features/chat/CopilotPanel';
+import { AlertWatch } from '@/features/insights/AlertWatch';
 import { InsightsRail } from '@/features/insights/InsightsRail';
 import { CommandPalette } from '@/features/palette/CommandPalette';
 import { useElementWidth } from '@/hooks/useElementWidth';
@@ -213,6 +214,7 @@ export function AppShell(): ReactNode {
         <ProgressOverlay onCancel={cancelProgress} />
         <Toaster />
         <CommandPalette />
+        <AlertWatch />
         <ConfirmDialog />
       </div>
     );
@@ -288,6 +290,10 @@ export function AppShell(): ReactNode {
       </div>
 
       <CommandPalette />
+      {/* Standing rules are checked at the shell rather than on a screen: a rule
+          exists for the times the seller is looking elsewhere. It renders
+          nothing, and mounts nothing at all until a rule has been set. */}
+      <AlertWatch />
       <ConfirmDialog />
     </div>
   );

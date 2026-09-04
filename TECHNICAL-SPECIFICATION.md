@@ -446,22 +446,36 @@ npm run dev        # Vite dev server, port 5173, CORS proxy bilan
 npm run build      # tsc -b && vite build
 npm run typecheck  # tsc -b --noEmit
 npm run lint       # eslint
+npm test           # vitest run
+npm run test:watch # vitest
 ```
 
 **Chunk bo'linishi** ([vite.config.ts](./frontend/vite.config.ts#L9)):
 `vendor-react`, `vendor-query`, `vendor-motion`, `vendor-forms` — yuqori
 paneldagi o'zgarish grafik bundle keshini buzmasligi uchun.
 
-**Hozirgi holat:** typecheck ✅ · lint ✅ · build ✅ (~3s, asosiy bundle 398 KB /
-gzip 130 KB)
+**Hozirgi holat:** typecheck ✅ · lint ✅ · test ✅ (98 ta) · build ✅ (~3s, asosiy
+bundle 461 KB / gzip 150 KB)
 
 **IndexedDB testlari** (`fake-indexeddb` bilan qo'lda o'tkazilgan):
 - Sxema: 15 store yaratiladi, indekslar joyida, period indeksi do'konlarni
   aralashtirmaydi
 - Upgrade: v1 baza ochilganda `records` o'chadi, 15 ta yangi store quriladi
 
-> ⚠️ **Avtomatlashtirilgan test to'plami yo'q.** Loyihada test runner o'rnatilmagan.
-> Bu eng katta texnik qarz — pastdagi 12-bo'limga qarang.
+**Avtomatlashtirilgan testlar** (Vitest, `vitest.config.ts`, node muhiti):
+
+| Fayl | Nima qoplangan |
+|---|---|
+| `archive/coverage.test.ts` | Interval algebrasi — `normalize`, `missing`, `unseal`, `clip`, `chunk`. Eng xavfli joy: noto'g'ri qoplama = hech qachon to'lmaydigan teshik |
+| `insights/plaintext.test.ts` | Tool natijasi formati — sana chegaralari, jadval qatorlari, `\|` belgisi bo'lgan nom |
+| `insights/agent.test.ts` | Matnli protokol — direktivani o'qish, kesh kaliti |
+| `insights/actions.test.ts` | Registr darvozasi — noto'g'ri yozishni rad etish, raqam qo'riqchisi, pin filtri |
+| `insights/alerts.test.ts` | Qoidalar — imzo, sovish vaqti, har bir tur |
+| `insights/template.test.ts` | `{{ref}}` yechish va narx hisobi (kesh chegirmasi bilan) |
+| `ai/jsonSchema.test.ts` | Zod → JSON Schema konvertatsiyasi |
+
+> ⚠️ IndexedDB va worker qatlamlari hali qoplanmagan — ular uchun
+> `fake-indexeddb` kerak bo'ladi.
 
 ---
 
@@ -486,10 +500,12 @@ gzip 130 KB)
 
 Ustuvorlik tartibida:
 
-### 1. Test to'plami yo'q — **eng yuqori ustuvorlik**
-Runner o'rnatilmagan. Eng avval qamrab olinishi kerak: `coverage.ts` interval
-algebrasi, `paginate()`, mapperlar, `missingRanges()`. Bular sof funksiyalar,
-ya'ni test yozish arzon, xato narxi esa qimmat — arxivda teshik.
+### 1. Testlar boshlandi, lekin saqlash qatlami qoplanmagan
+Runner o'rnatildi va sof funksiyalar qoplandi (98 ta test) — jumladan
+`coverage.ts` interval algebrasi, ya'ni eng xavfli joy endi himoyalangan.
+Qolgani: `paginate()`, wire→row mapperlar, `missingRanges()` va v1→v2
+migratsiyasi. Bular IndexedDB talab qiladi, shuning uchun `fake-indexeddb`
+qo'shilishi kerak.
 
 ### 2. Kod va OpenAPI hujjat orasidagi 8 ta ziddiyat
 Namunalarda faqat GET so'rovlar yozilgan, shuning uchun POST va print

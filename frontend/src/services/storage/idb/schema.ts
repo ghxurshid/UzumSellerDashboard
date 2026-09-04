@@ -686,6 +686,10 @@ export const KV_KEYS = {
   settings: 'settings',
   notifications: 'notifications',
   syncLog: 'sync_log',
+  /** Answers the seller kept — see `insights/pins.ts`. */
+  pins: 'pins',
+  /** Standing conditions the seller asked to be told about — `insights/alerts.ts`. */
+  alerts: 'alerts',
 } as const;
 
 export type KvKey = (typeof KV_KEYS)[keyof typeof KV_KEYS];

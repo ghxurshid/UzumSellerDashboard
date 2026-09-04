@@ -95,10 +95,13 @@ function collect(
         collect(block.blocks, facts, t, language, phrase(t, block.title), rows);
         break;
 
-      /* Prose, pills and buttons state nothing a cell can hold. */
+      /* Prose, pills, buttons and the read trace state nothing a cell can
+         hold — and the trace in particular belongs to the conversation rather
+         than to the answer being exported. */
       case 'text':
       case 'badges':
       case 'action':
+      case 'trace':
         break;
     }
   }

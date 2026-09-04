@@ -166,6 +166,26 @@ export interface ActionBlock {
   readonly note?: Phrase;
 }
 
+/**
+ * A line of the application's own working, shown mid-answer.
+ *
+ * The only block the model cannot author — it is not in the wire schema, and
+ * nothing that arrives over the stream can become one. The chat emits it when a
+ * lookup runs, so the transcript shows *what was read* between the question and
+ * the answer rather than presenting figures that appeared from nowhere.
+ *
+ * That is a trust affordance rather than a debugging one. An answer about
+ * August that was preceded by a visible `window.totals · 2026-08-01..2026-08-31
+ * · 1204 rows` is checkable in a way that the same answer alone is not.
+ */
+export interface TraceBlock {
+  readonly kind: 'trace';
+  /** The lookup's id, verbatim. */
+  readonly tool: string;
+  /** What it read — window, row count, match. */
+  readonly detail: string;
+}
+
 export type Block =
   | TextBlock
   | MetricBlock
@@ -175,7 +195,8 @@ export type Block =
   | BadgesBlock
   | ChartBlock
   | CalloutBlock
-  | ActionBlock;
+  | ActionBlock
+  | TraceBlock;
 
 /* ── the card ───────────────────────────────────────────────────────────── */
 

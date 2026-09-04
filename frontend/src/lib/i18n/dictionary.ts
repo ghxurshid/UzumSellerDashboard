@@ -963,6 +963,20 @@ const TUPLES = {
   iaPrice: ['Change price', 'Изменить цену', "Narxni o'zgartirish"],
   iaStock: ['Update stock', 'Обновить остаток', 'Qoldiqni yangilash'],
   iaConfirm: ['Confirm orders', 'Подтвердить заказы', 'Buyurtmalarni tasdiqlash'],
+  iaRange: ['Change the period', 'Сменить период', "Davrni o'zgartirish"],
+  iaCancelOrder: ['Cancel the order', 'Отменить заказ', 'Buyurtmani bekor qilish'],
+  iaDeliver: ['Send for delivery', 'Передать в доставку', 'Yetkazishga uzatish'],
+  iaComplete: ['Confirm handover', 'Подтвердить вручение', 'Topshirilganini tasdiqlash'],
+  iaRefund: ['Register a refund', 'Оформить возврат', 'Qaytarishni rasmiylashtirish'],
+  iaCancelInvoice: ['Cancel the shipment', 'Отменить накладную', 'Nakladnoyni bekor qilish'],
+  iaLabel: ['Download the label', 'Скачать этикетку', 'Yorliqni yuklab olish'],
+  iaBarcodes: ['Download barcodes', 'Скачать штрих-коды', 'Shtrix-kodlarni yuklash'],
+  iaSupplyAct: ['Download the supply act', 'Скачать акт поставки', 'Yetkazish aktini yuklash'],
+  iaAcceptAct: [
+    'Download the acceptance act',
+    'Скачать акт приёмки',
+    'Qabul aktini yuklash',
+  ],
   riskMid: ['medium risk', 'средний риск', "o'rta xavf"],
   riskHigh: ['high risk', 'высокий риск', 'yuqori xavf'],
   insConfirmT: ['Apply this action?', 'Применить действие?', "Amalni qo'llaysizmi?"],
@@ -1092,6 +1106,71 @@ const TUPLES = {
   deepMode: ['Deep reasoning', 'Глубокий анализ', 'Chuqur tahlil'],
   exportPdf: ['PDF', 'PDF', 'PDF'],
   srcCount: ['{n} sources · {s}s', 'источников: {n} · {s}с', '{n} manba · {s}s'],
+  selectAll: ['Select all', 'Выбрать все', 'Hammasini tanlash'],
+  confirmRows: [
+    '{n} of {m} will be sent',
+    'Будет отправлено: {n} из {m}',
+    '{m} tadan {n} tasi yuboriladi',
+  ],
+  cSku: ['SKU', 'SKU', 'SKU'],
+  cOrder: ['Order', 'Заказ', 'Buyurtma'],
+
+  /* — pinned answers — */
+  pinAnswer: ['Pin to dashboard', 'Закрепить на панели', "Panelga qadash"],
+  pinned: ['Pinned', 'Закреплено', 'Qadaldi'],
+  unpin: ['Remove from dashboard', 'Убрать с панели', 'Paneldan olib tashlash'],
+  pinLoading: ['Re-reading the figures…', 'Пересчитываю цифры…', 'Raqamlar qayta o‘qilmoqda…'],
+  pinStale: [
+    'Some figures could not be re-read for this period',
+    'Часть цифр не удалось пересчитать за этот период',
+    "Ba'zi raqamlar bu davr uchun qayta o'qilmadi",
+  ],
+
+  /* — standing rules — */
+  iaAlert: ['Set the rule', 'Создать правило', 'Qoida qo‘yish'],
+  iaAlertOff: ['Remove the rule', 'Удалить правило', 'Qoidani olib tashlash'],
+  alSet: [
+    'Rule set: {kind} ({t})',
+    'Правило создано: {kind} ({t})',
+    'Qoida qo‘yildi: {kind} ({t})',
+  ],
+  alCleared: ['{n} rule(s) removed', 'Удалено правил: {n}', '{n} ta qoida o‘chirildi'],
+  alTitle: ['Standing rules', 'Постоянные правила', 'Doimiy qoidalar'],
+  alEmpty: [
+    'No rules yet. Ask the Copilot to watch something for you — “tell me when a SKU runs out”.',
+    'Правил пока нет. Попросите Copilot следить: «сообщи, когда SKU закончится».',
+    "Hozircha qoida yo'q. Copilot'dan so'rang: «SKU tugasa ayt».",
+  ],
+  alNeverFired: ['not fired yet', 'ещё не срабатывало', 'hali ishlamagan'],
+  alLastFired: ['last fired {when}', 'сработало {when}', 'oxirgi marta {when}'],
+  alStockEmpty: [
+    '{n} SKU(s) are out of stock',
+    'SKU без остатка: {n}',
+    "{n} ta SKU qoldiqsiz qoldi",
+  ],
+  alStockBelow: [
+    '{n} SKU(s) are below {t} units',
+    'SKU ниже {t} шт.: {n}',
+    "{n} ta SKU qoldig'i {t} donadan kam",
+  ],
+  alOrderDeadline: [
+    '{n} order(s) must be confirmed within {h}h',
+    'Заказов подтвердить за {h}ч: {n}',
+    '{n} ta buyurtma {h} soat ichida tasdiqlanishi kerak',
+  ],
+  alMarginBelow: [
+    'Net margin has fallen below {t}%',
+    'Чистая маржа упала ниже {t}%',
+    'Sof marja {t}% dan pastga tushdi',
+  ],
+  alCancelAbove: [
+    'Cancellation rate is above {t}%',
+    'Доля отмен выше {t}%',
+    'Bekor qilish ulushi {t}% dan oshdi',
+  ],
+
+  lookups: ['{n} lookups', 'запросов: {n}', "{n} ta so'rov"],
+  toolTrace: ['Read', 'Прочитано', "O'qildi"],
   droppedBlocks: [
     '{n} block(s) discarded — they stated figures that could not be checked',
     'Отброшено блоков: {n} — в них были непроверяемые цифры',
