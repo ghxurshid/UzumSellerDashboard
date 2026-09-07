@@ -1,6 +1,6 @@
 import type { ZodError } from 'zod';
 
-import { blockLineSchema, statesRawNumber, type Block } from './blocks';
+import { blockLineSchema, type Block } from './blocks';
 
 /**
  * Reading a document that has not finished being written.
@@ -77,14 +77,20 @@ export function createBlockStream(): BlockStreamState {
  * Why a line that was meant to be a block is not one.
  *
  * `blockLineSchema` is a union of shapes, so a failure arrives as a single
- * `invalid_union` issue carrying one complete error per branch — and all but
- * one of those branches failed only because `kind` was a different word. The
- * branch worth reading is the one whose `kind` matched, found by discarding
- * every branch that tripped on `kind` itself.
+ * `invalid_union` issue carrying one complete error per branch. All but one of
+ * those branches failed because `kind` was a different word — and each of them
+ * *also* reports every field that shape would have needed. So a malformed
+ * table is described by the text branch as `text: Required`, which names a
+ * field the model never wrote, in a block it was not trying to send.
  *
- * The wording matters because it is what the model is shown. "not one of the
- * block shapes" is nothing it can act on; "text: String must contain at most
- * 600 character(s)" is a paragraph it can split in two.
+ * The branch worth reading is the one that got past `kind`, and it is the only
+ * one with nothing to say about `kind` at all. A line whose `kind` matches
+ * nothing leaves no such branch, and that is its own answer.
+ *
+ * The wording is the whole point of this function: it is what the model is
+ * shown when it is asked to send the line again. `text: Required` is not
+ * something it can act on. `rows.0.1: Expected string, received number` is a
+ * table cell it can quote.
  */
 function whyNotABlock(error: ZodError): string {
   const branches = error.issues.flatMap((issue) =>
@@ -92,7 +98,9 @@ function whyNotABlock(error: ZodError): string {
   );
 
   for (const branch of branches.length > 0 ? branches : [error]) {
-    const issue = branch.issues.find((candidate) => candidate.path[0] !== 'kind');
+    if (branch.issues.some((issue) => issue.path[0] === 'kind')) continue;
+
+    const issue = branch.issues[0];
     if (issue !== undefined) return `${issue.path.join('.') || 'line'}: ${issue.message}`;
   }
 
@@ -291,10 +299,5 @@ export function previewText(state: BlockStreamState): string {
    * a frame or two, and cutting the fragment costs nothing — the next chunk
    * brings it back complete and it resolves to a figure.
    */
-  const text = decodePartial(body).replace(/\{\{[^}]*$/, '');
-
-  /* The number guard holds for a draft exactly as it holds for a block: a
-     figure the model typed itself must not reach the screen, not even for the
-     moment before the line carrying it is dropped. */
-  return statesRawNumber(text) ? '' : text;
+  return decodePartial(body).replace(/\{\{[^}]*$/, '');
 }

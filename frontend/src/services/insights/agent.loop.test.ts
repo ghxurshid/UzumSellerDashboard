@@ -13,17 +13,18 @@ vi.mock('@/services/ai/stream', () => ({ streamComplete }));
 const { createSession, runAgent } = await import('./agent');
 
 /**
- * The round a question gets back after the number guard takes a paragraph.
+ * The round a question gets back when a line of it could not be drawn.
  *
- * The guard is an invariant: a figure the model typed itself never reaches the
- * seller, because nobody can check it. What it used to do as well was end the
- * question — the sentence went, nothing replaced it, and the answer was an
- * empty bubble with a warning under it. The model was never told, so it could
- * not write the same sentence against a ref.
+ * A model writes NDJSON, and a line of it can fail in ways the seller has no
+ * way to see: a table whose cells came out as numbers, a paragraph past the
+ * schema's length, a line that is not JSON at all. Each of those used to end
+ * the question — the line went, nothing replaced it, and the answer was an
+ * empty bubble with a count underneath. The model was never told, so it could
+ * not send the line again.
  *
- * These pin the three things that has to be true of the turn that fixes it: the
- * answer comes back, it is asked for exactly once, and a clean answer pays for
- * nothing.
+ * These pin what the turn that fixes it has to do: bring the answer back, ask
+ * exactly once, carry a reason the model can act on, and cost nothing at all
+ * when the answer was fine.
  */
 
 const SETTINGS: AiSettings = {
@@ -45,6 +46,10 @@ const CONTEXT: ToolContext = {
   now: 0,
   signal: undefined,
 };
+
+/** A table whose second cell is a number, which the schema takes for text. */
+const NUMERIC_CELL =
+  '{"kind":"table","columns":["SKU","Foyda"],"rows":[["Real Madrid Kit",457924]]}';
 
 /** Each string is one model turn, written in a single chunk. */
 function answers(...turns: readonly string[]): void {
@@ -88,70 +93,77 @@ beforeEach(() => {
   streamComplete.mockReset();
 });
 
-describe('a round that lost a paragraph to the number guard', () => {
-  it('asks for it again and shows the rewrite', async () => {
+describe('a round that lost a line', () => {
+  it('asks for it again and shows what comes back', async () => {
     const { blocks, outcome } = await ask(
-      '{"kind":"text","text":"Eng yaxshi uchtasi foydaning 62% ini beradi."}',
-      '{"kind":"text","text":"Eng yaxshi uchtasi {{rank.profit}} dan katta qismini beradi."}',
+      NUMERIC_CELL,
+      '{"kind":"text","text":"**Real Madrid Kit** eng ko\'p foyda keltirdi."}',
     );
 
     expect(streamComplete).toHaveBeenCalledTimes(2);
     expect(blocks).toHaveLength(1);
-    expect(blocks[0]).toMatchObject({ kind: 'text' });
     /* Won back, so the seller is not warned about a line they can now read. */
     expect(outcome.dropped).toBe(0);
   });
 
-  it('quotes the discarded sentence back so the rewrite is mechanical', async () => {
-    await ask(
-      '{"kind":"text","text":"Marja 9.2% ga tushdi."}',
-      '{"kind":"text","text":"Marja tushdi."}',
-    );
+  it('quotes the line and a reason the model can act on', async () => {
+    await ask(NUMERIC_CELL, '{"kind":"text","text":"Real Madrid Kit."}');
 
     const second = streamComplete.mock.calls[1]?.[0] as StreamOptions;
-    const last = second.request.messages[second.request.messages.length - 1];
+    const sent = JSON.stringify(second.request.messages);
 
-    expect(last?.role).toBe('user');
-    expect(JSON.stringify(last)).toContain('Marja 9.2% ga tushdi.');
+    expect(sent).toContain('Real Madrid Kit');
+    expect(sent).toContain('rows.0.1: Expected string, received number');
   });
 
   it('asks once — a second failure is counted, not chased', async () => {
-    const line = '{"kind":"text","text":"Foyda 1 250 000 sum."}';
-    const { blocks, outcome } = await ask(line, line, line);
+    const { blocks, outcome } = await ask(NUMERIC_CELL, NUMERIC_CELL, NUMERIC_CELL);
 
     expect(streamComplete).toHaveBeenCalledTimes(2);
     expect(blocks).toHaveLength(0);
     expect(outcome.dropped).toBe(1);
+    expect(outcome.rejected).toEqual(['rows.0.1: Expected string, received number']);
   });
 
-  it('covers a block the schema refused, not only a typed figure', async () => {
-    /* A paragraph over the 600-character cap is the other way a line vanishes,
-       and it used to be reported as an unverifiable number. */
+  it('recovers a paragraph past the schema\'s length', async () => {
     const { blocks, outcome } = await ask(
-      `{"kind":"text","text":"${'shu yerda juda uzun matn '.repeat(40)}"}`,
+      `{"kind":"text","text":"${'juda uzun matn '.repeat(300)}"}`,
       '{"kind":"text","text":"Qisqartirilgan javob."}',
     );
 
     expect(streamComplete).toHaveBeenCalledTimes(2);
     expect(blocks).toHaveLength(1);
     expect(outcome.dropped).toBe(0);
-
-    const second = streamComplete.mock.calls[1]?.[0] as StreamOptions;
-    expect(JSON.stringify(second.request.messages)).toContain('600');
   });
 
-  it('reports the reason it refused, not a guess at one', async () => {
-    const line = '{"kind":"text","text":"Foyda 1 250 000 sum."}';
-    const { outcome } = await ask(line, line);
-
-    expect(outcome.rejected).toEqual(['it states a figure directly instead of citing a ref']);
-  });
-
-  it('costs nothing when the answer broke no rule', async () => {
+  it('costs nothing when every line was drawable', async () => {
     const { blocks, outcome } = await ask('{"kind":"text","text":"Uchta mahsulot zarar qilyapti."}');
 
     expect(streamComplete).toHaveBeenCalledTimes(1);
     expect(blocks).toHaveLength(1);
     expect(outcome.dropped).toBe(0);
+  });
+});
+
+describe('a paragraph with figures in it', () => {
+  /**
+   * The change this file was rewritten for.
+   *
+   * Prose used to be filtered: a percent sign or a grouped thousand and the
+   * sentence was discarded, whatever else it said. Every ranking answer lost
+   * its paragraph that way, because a ranking is answered in shares. The model
+   * writes its own figures now, and the sentence is drawn as written.
+   */
+  it('reaches the seller as the model wrote it', async () => {
+    const { blocks, outcome } = await ask(
+      '{"kind":"text","text":"Sof foyda **457 924 so\'m** — tushumning 9.2 %i."}',
+    );
+
+    expect(streamComplete).toHaveBeenCalledTimes(1);
+    expect(outcome.dropped).toBe(0);
+    expect(blocks[0]).toEqual({
+      kind: 'text',
+      text: "Sof foyda **457 924 so'm** — tushumning 9.2 %i.",
+    });
   });
 });

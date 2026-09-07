@@ -126,13 +126,15 @@ describe('previewText', () => {
     expect(previewText(state)).toBe('Sof foyda {{totals.netProfit}} bo‘ldi');
   });
 
-  it('refuses a draft stating a figure the model typed itself', () => {
+  it('shows a figure the model typed, because the block will too', () => {
     const state = createBlockStream();
     pushChunk(state, '{"kind":"text","text":"Sof foyda 457 924 so‘m');
 
-    /* The same guard that drops the block. A number nobody can check must not
-       reach the screen even for the frame before its line is discarded. */
-    expect(previewText(state)).toBe('');
+    /* Prose used to be filtered here as well as at the block, so that a number
+       nobody could check never reached the screen at all. The model writes its
+       own figures now, and a draft that hid them showed a sentence the finished
+       block would immediately contradict. */
+    expect(previewText(state)).toBe('Sof foyda 457 924 so‘m');
   });
 
   it('never shows a sentence the finished block would not', () => {
@@ -146,5 +148,54 @@ describe('previewText', () => {
     for (const draft of drafts) {
       expect(final.startsWith(draft)).toBe(true);
     }
+  });
+});
+
+describe('a line that was meant to be a block', () => {
+  /**
+   * The reason is what the model is shown when it is asked to send the line
+   * again, so a wrong reason is worse than none. The first version of this read
+   * the wrong arm of the union and told a model with a malformed table that
+   * `text` was required — a field it had not written, in a block it was not
+   * sending — and the model obligingly sent the same table back.
+   */
+  const reasonFor = (value: unknown): string | undefined => {
+    const state = createBlockStream();
+    return pushChunk(state, `${JSON.stringify(value)}
+`).rejected[0]?.reason;
+  };
+
+  it('names the field the author actually got wrong', () => {
+    expect(
+      reasonFor({ kind: 'table', columns: ['SKU', 'Foyda'], rows: [['Abaya', 450_000]] }),
+    ).toBe('rows.0.1: Expected string, received number');
+
+    expect(reasonFor({ kind: 'metric', label: 'Foyda' })).toBe('ref: Required');
+
+    expect(reasonFor({ kind: 'text', text: 'x'.repeat(5_000) })).toBe(
+      'text: String must contain at most 4000 character(s)',
+    );
+
+    expect(
+      reasonFor({ kind: 'chart', chart: 'donut', steps: [{ label: 'a', ref: 'p.1.profit' }] }),
+    ).toBe('steps: Array must contain at least 2 element(s)');
+  });
+
+  it('refuses a chart that names nothing to draw', () => {
+    expect(reasonFor({ kind: 'chart', chart: 'bar' })).toBe(
+      'line: a chart needs steps, or seriesRef for a line',
+    );
+  });
+
+  it('says so plainly when the kind is not a block at all', () => {
+    expect(reasonFor({ kind: 'list', items: ['a'] })).toBe('not one of the block shapes');
+  });
+
+  it('leaves a protocol line alone', () => {
+    const state = createBlockStream();
+    const harvest = pushChunk(state, '{"call":"window.totals","args":{}}\n');
+
+    expect(harvest.rejected).toHaveLength(0);
+    expect(harvest.other).toHaveLength(1);
   });
 });

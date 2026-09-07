@@ -21,15 +21,23 @@ import { ACTION_IDS, type InsightActionId } from './actions';
  * sees kinds it already knows, which is what keeps a generated card inside the
  * design system rather than beside it.
  *
- * ## Why the model never writes a number
+ * ## Where a number comes from
  *
- * Every numeric block cites a `ref` into the fact table (`facts.ts`) rather
- * than carrying a figure. The model picks *which* fact to show and *how* to
- * frame it; the application resolves *what the fact is*, from the same sums the
- * tables on screen were drawn from. A model that types `258 000` into a string
- * has produced a number nobody can check, and in a finance tool an uncheckable
- * number is worse than no card at all. A `ref` that does not resolve is dropped
- * on arrival, so the failure mode is a missing line rather than a wrong one.
+ * Every *numeric block* — `metric`, `kv`, `steps`, `chart` — cites a `ref` into
+ * the fact table (`facts.ts`) rather than carrying a figure. The author picks
+ * which fact to show and how to frame it; the application resolves what the
+ * fact is, from the same sums the tables on screen were drawn from. A `ref`
+ * that does not resolve renders as a dash, so the failure is a missing figure
+ * rather than a wrong one.
+ *
+ * `text` is the exception, and it was not always one. Prose used to be held to
+ * the same rule by a regular expression that discarded any paragraph holding a
+ * percent sign or a grouped thousand. It worked exactly as designed and cost
+ * more than it was worth: a ranking answered in shares had no ref for a share,
+ * so the model wrote the percentage, and the paragraph carrying the answer was
+ * thrown away — leaving an empty bubble and a warning nobody could act on. The
+ * model now writes its own figures in prose. The blocks that carry the
+ * arithmetic still resolve every one of theirs.
  */
 
 /* ── phrases ────────────────────────────────────────────────────────────── */
@@ -263,7 +271,15 @@ const MAX_DEPTH = 2;
 
 const toneSchema = z.enum(['positive', 'negative', 'warning', 'neutral', 'accent']);
 const refSchema = z.string().trim().min(1).max(80);
-const longPhrase = z.string().trim().min(1).max(600);
+/**
+ * A paragraph. Generous, because prose now carries the answer.
+ *
+ * 600 characters was the cap while a sentence was a frame around resolved
+ * figures. A model writing a whole answer in Markdown — a heading, a list, the
+ * reasoning under it — passes that inside two bullets, and the line was then
+ * refused for a length nobody had told it about.
+ */
+const longPhrase = z.string().trim().min(1).max(4_000);
 const shortPhrase = z.string().trim().min(1).max(120);
 
 const severitySchema = z.enum(['critical', 'high', 'watch', 'idea']);
@@ -314,17 +330,25 @@ function blockSchemaAtDepth(depth: number): z.ZodTypeAny {
       kind: z.literal('badges'),
       items: z.array(z.object({ text: shortPhrase, tone: toneSchema.optional() })).min(1).max(6),
     }),
-    z.object({
-      kind: z.literal('chart'),
-      chart: z.enum(['waterfall', 'bar', 'donut', 'line']),
-      title: shortPhrase.optional(),
-      steps: z
-        .array(z.object({ label: shortPhrase, ref: refSchema, tone: toneSchema.optional() }))
-        .min(2)
-        .max(8)
-        .optional(),
-      seriesRef: refSchema.optional(),
-    }),
+    z
+      .object({
+        kind: z.literal('chart'),
+        chart: z.enum(['waterfall', 'bar', 'donut', 'line']),
+        title: shortPhrase.optional(),
+        steps: z
+          .array(z.object({ label: shortPhrase, ref: refSchema, tone: toneSchema.optional() }))
+          .min(2)
+          .max(8)
+          .optional(),
+        seriesRef: refSchema.optional(),
+      })
+      /* Both fields are optional because a line chart uses one and the other
+         three use the other. Neither of them means an axis, a legend and no
+         data — which validated, drew an empty frame, and looked to everyone
+         like the answer had simply failed to arrive. */
+      .refine((block) => block.steps !== undefined || block.seriesRef !== undefined, {
+        message: 'a chart needs steps, or seriesRef for a line',
+      }),
     z.object({
       kind: z.literal('action'),
       actionId: z.enum(ACTION_IDS),
@@ -371,24 +395,3 @@ export const aiDocumentSchema = z.object({
  */
 export const blockLineSchema = blockSchemaAtDepth(MAX_DEPTH);
 
-/**
- * Figures the model should never have typed.
- *
- * Every legitimate number reaches the screen through a `ref` or a `{{ref}}`
- * placeholder, so once placeholders are stripped a text run has no business
- * containing money or a percentage. This catches the three shapes that matter:
- * any percent sign, a five-digit-or-longer run (so'm amounts start well above
- * that), and grouped thousands in any of the separators the app formats with.
- *
- * A four-digit run is deliberately allowed — that is a year, and "Abaya 2024"
- * is a product name rather than a claim about money.
- *
- * This is the difference between a prompt rule and an invariant. The prompt
- * asks; this enforces, and a block that breaks it is dropped before it renders.
- */
-export const SUSPECT_NUMBER = /%|\d{5,}|\d{1,3}(?:[\s\u00A0\u2009.,]\d{3})+/;
-
-/** `true` when a model-authored string states a figure it was told not to. */
-export function statesRawNumber(text: string): boolean {
-  return SUSPECT_NUMBER.test(text.replace(/\{\{[^}]*\}\}/g, ''));
-}

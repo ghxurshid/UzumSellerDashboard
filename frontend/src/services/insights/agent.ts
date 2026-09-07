@@ -15,7 +15,7 @@ import {
   type InsightActionId,
   type ResolvedAction,
 } from './actions';
-import { statesRawNumber, type Block } from './blocks';
+import type { Block } from './blocks';
 import { formatFact, type Fact, type FactSeries, type FactTable, type SeriesTable } from './facts';
 import {
   createBlockStream,
@@ -383,31 +383,14 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
   /**
    * One place a line is lost, whatever lost it.
    *
-   * The number guard, a block shape the schema refuses and a request that read
-   * as nothing are three different mistakes with one remedy: say what happened
-   * and let the model write the line again. Routing them through here is what
-   * lets a single turn fix any of them — and what stopped the note under the
-   * answer blaming a typed figure for a paragraph that was merely too long.
+   * A block shape the schema refuses, a line that never parsed and a request
+   * that read as nothing are three different mistakes with one remedy: say what
+   * happened and let the model write the line again. Routing them through here
+   * is what lets a single turn fix any of them.
    */
   const reject = (line: string, reason: string): void => {
     session.rejected.push({ line, reason });
   };
-
-  /**
-   * Blocks are filtered on the way in, not on the way out.
-   *
-   * `statesRawNumber` is the enforcement half of the "never type a figure"
-   * rule: a model that slipped and wrote a percentage into a sentence loses
-   * that block here rather than putting an unverifiable number in front of a
-   * seller.
-   */
-  const accept = (blocks: readonly Block[]): readonly Block[] =>
-    blocks.filter((block) => {
-      if (block.kind !== 'text' || typeof block.text !== 'string') return true;
-      if (!statesRawNumber(block.text)) return true;
-      reject(block.text, 'it states a figure directly instead of citing a ref');
-      return false;
-    });
 
   /**
    * One request per iteration, plus one at the end.
@@ -429,7 +412,7 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
     const asked: Request[] = [];
 
     const harvest = (value: Harvest): void => {
-      emit(accept(value.blocks));
+      emit(value.blocks);
 
       for (const rejection of value.rejected) reject(rejection.line, rejection.reason);
 
@@ -474,19 +457,18 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
     const requests = [...parsed, ...asked];
 
     /* A model that answered in a sentence despite being asked for objects has
-       still answered. Keeping it is better than an empty bubble — and it goes
-       through the same number guard as anything else it writes. */
+       still answered, and a sentence is exactly what a text block now holds. */
     const prose = takeProse(stream);
     if (requests.length === 0 && session.emitted === 0 && prose !== '') {
-      emit(accept([{ kind: 'text', text: prose }]));
+      emit([{ kind: 'text', text: prose }]);
     }
 
     if (answering || requests.length === 0) {
       /**
        * A line the seller never saw is worth one more turn.
        *
-       * Whatever refused it — the number guard, the block schema, a request
-       * that read as nothing — used to tell nobody. A round whose only
+       * Whatever refused it — the block schema, a line that never parsed, a
+       * request that read as nothing — used to tell nobody. A round whose only
        * paragraph was refused therefore ended as an empty answer with a warning
        * underneath it, and the model, which could have written the line another
        * way, never learned there was anything to write again.

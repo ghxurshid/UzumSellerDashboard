@@ -8,7 +8,8 @@ import { resolveAction, type ResolvedAction } from '@/services/insights/actions'
 import type { Block } from '@/services/insights/blocks';
 import { EMPTY_SERIES, formatFact, type FactTable, type SeriesTable } from '@/services/insights/facts';
 import { phrase } from '@/services/insights/phrase';
-import { resolveTemplate } from '@/services/insights/template';
+import { Markdown } from '@/components/common/Markdown';
+import { renderTemplate } from '@/services/insights/template';
 import type { Language, Tone } from '@/types/domain';
 
 import { ChartBlockView } from './ChartBlock';
@@ -79,14 +80,18 @@ export function BlockRenderer({
 }
 
 /**
- * A sentence with figures in it, none of them written by the author.
+ * A paragraph, drawn as its author wrote it.
  *
- * `{{totals.netProfit}}` is replaced with the formatted fact; an unresolved
- * placeholder is drawn as a marker rather than dropped, because a sentence that
- * quietly loses its number still reads like a complete sentence and is then
- * simply wrong.
+ * Two things happen here and the order is the point. `{{ref}}` placeholders are
+ * resolved first, because the rules in `derive/insights.ts` still write their
+ * sentences that way and a card pinned last month has to show this month's
+ * figure rather than a photograph of the one it was written with. What comes
+ * out of that is Markdown, and Markdown is what reaches the screen.
+ *
+ * The model no longer uses placeholders. It writes the figure, in a sentence it
+ * formats itself — see `components/common/Markdown` for what that traded away.
  */
-function Templated({
+function Prose({
   text,
   facts,
   language,
@@ -95,25 +100,7 @@ function Templated({
   readonly facts: FactTable;
   readonly language: Language;
 }): ReactNode {
-  return (
-    <>
-      {resolveTemplate(text, facts, language).map((segment, index) => {
-        if (segment.kind === 'text') return <span key={index}>{segment.text}</span>;
-        if (segment.kind === 'missing') {
-          return (
-            <span key={index} className="text-faint" title={segment.ref}>
-              —
-            </span>
-          );
-        }
-        return (
-          <span key={index} data-numeric className="text-text">
-            {segment.text}
-          </span>
-        );
-      })}
-    </>
-  );
+  return <Markdown>{renderTemplate(text, facts, language)}</Markdown>;
 }
 
 /**
@@ -136,7 +123,10 @@ export function DraftText({
 }): ReactNode {
   return (
     <p className="m-0 text-xs leading-[1.55] text-dim">
-      <Templated text={text} facts={facts} language={language} />
+      {/* Plain, while it is still arriving. Half-written Markdown draws its own
+          asterisks and reflows the panel on every chunk, and the finished block
+          replaces this the moment its line ends. */}
+      {renderTemplate(text, facts, language)}
       <span
         aria-hidden
         className="ml-3 inline-block h-11 w-2 translate-y-[1px] animate-caret rounded-[1px] bg-acc align-middle"
@@ -164,14 +154,14 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
   switch (block.kind) {
     case 'text':
       return (
-        <p
+        <div
           className={cn(
-            'm-0 text-xs leading-[1.55]',
+            'text-xs leading-[1.55]',
             block.tone === undefined ? 'text-dim' : TONE_TEXT[block.tone],
           )}
         >
-          <Templated text={phrase(t, block.text)} facts={facts} language={language} />
-        </p>
+          <Prose text={phrase(t, block.text)} facts={facts} language={language} />
+        </div>
       );
 
     case 'metric':

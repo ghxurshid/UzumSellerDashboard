@@ -7,6 +7,22 @@ import { defineConfig } from 'vite';
 
 /** Vendor chunks are split by concern so a topbar tweak never invalidates the chart or query cache bundle. */
 const MANUAL_CHUNKS: Record<string, readonly string[]> = {
+  /* Ahead of vendor-react on purpose: the check is a substring one, and
+     `node_modules/react-markdown` contains `node_modules/react`. */
+  'vendor-markdown': [
+    'react-markdown',
+    'remark-',
+    'micromark',
+    'mdast-',
+    'hast-',
+    'unist-',
+    'unified',
+    'vfile',
+    'markdown-table',
+    'property-information',
+    'character-entities',
+    'decode-named-character-reference',
+  ],
   'vendor-react': ['react', 'react-dom', 'react-router-dom'],
   'vendor-query': ['@tanstack/react-query', 'axios'],
   'vendor-motion': ['framer-motion'],

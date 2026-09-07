@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { ACTION_IDS, explainRejection, INSIGHT_ACTIONS, resolveAction } from './actions';
 import { pinnableBlocks } from './pins';
-import { statesRawNumber } from './blocks';
 import type { Block } from './blocks';
 
 /**
@@ -94,26 +93,6 @@ describe('resolveAction', () => {
   });
 });
 
-describe('statesRawNumber', () => {
-  it('catches money, percentages and grouped thousands', () => {
-    expect(statesRawNumber('Net profit is 457924 so‘m')).toBe(true);
-    expect(statesRawNumber('Margin fell to 9.2%')).toBe(true);
-    expect(statesRawNumber('Revenue was 4 966 180')).toBe(true);
-  });
-
-  it('allows a year and a small count', () => {
-    expect(statesRawNumber('Abaya 2024 sold in three sizes')).toBe(false);
-    expect(statesRawNumber('7 SKUs are empty')).toBe(false);
-  });
-
-  it('ignores what the application will resolve', () => {
-    /* A placeholder is the sanctioned way to put a figure in a sentence, so a
-       template full of them must not be mistaken for a model typing numbers. */
-    expect(statesRawNumber('Net profit is {{totals.netProfit}} ({{totals.netMargin}})')).toBe(
-      false,
-    );
-  });
-});
 
 describe('pinnableBlocks', () => {
   const blocks: readonly Block[] = [
