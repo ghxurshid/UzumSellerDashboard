@@ -198,6 +198,7 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
               cachedInputTokens: outcome.cachedInputTokens,
             }),
             dropped: outcome.dropped,
+            rejected: outcome.rejected,
             deep,
             rounds: outcome.rounds,
             calls: outcome.calls,

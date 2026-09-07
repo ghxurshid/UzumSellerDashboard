@@ -47,7 +47,6 @@ describe('pushChunk', () => {
     const state = createBlockStream();
     pushChunk(state, 'Sorry, I cannot answer that.\n');
 
-    expect(state.dropped).toBe(0);
     expect(takeProse(state)).toBe('Sorry, I cannot answer that.');
   });
 });
@@ -78,12 +77,11 @@ describe('previewText', () => {
     const state = createBlockStream();
     pushChunk(state, '{"kind":"text","text":"Yarim');
 
-    const before = { buffer: state.buffer, dropped: state.dropped, prose: state.prose };
+    const before = { buffer: state.buffer, prose: state.prose };
     previewText(state);
     previewText(state);
 
     expect(state.buffer).toBe(before.buffer);
-    expect(state.dropped).toBe(before.dropped);
     expect(state.prose).toBe(before.prose);
   });
 

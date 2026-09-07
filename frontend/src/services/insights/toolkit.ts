@@ -185,6 +185,23 @@ function namespaceOf(args: Record<string, unknown>, fallback: string): string {
 
 const shopsLine = (context: ToolContext): string => `shops ${context.scope.shopIds.join(',')}`;
 
+/**
+ * One number as a percentage of another, or nothing.
+ *
+ * `format: 'percent'` values are 0–100 everywhere in this application, so a
+ * share is a ratio multiplied out rather than a ratio.
+ *
+ * The null is the point. A window that sold nothing has a zero denominator and
+ * a window that lost money has a negative one — neither has an honest
+ * percentage behind it, and a share of a negative total reads backwards: the
+ * worst product of a loss-making month would carry the largest positive share.
+ * So the fact is left out, and a ref the model cites without one renders as a
+ * dash — the failure this project prefers to a figure nobody can check.
+ */
+function shareOf(part: number, whole: number): number | null {
+  return whole > 0 ? (part / whole) * 100 : null;
+}
+
 /* ── shared schema fragments ────────────────────────────────────────────── */
 
 const dayString = z.string().trim().min(4).max(30);
@@ -448,6 +465,8 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
       'Products ranked over the window, with units, revenue and sellerProfit from the archive',
       'joined to price, purchase price and stock from the catalogue. Carries netEst — profit',
       'less purchase price × units — which is the only figure that says whether a line earns.',
+      'Also carries each product\'s share of the window and its margin, so a comparison can be',
+      'cited rather than calculated.',
     ],
     schema: z.object({
       ...windowArgs,
@@ -465,17 +484,38 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
         signal: context.signal,
       });
 
+      /**
+       * Every product in the window, ranked here rather than by the worker.
+       *
+       * Asking for the worker's top-N cost two things. A share is a fraction of
+       * the window's total, and a total summed over a truncated list is not the
+       * window's total — it is the total of whatever survived the cut. And
+       * `aggregateByProduct` cuts by revenue whatever `by` says, so "top 10 by
+       * profit" quietly meant "top 10 by profit among the top 60 by revenue".
+       *
+       * A catalogue is a few thousand products at most and the roll-up already
+       * builds every one of them, so the whole list crosses the worker boundary
+       * and the slice happens after the sort that was actually asked for.
+       */
       const totals = await loadProductTotals(context.scope.shopIds, window.fromMs, window.toMs, {
-        limit: Math.min(60, limit * 3),
         ...(context.signal !== undefined ? { signal: context.signal } : {}),
       });
 
-      const catalogue = new Map(context.products.map((product) => [product.productId, product]));
-      const ranked = [...totals]
-        .sort((a, b) => b[by] - a[by])
-        .slice(0, limit);
+      const windowRevenue = totals.reduce((sum, entry) => sum + entry.revenue, 0);
+      const windowProfit = totals.reduce((sum, entry) => sum + entry.profit, 0);
+      const windowUnits = totals.reduce((sum, entry) => sum + entry.units, 0);
 
-      const facts: Fact[] = [];
+      const catalogue = new Map(context.products.map((product) => [product.productId, product]));
+      const ranked = [...totals].sort((a, b) => b[by] - a[by]).slice(0, limit);
+
+      /* The denominators, so a share the model cites can be read against the
+         total it is a share of rather than taken on trust. */
+      const facts: Fact[] = [
+        { ref: 'rank.revenue', label: 'Sum revenue of every product in the window', value: windowRevenue, format: 'money' },
+        { ref: 'rank.profit', label: 'Sum sellerProfit of every product in the window', value: windowProfit, format: 'money' },
+        { ref: 'rank.units', label: 'Units sold across every product in the window', value: windowUnits, format: 'count' },
+        { ref: 'rank.products', label: 'Products that sold at least once in the window', value: totals.length, format: 'count' },
+      ];
       const rows: (string | number)[][] = [];
 
       for (const entry of ranked) {
@@ -490,6 +530,25 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
           { ref: `${ref}.units`, label: `Units sold of "${entry.title}"`, value: entry.units, format: 'count' },
           { ref: `${ref}.netEst`, label: `sellerProfit minus purchase cost for "${entry.title}"`, value: netEst, format: 'money' },
         );
+
+        /**
+         * The comparisons, computed here because prose cannot compute them.
+         *
+         * A ranking is answered in shares and margins — "this one alone is a
+         * fifth of the profit", "it sells well and earns nothing". The model
+         * may not type a figure, so without these refs its only way to say
+         * either sentence was to work the percentage out and write it, which is
+         * exactly what the number guard discards. Every ranking answer risked
+         * losing a paragraph to a rule that had left it no other way to speak.
+         */
+        for (const [suffix, label, value] of [
+          ['shareOfRevenue', `Share of window revenue for "${entry.title}"`, shareOf(entry.revenue, windowRevenue)],
+          ['shareOfProfit', `Share of window sellerProfit for "${entry.title}"`, shareOf(entry.profit, windowProfit)],
+          ['margin', `sellerProfit as a percent of revenue for "${entry.title}"`, shareOf(entry.profit, entry.revenue)],
+          ['netMargin', `netEst as a percent of revenue for "${entry.title}"`, shareOf(netEst, entry.revenue)],
+        ] as const) {
+          if (value !== null) facts.push({ ref: `${ref}.${suffix}`, label, value, format: 'percent' });
+        }
 
         if (product !== undefined) {
           facts.push(
@@ -533,6 +592,11 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
                 rows,
               ),
           `cite: <ref>.revenue .profit .units .netEst .price .purchasePrice .available .returnedPct`,
+          'percentages, already worked out — cite these rather than doing the arithmetic:',
+          '  <ref>.shareOfRevenue .shareOfProfit  this product as a share of the whole window',
+          '  <ref>.margin .netMargin              sellerProfit and netEst as a percent of revenue',
+          '  rank.revenue rank.profit rank.units rank.products   the window totals they divide by',
+          'A share whose denominator is zero or negative is left out; citing it renders a dash.',
         ]),
       };
     },

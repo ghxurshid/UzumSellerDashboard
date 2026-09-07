@@ -17,7 +17,15 @@ import {
 } from './actions';
 import { statesRawNumber, type Block } from './blocks';
 import { formatFact, type Fact, type FactSeries, type FactTable, type SeriesTable } from './facts';
-import { createBlockStream, flush, previewText, pushChunk, takeProse } from './ndjson';
+import {
+  createBlockStream,
+  flush,
+  previewText,
+  pushChunk,
+  takeProse,
+  type Harvest,
+  type Rejection,
+} from './ndjson';
 import { renderTemplate } from './template';
 import {
   describeToolkit,
@@ -192,8 +200,16 @@ export interface AgentOutcome {
   readonly outputTokens: number;
   /** Prefix tokens the provider served from its cache rather than re-reading. */
   readonly cachedInputTokens: number;
-  /** Lines the model sent that were neither a block nor a directive. */
+  /** How many lines the seller never saw, after the rewrite had its turn. */
   readonly dropped: number;
+  /**
+   * Why each of them was refused, in the same order.
+   *
+   * Reasons only. The lines themselves are the model's own text and can hold
+   * the figure the number guard exists to keep off the screen, so they go back
+   * to the model and no further.
+   */
+  readonly rejected: readonly string[];
   readonly rounds: number;
   readonly calls: number;
   /** Lookups that ran, in order — enough to reproduce this answer later. */
@@ -240,7 +256,23 @@ export interface AgentSession {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
-  dropped: number;
+  /**
+   * Lines the seller never saw, each with the reason it was refused.
+   *
+   * Kept for the whole question rather than the round, because the count under
+   * the answer is about the question — and it *is* the count, so there is no
+   * second number that can drift out of step with this list.
+   */
+  readonly rejected: Rejection[];
+  /**
+   * Where this round's share of `rejected` begins.
+   *
+   * The same bookkeeping `checkpoint` does for blocks, and for the same reason:
+   * a round about to be handed back has to know which losses are its own.
+   */
+  rejectedAt: number;
+  /** Whether the one rewrite this question is allowed has been spent. */
+  corrected: boolean;
   /** Blocks handed to `onBlocks`, ever. */
   emitted: number;
   /**
@@ -272,7 +304,9 @@ export function createSession(input: {
     inputTokens: 0,
     outputTokens: 0,
     cachedInputTokens: 0,
-    dropped: 0,
+    rejected: [],
+    rejectedAt: 0,
+    corrected: false,
     emitted: 0,
     checkpoint: 0,
   };
@@ -284,6 +318,33 @@ const MAX_ROUNDS = 5;
 const MAX_CALLS = 12;
 /** How much of a round's own output is quoted back to it. */
 const ECHO_LIMIT = 6_000;
+/** How much of one refused line is quoted back — the whole of it is in the turn above. */
+const LINE_ECHO_LIMIT = 300;
+
+/**
+ * The turn that asks for a discarded paragraph back.
+ *
+ * The sentences are quoted rather than counted. "You stated a figure" is not
+ * something a model can act on; the sentence it wrote is, and reading it beside
+ * the rule is what makes the rewrite mechanical rather than a guess.
+ *
+ * It is asked for only those lines because the rest of the round is already on
+ * the seller's screen. A model that starts the answer over writes every
+ * paragraph a second time, underneath the first.
+ */
+function rewriteRequest(rejected: readonly Rejection[]): string {
+  return [
+    'These lines were discarded before the seller saw them, each for the reason under it:',
+    ...rejected.flatMap((rejection) => [
+      `  ${rejection.line.slice(0, LINE_ECHO_LIMIT)}`,
+      `    -> ${rejection.reason}`,
+    ]),
+    '',
+    'Send them again, fixed. Every figure must be a {{ref}} placeholder into a fact you hold —',
+    'where no ref carries one, leave the figure out and say what the rows show without it. Send',
+    'only these lines: the rest of your answer is already on the seller\'s screen.',
+  ].join('\n');
+}
 
 /* ── the loop ───────────────────────────────────────────────────────────── */
 
@@ -320,18 +381,31 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
   const maxCalls = Math.max(1, Math.min(MAX_CALLS, options.budget?.calls ?? MAX_CALLS));
 
   /**
+   * One place a line is lost, whatever lost it.
+   *
+   * The number guard, a block shape the schema refuses and a request that read
+   * as nothing are three different mistakes with one remedy: say what happened
+   * and let the model write the line again. Routing them through here is what
+   * lets a single turn fix any of them — and what stopped the note under the
+   * answer blaming a typed figure for a paragraph that was merely too long.
+   */
+  const reject = (line: string, reason: string): void => {
+    session.rejected.push({ line, reason });
+  };
+
+  /**
    * Blocks are filtered on the way in, not on the way out.
    *
    * `statesRawNumber` is the enforcement half of the "never type a figure"
    * rule: a model that slipped and wrote a percentage into a sentence loses
    * that block here rather than putting an unverifiable number in front of a
-   * seller. Dropping is counted and reported under the answer.
+   * seller.
    */
   const accept = (blocks: readonly Block[]): readonly Block[] =>
     blocks.filter((block) => {
       if (block.kind !== 'text' || typeof block.text !== 'string') return true;
       if (!statesRawNumber(block.text)) return true;
-      session.dropped += 1;
+      reject(block.text, 'it states a figure directly instead of citing a ref');
       return false;
     });
 
@@ -349,16 +423,19 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
     /* Where this round's output begins, so a failure can be rolled back to here
        and the round re-run without repeating a word of it. */
     session.checkpoint = session.emitted;
+    session.rejectedAt = session.rejected.length;
 
     const stream = createBlockStream();
     const asked: Request[] = [];
 
-    const harvest = (value: { blocks: readonly Block[]; other: readonly unknown[] }): void => {
+    const harvest = (value: Harvest): void => {
       emit(accept(value.blocks));
+
+      for (const rejection of value.rejected) reject(rejection.line, rejection.reason);
 
       for (const entry of value.other) {
         const directive = readDirective(entry);
-        if (directive === null) session.dropped += 1;
+        if (directive === null) reject(JSON.stringify(entry), 'not a block and not a request');
         else asked.push(directive);
       }
     };
@@ -405,6 +482,40 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
     }
 
     if (answering || requests.length === 0) {
+      /**
+       * A line the seller never saw is worth one more turn.
+       *
+       * Whatever refused it — the number guard, the block schema, a request
+       * that read as nothing — used to tell nobody. A round whose only
+       * paragraph was refused therefore ended as an empty answer with a warning
+       * underneath it, and the model, which could have written the line another
+       * way, never learned there was anything to write again.
+       *
+       * Once per question. A second failure means the model cannot say the
+       * thing within the rule, and a third turn would spend tokens reaching the
+       * same empty answer more slowly. The turn sits outside the lookup budget
+       * on purpose: it asks for nothing and reads nothing.
+       *
+       * The assistant turn goes back without its tool calls. There are none on
+       * this path unless the budget cut the round short, and a call left
+       * unanswered in the transcript is a 400 from every provider that parses
+       * one.
+       */
+      const mine = session.rejected.slice(session.rejectedAt);
+
+      if (mine.length > 0 && !session.corrected) {
+        session.corrected = true;
+        /* Not losses yet — they are being asked for again, so they come off the
+           count. A rewrite that fails too is counted when the next round ends. */
+        session.rejected.length = session.rejectedAt;
+
+        messages.push({ role: 'assistant', content: completion.text.slice(0, ECHO_LIMIT) });
+        messages.push({ role: 'user', content: rewriteRequest(mine) });
+
+        session.round = round + 1;
+        continue;
+      }
+
       /* Answered. Nothing is owed, and a session reused by accident would not
          re-ask the round that produced this. */
       session.round = round + 1;
@@ -495,7 +606,8 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
     inputTokens: session.inputTokens,
     outputTokens: session.outputTokens,
     cachedInputTokens: session.cachedInputTokens,
-    dropped: session.dropped,
+    dropped: session.rejected.length,
+    rejected: session.rejected.map((rejection) => rejection.reason),
     rounds: session.round,
     calls: session.calls,
     plan,

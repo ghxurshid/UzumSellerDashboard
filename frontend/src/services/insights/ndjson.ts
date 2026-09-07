@@ -1,3 +1,5 @@
+import type { ZodError } from 'zod';
+
 import { blockLineSchema, statesRawNumber, type Block } from './blocks';
 
 /**
@@ -34,10 +36,26 @@ import { blockLineSchema, statesRawNumber, type Block } from './blocks';
 export interface BlockStreamState {
   /** Text seen so far that has not ended in a newline yet. */
   buffer: string;
-  /** Lines that were JSON but validated as nothing. Surfaced, never lost. */
-  dropped: number;
   /** Lines that were not JSON at all, kept in case the round produced nothing. */
   prose: string;
+}
+
+/**
+ * A line the seller will not see, and why.
+ *
+ * A count on its own turned out not to be enough to act on. Three unrelated
+ * failures reached the same counter — a figure typed into a sentence, a block
+ * whose shape the schema refuses, a line that is not JSON — and the note under
+ * the answer blamed unverifiable numbers whichever one it had been. The reason
+ * now travels with the line, so the model can be told what to fix and the
+ * seller can be told what happened.
+ *
+ * `line` is the model's own text and may hold the very figure the guard exists
+ * to keep off the screen. It goes back to the model and nowhere else.
+ */
+export interface Rejection {
+  readonly line: string;
+  readonly reason: string;
 }
 
 /** What became complete because of the latest chunk. */
@@ -45,12 +63,45 @@ export interface Harvest {
   readonly blocks: readonly Block[];
   /** JSON objects that are not blocks — the protocol lines. */
   readonly other: readonly unknown[];
+  /** Lines written to be drawn that were not drawable. */
+  readonly rejected: readonly Rejection[];
 }
 
-const EMPTY: Harvest = { blocks: [], other: [] };
+const EMPTY: Harvest = { blocks: [], other: [], rejected: [] };
 
 export function createBlockStream(): BlockStreamState {
-  return { buffer: '', dropped: 0, prose: '' };
+  return { buffer: '', prose: '' };
+}
+
+/**
+ * Why a line that was meant to be a block is not one.
+ *
+ * `blockLineSchema` is a union of shapes, so a failure arrives as a single
+ * `invalid_union` issue carrying one complete error per branch — and all but
+ * one of those branches failed only because `kind` was a different word. The
+ * branch worth reading is the one whose `kind` matched, found by discarding
+ * every branch that tripped on `kind` itself.
+ *
+ * The wording matters because it is what the model is shown. "not one of the
+ * block shapes" is nothing it can act on; "text: String must contain at most
+ * 600 character(s)" is a paragraph it can split in two.
+ */
+function whyNotABlock(error: ZodError): string {
+  const branches = error.issues.flatMap((issue) =>
+    issue.code === 'invalid_union' ? issue.unionErrors : [],
+  );
+
+  for (const branch of branches.length > 0 ? branches : [error]) {
+    const issue = branch.issues.find((candidate) => candidate.path[0] !== 'kind');
+    if (issue !== undefined) return `${issue.path.join('.') || 'line'}: ${issue.message}`;
+  }
+
+  return 'not one of the block shapes';
+}
+
+/** Whether a line was written as something to draw rather than as a request. */
+function looksLikeBlock(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && 'kind' in value;
 }
 
 /**
@@ -73,16 +124,21 @@ function parseLine(state: BlockStreamState, line: string): Harvest {
   try {
     parsed = JSON.parse(trimmed);
   } catch {
-    state.dropped += 1;
-    return EMPTY;
+    return { ...EMPTY, rejected: [{ line: trimmed, reason: 'not valid JSON' }] };
   }
 
   const result = blockLineSchema.safeParse(parsed);
-  if (result.success) return { blocks: [result.data as Block], other: [] };
+  if (result.success) return { blocks: [result.data as Block], other: [], rejected: [] };
 
-  /* Not a block. It may still be a protocol line, and the agent is the only
-     thing that knows — so it goes on rather than being counted as a failure. */
-  return { blocks: [], other: [parsed] };
+  /* A line carrying `kind` was written to be drawn, so its failure is a
+     malformed block and has a reason worth passing on. Anything else may still
+     be a protocol line, and the agent is the only thing that knows — so it goes
+     on rather than being counted as a failure here. */
+  if (looksLikeBlock(parsed)) {
+    return { ...EMPTY, rejected: [{ line: trimmed, reason: whyNotABlock(result.error) }] };
+  }
+
+  return { blocks: [], other: [parsed], rejected: [] };
 }
 
 /**
@@ -102,14 +158,16 @@ export function pushChunk(state: BlockStreamState, chunk: string): Harvest {
 
   const blocks: Block[] = [];
   const other: unknown[] = [];
+  const rejected: Rejection[] = [];
 
   for (const line of lines) {
     const harvest = parseLine(state, line);
     blocks.push(...harvest.blocks);
     other.push(...harvest.other);
+    rejected.push(...harvest.rejected);
   }
 
-  return { blocks, other };
+  return { blocks, other, rejected };
 }
 
 /** Whatever is left when the stream ends — the last line has no newline. */

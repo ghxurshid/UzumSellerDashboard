@@ -1190,9 +1190,9 @@ const TUPLES = {
   lookups: ['{n} lookups', 'запросов: {n}', "{n} ta so'rov"],
   toolTrace: ['Read', 'Прочитано', "O'qildi"],
   droppedBlocks: [
-    '{n} block(s) discarded — they stated figures that could not be checked',
-    'Отброшено блоков: {n} — в них были непроверяемые цифры',
-    "{n} ta blok tashlandi — ularda tekshirib bo'lmaydigan raqamlar bor edi",
+    '{n} line(s) could not be drawn',
+    'Не отрисовано строк: {n}',
+    '{n} ta qator chizilmadi',
   ],
 } as const satisfies Record<string, readonly [string, string, string]>;
 

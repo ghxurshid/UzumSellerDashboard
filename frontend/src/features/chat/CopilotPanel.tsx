@@ -476,7 +476,13 @@ function AnswerTurn({
         )}
 
         {meta !== undefined && meta.dropped > 0 && (
-          <span className="text-tiny text-warn">{t('droppedBlocks', { n: meta.dropped })}</span>
+          /* The reasons hover rather than print. They are diagnostics — a schema
+             message has no business in the line under an answer — but a seller
+             who has seen this twice needs some way to find out which of the
+             several things it can mean actually happened. */
+          <span className="text-tiny text-warn" title={meta.rejected.join('\n')}>
+            {t('droppedBlocks', { n: meta.dropped })}
+          </span>
         )}
       </div>
 

@@ -31,8 +31,16 @@ export interface AnswerMeta {
   readonly elapsedMs: number;
   /** Dollars, or `null` when this model's price is not known. */
   readonly costUsd: number | null;
-  /** Lines the model sent that did not validate. Shown, never hidden. */
+  /** Lines the model sent that were never drawn. Shown, never hidden. */
   readonly dropped: number;
+  /**
+   * Why each was refused — one short reason per dropped line.
+   *
+   * The count alone said nothing a seller could act on, and for a while it said
+   * something untrue: three unrelated failures shared one message about
+   * unverifiable numbers. These are the reasons behind the count.
+   */
+  readonly rejected: readonly string[];
   readonly deep: boolean;
   /** How many times the model went round before it answered. */
   readonly rounds: number;
