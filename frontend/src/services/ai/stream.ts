@@ -81,6 +81,8 @@ interface PartialCall {
   json: string;
   /** Set instead of `json` where the provider sends the arguments whole. */
   args?: unknown;
+  /** Gemini thought signature for this call, handed back verbatim. */
+  signature?: string;
 }
 
 interface Accumulator {
@@ -125,7 +127,12 @@ function finishCalls(accumulator: Accumulator): readonly ToolCall[] {
       }
     }
 
-    calls.push({ id: partial.id === '' ? `call-${key}` : partial.id, name: partial.name, args });
+    calls.push({
+      id: partial.id === '' ? `call-${key}` : partial.id,
+      name: partial.name,
+      args,
+      ...(partial.signature === undefined ? {} : { signature: partial.signature }),
+    });
   }
 
   return calls;
@@ -328,7 +335,10 @@ function geminiContents(messages: readonly ChatMessage[]): readonly GeminiConten
       const parts: Record<string, unknown>[] = [];
       if (message.content.trim() !== '') parts.push({ text: message.content });
       for (const call of message.calls ?? []) {
-        parts.push({ functionCall: { name: call.name, args: call.args ?? {} } });
+        parts.push({
+          functionCall: { name: call.name, args: call.args ?? {} },
+          ...(call.signature === undefined ? {} : { thoughtSignature: call.signature }),
+        });
       }
       if (parts.length > 0) out.push({ role: 'model', parts });
       continue;
@@ -386,7 +396,12 @@ function reduceGemini(
 
   for (const [index, part] of parts.entries()) {
     if (part === null || typeof part !== 'object') continue;
-    const entry = part as { thought?: unknown; text?: unknown; functionCall?: unknown };
+    const entry = part as {
+      thought?: unknown;
+      text?: unknown;
+      functionCall?: unknown;
+      thoughtSignature?: unknown;
+    };
 
     if (entry.thought === true) continue;
 
@@ -405,6 +420,12 @@ function reduceGemini(
         slot.id = `gemini-${accumulator.order.length}`;
         slot.name = name;
         slot.args = args ?? {};
+
+        /* The signature is the receipt for the thinking behind this call,
+           and the next request has to present it. */
+        if (typeof entry.thoughtSignature === 'string' && entry.thoughtSignature !== '') {
+          slot.signature = entry.thoughtSignature;
+        }
       }
     }
   }

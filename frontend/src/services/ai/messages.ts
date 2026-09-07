@@ -25,6 +25,20 @@ export interface ToolCall {
   /** The safe name, as declared. `toolIdOf` maps it back to a registry id. */
   readonly name: string;
   readonly args: unknown;
+  /**
+   * Gemini's sealed record of the thinking that led to the call.
+   *
+   * From Gemini 3 on, a `functionCall` part arrives carrying a
+   * `thoughtSignature`, and the request that answers it must hand the same
+   * signature back on the same part. Drop it and the API refuses the whole
+   * conversation with `400 Function call is missing a thought_signature` — so
+   * the first tool call in a chat succeeds and every turn after it fails.
+   *
+   * The contents are encrypted reasoning state: unreadable here, meaningless to
+   * the other two providers. It rides along unopened and only the Gemini
+   * dialect emits it.
+   */
+  readonly signature?: string;
 }
 
 /** What the application answered with. */
