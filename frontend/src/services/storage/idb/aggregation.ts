@@ -268,11 +268,32 @@ export interface ProductTotal {
   readonly units: number;
   readonly profit: number;
   readonly orders: number;
+  /**
+   * The rest of the chain, summed from the same rows.
+   *
+   * `profit` is Uzum's `sellerProfit`, which is already net of commission and
+   * logistics but carries no cost of goods — so on its own it cannot say why a
+   * product earns what it earns. These are what a reader needs to finish the
+   * sentence: revenue minus commission minus logistics is the profit, and
+   * profit minus purchaseCost is what the seller kept.
+   *
+   * `purchaseCost` is the cost recorded on the rows *at the time of sale*,
+   * which is the honest one for a past window — the catalogue's purchasePrice
+   * is today's, and a cost that changed in between would rewrite history.
+   */
+  readonly commission: number;
+  readonly logistics: number;
+  readonly purchaseCost: number;
+  readonly returns: number;
+  readonly cancelled: number;
 }
 
 /** The minimal row shape the product roll-up reads. */
 export interface ProductRowLike extends OrderRowLike {
   readonly product_title: string;
+  readonly logistic_fee: number;
+  readonly purchase_price: number;
+  readonly amount_returns: number;
 }
 
 /**
@@ -292,6 +313,11 @@ export function aggregateByProduct(
     revenue: number;
     units: number;
     profit: number;
+    commission: number;
+    logistics: number;
+    purchaseCost: number;
+    returns: number;
+    cancelled: number;
     orders: Set<number>;
   }
 
@@ -300,13 +326,29 @@ export function aggregateByProduct(
   for (const row of rows) {
     let bucket = totals.get(row.product_id);
     if (bucket === undefined) {
-      bucket = { title: row.product_title, revenue: 0, units: 0, profit: 0, orders: new Set() };
+      bucket = {
+        title: row.product_title,
+        revenue: 0,
+        units: 0,
+        profit: 0,
+        commission: 0,
+        logistics: 0,
+        purchaseCost: 0,
+        returns: 0,
+        cancelled: 0,
+        orders: new Set(),
+      };
       totals.set(row.product_id, bucket);
     }
 
     bucket.revenue += row.revenue;
     bucket.units += row.amount;
     bucket.profit += row.seller_profit;
+    bucket.commission += row.commission;
+    bucket.logistics += row.logistic_fee;
+    bucket.purchaseCost += row.purchase_price;
+    bucket.returns += row.amount_returns;
+    bucket.cancelled += row.cancelled;
     bucket.orders.add(row.order_id);
     /* Titles can be blank on some rows; the first non-blank one wins. */
     if (bucket.title === '' && row.product_title !== '') bucket.title = row.product_title;
@@ -320,6 +362,11 @@ export function aggregateByProduct(
       units: bucket.units,
       profit: bucket.profit,
       orders: bucket.orders.size,
+      commission: bucket.commission,
+      logistics: bucket.logistics,
+      purchaseCost: bucket.purchaseCost,
+      returns: bucket.returns,
+      cancelled: bucket.cancelled,
     }))
     .sort((a, b) => b.revenue - a.revenue);
 
@@ -391,6 +438,16 @@ export type AnalyticsJob =
       readonly fromMs: number;
       readonly toMs: number;
       readonly granularity?: Granularity | undefined;
+      /**
+       * Narrow the fold to one product.
+       *
+       * The filter belongs on the job rather than after the result because the
+       * runner streams: a window holding a hundred thousand rows for a shop
+       * holds a few hundred for one product, and dropping the rest at the
+       * cursor is the difference between reading a product's year and
+       * materialising the shop's.
+       */
+      readonly productId?: number | undefined;
     }
   | {
       readonly kind: 'products';

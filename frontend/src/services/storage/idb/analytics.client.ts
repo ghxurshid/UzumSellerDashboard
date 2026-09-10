@@ -148,15 +148,31 @@ export function runJob(
  * This is the call a chart makes. It returns gap-free buckets already sized to
  * the window, so the component receives something it can draw directly rather
  * than a row set it has to group first.
+ *
+ * `productId` narrows the fold to one product without changing anything else
+ * about the result: same buckets, same window, same zeros where nothing sold.
+ * A product's line and the shop's line are therefore drawn from the same shape
+ * and can be put on the same axis.
  */
 export async function loadSeries(
   storeIds: readonly number[],
   fromMs: number,
   toMs: number,
-  options: { readonly granularity?: Granularity; readonly signal?: AbortSignal } = {},
+  options: {
+    readonly granularity?: Granularity;
+    readonly productId?: number;
+    readonly signal?: AbortSignal;
+  } = {},
 ): Promise<SeriesResult> {
   const result = await runJob(
-    { kind: 'series', storeIds, fromMs, toMs, granularity: options.granularity },
+    {
+      kind: 'series',
+      storeIds,
+      fromMs,
+      toMs,
+      granularity: options.granularity,
+      productId: options.productId,
+    },
     options.signal,
   );
   if (result.kind !== 'series') throw new Error('Unexpected analytics reply');

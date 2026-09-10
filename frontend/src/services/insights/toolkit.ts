@@ -177,10 +177,24 @@ const scopeFor = (context: ToolContext, window: Window): Scope => ({
   toMs: window.toMs,
 });
 
-/** The ref namespace a result writes into. Lets two windows coexist. */
+/**
+ * The ref namespace a result writes into. Lets two windows coexist.
+ *
+ * Sanitised rather than validated. The schema used to require
+ * `/^[a-z][a-z0-9]{0,7}$/` and reject the entire call when it did not match,
+ * which cost a whole round every time the model wrote the obvious thing:
+ * `id:"realmadrid"` is ten characters and `id:"rm_white"` has an underscore,
+ * and neither is a misunderstanding of what the argument is for. A namespace
+ * only has to be short and unambiguous, and both of those can be *made* true.
+ * What genuinely cannot be repaired — an id that cleans down to nothing, or to
+ * something starting with a digit — falls back, exactly as it did before.
+ */
 function namespaceOf(args: Record<string, unknown>, fallback: string): string {
   const id = str(args['id']);
-  return id !== undefined && /^[a-z][a-z0-9]{0,7}$/.test(id) ? id : fallback;
+  if (id === undefined) return fallback;
+
+  const clean = id.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
+  return /^[a-z]/.test(clean) ? clean : fallback;
 }
 
 const shopsLine = (context: ToolContext): string => `shops ${context.scope.shopIds.join(',')}`;
@@ -205,7 +219,7 @@ function shareOf(part: number, whole: number): number | null {
 /* ── shared schema fragments ────────────────────────────────────────────── */
 
 const dayString = z.string().trim().min(4).max(30);
-const idString = z.string().trim().regex(/^[a-z][a-z0-9]{0,7}$/);
+const idString = z.string().trim().min(1).max(40);
 const windowArgs = {
   from: dayString.optional(),
   to: dayString.optional(),
@@ -375,15 +389,19 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
 
   'series.revenue': {
     route: 'archive:order_item (analytics worker)',
-    args: '{from?, to?, granularity?:"hour|day|week|month", id?}',
+    args: '{from?, to?, granularity?:"hour|day|week|month", productId?, id?}',
     summary: [
       'Revenue, sellerProfit and units bucketed over time, plus the totals of the window.',
       'Use it for trends, seasonality, "which day/week was best", and to draw a line chart —',
       'a line cites the series by ref and never lists its own points.',
+      "Pass productId to get one product's own line instead of the shop's; the buckets are",
+      'the same, so a product and its shop can be drawn on one axis. productId comes from',
+      'product.find or products.rank.',
     ],
     schema: z.object({
       ...windowArgs,
       granularity: z.enum(['hour', 'day', 'week', 'month']).optional(),
+      productId: z.number().int().positive().optional(),
       id: idString.optional(),
     }),
     run: async (args, context) => {
@@ -396,6 +414,15 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
         | 'month'
         | undefined;
 
+      /* One product, or the shop. The archive indexes product_id on every
+         order item, so the narrow read is the same read with a predicate. */
+      const productId = int(args['productId'], 0);
+      const named =
+        productId > 0
+          ? context.products.find((entry) => entry.productId === productId)
+          : undefined;
+      const subject = productId > 0 ? ` for "${named?.name ?? `product ${productId}`}"` : '';
+
       /* The archive is filled through the same door every screen uses, so the
          worker never walks a window this machine has not stored. */
       await readFinance(scopeFor(context, window), {
@@ -406,6 +433,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
 
       const result = await loadSeries(context.scope.shopIds, window.fromMs, window.toMs, {
         ...(granularity !== undefined ? { granularity } : {}),
+        ...(productId > 0 ? { productId } : {}),
         ...(context.signal !== undefined ? { signal: context.signal } : {}),
       });
 
@@ -414,11 +442,11 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
 
       return {
         routes: ['archive:order_item'],
-        trace: `${result.series.granularity} · ${at.length} buckets`,
+        trace: `${result.series.granularity} · ${at.length} buckets${productId > 0 ? ` · product ${productId}` : ''}`,
         series: [
-          { ref: `${id}.revenue`, label: 'Revenue per bucket', at, values: revenue, format: 'money' },
-          { ref: `${id}.profit`, label: 'sellerProfit per bucket', at, values: profit, format: 'money' },
-          { ref: `${id}.units`, label: 'Units per bucket', at, values: units, format: 'count' },
+          { ref: `${id}.revenue`, label: `Revenue per bucket${subject}`, at, values: revenue, format: 'money' },
+          { ref: `${id}.profit`, label: `sellerProfit per bucket${subject}`, at, values: profit, format: 'money' },
+          { ref: `${id}.units`, label: `Units per bucket${subject}`, at, values: units, format: 'count' },
         ],
         facts: [
           { ref: `${id}.total.revenue`, label: 'Revenue over the window', value: result.totals.revenue, format: 'money' },
@@ -432,6 +460,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
           header('series.revenue', [
             windowLabel(window.fromMs, window.toMs),
             shopsLine(context),
+            productId > 0 ? `product ${productId} — ${named?.name ?? 'not in the catalogue'}` : 'all products',
             `${result.series.granularity} buckets`,
             `${result.totals.rows} rows`,
             window.note,
@@ -446,8 +475,10 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
           ])}`,
           spread === null ? null : `peak ${spread.peak} · trough ${spread.trough}`,
           '',
-          at.length === 0
-            ? 'no rows in this window'
+          result.totals.rows === 0
+            ? productId > 0
+              ? `this product sold nothing in this window — the buckets exist and are all zero. The archive does hold sales per product, so a wider window or another productId will draw a line.`
+              : 'no rows in this window'
             : table(
                 ['bucket', 'revenue', 'profit', 'units', 'orders', 'cancelled'],
                 downsample(at, [revenue, profit, units, orders, cancelled], 40),
@@ -462,11 +493,12 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
     route: 'archive:order_item + catalogue',
     args: '{from?, to?, limit?:1-30, by?:"revenue|profit|units"}',
     summary: [
-      'Products ranked over the window, with units, revenue and sellerProfit from the archive',
-      'joined to price, purchase price and stock from the catalogue. Carries netEst — profit',
-      'less purchase price × units — which is the only figure that says whether a line earns.',
-      'Also carries each product\'s share of the window and its margin, so a comparison can be',
-      'cited rather than calculated.',
+      'Products ranked over the window, with the full profit chain per product from the',
+      'archive — revenue, commission, logistics, sellerProfit, cost of goods and netActual —',
+      'joined to price and stock from the catalogue. netActual is sellerProfit less the cost',
+      'recorded at the time of sale, and is the per-product form of the window net profit.',
+      'Also carries each product\'s share of the window and its margins, so a comparison can',
+      'be cited rather than calculated.',
     ],
     schema: z.object({
       ...windowArgs,
@@ -504,6 +536,9 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
       const windowRevenue = totals.reduce((sum, entry) => sum + entry.revenue, 0);
       const windowProfit = totals.reduce((sum, entry) => sum + entry.profit, 0);
       const windowUnits = totals.reduce((sum, entry) => sum + entry.units, 0);
+      const windowCommission = totals.reduce((sum, entry) => sum + entry.commission, 0);
+      const windowLogistics = totals.reduce((sum, entry) => sum + entry.logistics, 0);
+      const windowCost = totals.reduce((sum, entry) => sum + entry.purchaseCost, 0);
 
       const catalogue = new Map(context.products.map((product) => [product.productId, product]));
       const ranked = [...totals].sort((a, b) => b[by] - a[by]).slice(0, limit);
@@ -515,6 +550,10 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
         { ref: 'rank.profit', label: 'Sum sellerProfit of every product in the window', value: windowProfit, format: 'money' },
         { ref: 'rank.units', label: 'Units sold across every product in the window', value: windowUnits, format: 'count' },
         { ref: 'rank.products', label: 'Products that sold at least once in the window', value: totals.length, format: 'count' },
+        { ref: 'rank.commission', label: 'Commission charged across every product in the window', value: windowCommission, format: 'money' },
+        { ref: 'rank.logistics', label: 'Logistics charged across every product in the window', value: windowLogistics, format: 'money' },
+        { ref: 'rank.cost', label: 'Cost of goods across every product in the window', value: windowCost, format: 'money' },
+        { ref: 'rank.netActual', label: 'sellerProfit less cost of goods, every product', value: windowProfit - windowCost, format: 'money' },
       ];
       const rows: (string | number)[][] = [];
 
@@ -522,13 +561,31 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
         const product = catalogue.get(entry.productId);
         const cost = (product?.purchasePrice ?? 0) * entry.units;
         const netEst = entry.profit - cost;
+        /**
+         * Two nets, because there are two honest questions.
+         *
+         * `netActual` uses the cost the archive recorded when the sale settled,
+         * which is what the seller actually kept and what the window's net
+         * profit is built from. `netEst` uses today's catalogue cost, which
+         * answers the different question of what the same sales would earn at
+         * the price the seller buys at now. They agree until a cost changes,
+         * and when they disagree the gap is the answer to "why is last month's
+         * margin not this month's".
+         */
+        const netActual = entry.profit - entry.purchaseCost;
         const ref = `p.${entry.productId}`;
 
         facts.push(
           { ref: `${ref}.revenue`, label: `Revenue of "${entry.title}"`, value: entry.revenue, format: 'money' },
           { ref: `${ref}.profit`, label: `sellerProfit of "${entry.title}"`, value: entry.profit, format: 'money' },
           { ref: `${ref}.units`, label: `Units sold of "${entry.title}"`, value: entry.units, format: 'count' },
-          { ref: `${ref}.netEst`, label: `sellerProfit minus purchase cost for "${entry.title}"`, value: netEst, format: 'money' },
+          { ref: `${ref}.netEst`, label: `sellerProfit minus today's purchase cost for "${entry.title}"`, value: netEst, format: 'money' },
+          { ref: `${ref}.commission`, label: `Commission charged on "${entry.title}"`, value: entry.commission, format: 'money' },
+          { ref: `${ref}.logistics`, label: `Logistics charged on "${entry.title}"`, value: entry.logistics, format: 'money' },
+          { ref: `${ref}.cost`, label: `Cost of goods recorded at sale for "${entry.title}"`, value: entry.purchaseCost, format: 'money' },
+          { ref: `${ref}.netActual`, label: `sellerProfit minus cost of goods for "${entry.title}"`, value: netActual, format: 'money' },
+          { ref: `${ref}.returns`, label: `Units returned of "${entry.title}"`, value: entry.returns, format: 'count' },
+          { ref: `${ref}.cancelledItems`, label: `Cancelled order items of "${entry.title}"`, value: entry.cancelled, format: 'count' },
         );
 
         /**
@@ -546,6 +603,8 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
           ['shareOfProfit', `Share of window sellerProfit for "${entry.title}"`, shareOf(entry.profit, windowProfit)],
           ['margin', `sellerProfit as a percent of revenue for "${entry.title}"`, shareOf(entry.profit, entry.revenue)],
           ['netMargin', `netEst as a percent of revenue for "${entry.title}"`, shareOf(netEst, entry.revenue)],
+          ['netActualMargin', `netActual as a percent of revenue for "${entry.title}"`, shareOf(netActual, entry.revenue)],
+          ['commissionRate', `Commission as a percent of revenue for "${entry.title}"`, shareOf(entry.commission, entry.revenue)],
         ] as const) {
           if (value !== null) facts.push({ ref: `${ref}.${suffix}`, label, value, format: 'percent' });
         }
@@ -564,9 +623,11 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
           entry.title,
           entry.units,
           entry.revenue,
+          entry.commission,
+          entry.logistics,
           entry.profit,
-          netEst,
-          product?.purchasePrice ?? 0,
+          entry.purchaseCost,
+          netActual,
           product?.quantityAvailable ?? 0,
         ]);
       }
@@ -583,20 +644,27 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
             `${totals.length} products touched the window`,
             window.note,
           ]),
-          "money in so'm. purchasePrice and available come from the catalogue snapshot, so they",
-          'are current values, not values as of the window.',
+          "money in so'm. The chain reads left to right: revenue - commission - logistics is",
+          'sellerProfit, and sellerProfit - cost is netActual. available comes from the catalogue',
+          'snapshot, so it is a current value, not a value as of the window.',
           rows.length === 0
             ? 'no sales in this window'
             : table(
-                ['ref', 'name', 'units', 'revenue', 'sellerProfit', 'netEst', 'purchasePrice', 'available'],
+                ['ref', 'name', 'units', 'revenue', 'commission', 'logistics', 'sellerProfit', 'cost', 'netActual', 'available'],
                 rows,
               ),
-          `cite: <ref>.revenue .profit .units .netEst .price .purchasePrice .available .returnedPct`,
+          'cite: <ref>.revenue .profit .units .commission .logistics .cost .netActual .returns',
+          '      <ref>.cancelledItems .netEst .price .purchasePrice .available .returnedPct',
+          'netActual uses the cost recorded at sale; netEst uses the catalogue cost as it stands',
+          'today. Quote netActual for what a past window earned, netEst for what the same sales',
+          'would earn at the buying price now.',
           'percentages, already worked out — cite these rather than doing the arithmetic:',
           '  <ref>.shareOfRevenue .shareOfProfit  this product as a share of the whole window',
-          '  <ref>.margin .netMargin              sellerProfit and netEst as a percent of revenue',
-          '  rank.revenue rank.profit rank.units rank.products   the window totals they divide by',
+          '  <ref>.margin .netMargin .netActualMargin .commissionRate   as a percent of revenue',
+          '  rank.revenue rank.profit rank.units rank.commission rank.logistics rank.cost',
+          '  rank.netActual rank.products         the window totals they divide by',
           'A share whose denominator is zero or negative is left out; citing it renders a dash.',
+          'For one product over time, pass its productId to series.revenue.',
         ]),
       };
     },
@@ -607,8 +675,10 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
     args: '{query:"name fragment or productId", from?, to?}',
     summary: [
       'One product in full: price and purchase price per SKU, stock, lifetime counters, status,',
-      'and what it sold over the window. Use it before proposing a price or stock write —',
-      'those need skuId and barcode, and this is where they come from.',
+      'and the whole profit chain it earned over the window — revenue, commission, logistics,',
+      'sellerProfit, cost of goods, netActual. Use it before proposing a price or stock write —',
+      'those need skuId and barcode, and this is where they come from — and before charting one',
+      'product, because it is where productId comes from.',
     ],
     schema: z.object({ ...windowArgs, query: z.string().trim().min(1).max(80) }),
     run: async (args, context) => {
@@ -659,12 +729,31 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
 
       if (sold !== undefined) {
         const netEst = sold.profit - product.purchasePrice * sold.units;
+        /* The cost as it stood when the sales settled — see products.rank for
+           why this and `netEst` are both kept. */
+        const netActual = sold.profit - sold.purchaseCost;
+
         facts.push(
           { ref: `${ref}.revenue`, label: `Revenue of "${product.name}" in the window`, value: sold.revenue, format: 'money' },
           { ref: `${ref}.profit`, label: `sellerProfit of "${product.name}" in the window`, value: sold.profit, format: 'money' },
           { ref: `${ref}.units`, label: `Units of "${product.name}" sold in the window`, value: sold.units, format: 'count' },
-          { ref: `${ref}.netEst`, label: `sellerProfit minus purchase cost for "${product.name}"`, value: netEst, format: 'money' },
+          { ref: `${ref}.netEst`, label: `sellerProfit minus today's purchase cost for "${product.name}"`, value: netEst, format: 'money' },
+          { ref: `${ref}.commission`, label: `Commission charged on "${product.name}" in the window`, value: sold.commission, format: 'money' },
+          { ref: `${ref}.logistics`, label: `Logistics charged on "${product.name}" in the window`, value: sold.logistics, format: 'money' },
+          { ref: `${ref}.cost`, label: `Cost of goods recorded at sale for "${product.name}"`, value: sold.purchaseCost, format: 'money' },
+          { ref: `${ref}.netActual`, label: `sellerProfit minus cost of goods for "${product.name}"`, value: netActual, format: 'money' },
+          { ref: `${ref}.windowReturns`, label: `Units of "${product.name}" returned in the window`, value: sold.returns, format: 'count' },
+          { ref: `${ref}.windowCancelled`, label: `Cancelled order items of "${product.name}" in the window`, value: sold.cancelled, format: 'count' },
+          { ref: `${ref}.orders`, label: `Orders "${product.name}" appeared on in the window`, value: sold.orders, format: 'count' },
         );
+
+        for (const [suffix, label, value] of [
+          ['margin', `sellerProfit as a percent of revenue for "${product.name}"`, shareOf(sold.profit, sold.revenue)],
+          ['netActualMargin', `netActual as a percent of revenue for "${product.name}"`, shareOf(netActual, sold.revenue)],
+          ['commissionRate', `Commission as a percent of revenue for "${product.name}"`, shareOf(sold.commission, sold.revenue)],
+        ] as const) {
+          if (value !== null) facts.push({ ref: `${ref}.${suffix}`, label, value, format: 'percent' });
+        }
       }
 
       for (const sku of product.skus) {
@@ -705,12 +794,27 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
           ]),
           sold === undefined
             ? 'no sales in the window read'
-            : pairs([
-                [`${ref}.units`, sold.units],
-                [`${ref}.revenue`, sold.revenue],
-                [`${ref}.profit`, sold.profit],
-                [`${ref}.netEst`, sold.profit - product.purchasePrice * sold.units],
+            : compose([
+                'the window, chain in order — revenue - commission - logistics = sellerProfit,',
+                'sellerProfit - cost = netActual:',
+                pairs([
+                  [`${ref}.units`, sold.units],
+                  [`${ref}.orders`, sold.orders],
+                  [`${ref}.revenue`, sold.revenue],
+                  [`${ref}.commission`, sold.commission],
+                  [`${ref}.logistics`, sold.logistics],
+                  [`${ref}.profit`, sold.profit],
+                  [`${ref}.cost`, sold.purchaseCost],
+                  [`${ref}.netActual`, sold.profit - sold.purchaseCost],
+                  [`${ref}.netEst`, sold.profit - product.purchasePrice * sold.units],
+                  [`${ref}.windowReturns`, sold.returns],
+                  [`${ref}.windowCancelled`, sold.cancelled],
+                ]),
+                'cost is what the archive recorded at sale; netEst re-prices the same units at the',
+                "catalogue's cost today. also cited: .margin .netActualMargin .commissionRate",
               ]),
+          '',
+          `to chart this product over time: series.revenue {productId: ${product.productId}, granularity: "day"}`,
           '',
           'SKUs — skuId and barcode are what a price or stock write needs:',
           table(

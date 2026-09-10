@@ -59,9 +59,11 @@ async function collectPeriod<T>(
   entity: (typeof ENTITY_TYPES)[keyof typeof ENTITY_TYPES],
   fromMs: number,
   toMs: number,
+  keep?: (row: T) => boolean,
 ): Promise<T[]> {
   const rows: T[] = [];
   await streamPeriod<T>(storeIds, entity, fromMs, toMs, (row) => {
+    if (keep !== undefined && !keep(row)) return;
     rows.push(row);
   });
   return rows;
@@ -79,11 +81,27 @@ export async function runAnalytics(job: AnalyticsJob): Promise<AnalyticsResult> 
        * not require order — every row is placed arithmetically — but `firstAt`
        * and `lastAt` in the totals do, and a chart's tooltip reads them.
        */
+      /**
+       * Narrowing happens at the cursor, not after it.
+       *
+       * A shop's month is tens of thousands of order items and one product's
+       * month is a few hundred, so a filter applied to a materialised array
+       * would pay the whole cost to throw away almost all of it. The predicate
+       * runs inside the walk, where the row is already deserialised and the
+       * array has not been grown yet.
+       *
+       * The buckets are still pre-allocated for the *whole* window, so a
+       * product that sold nothing on Tuesday gets a zero rather than a gap —
+       * which is the point of asking for a series instead of a list of sales.
+       */
       const rows = await collectPeriod<OrderItemRecord>(
         job.storeIds,
         ENTITY_TYPES.orderItem,
         job.fromMs,
         job.toMs,
+        job.productId === undefined
+          ? undefined
+          : (row) => row.product_id === job.productId,
       );
       if (job.storeIds.length > 1) rows.sort((a, b) => a.timestamp - b.timestamp);
 
