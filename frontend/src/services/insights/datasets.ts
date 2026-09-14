@@ -14,13 +14,19 @@ import { isoDay, isoMinute } from './plaintext';
  *
  * ## What a sale is worth here
  *
- * The recorded API samples settle the question the rest of the code base is
- * split on: `sellPrice` is the price of **one** unit, while `commission`,
- * `logisticDeliveryFee` and `sellerProfit` are totals for the whole line — a row
- * with `sellPrice 48 900 × amount 2` carries `commission 24 450`, a quarter of
- * 97 800. So revenue here is `sellPrice × amount`, the same as the archive's
- * `revenue` column, and a cancelled line (amount 0, every money field 0) adds
- * nothing to it and is counted on its own.
+ * Revenue here is `sellPrice × amount`, the same as the archive's `revenue`
+ * column, and a cancelled line (amount 0, every money field 0) adds nothing to
+ * it and is counted on its own.
+ *
+ * The evidence for that reading is real but thin. In the flat response the app
+ * requests (`group=false`), the recorded samples hold exactly one line with
+ * `amount > 1`: `sellPrice 48 900 × amount 2`, `commission 24 450`, `sellerProfit
+ * 62 350` — which only adds up if `sellPrice` is per unit and the money fields
+ * are for the whole line. The grouped response (`group=true`) reports
+ * `sellPrice` as the group's total, which is consistent with that rather than
+ * against it. `derive/finance.ts` sums `sellPrice` without `× amount`; the two
+ * agree on every line of one unit and part ways only on the rare line of more.
+ * See `ENDPOINTS.md` §12.3 — one more sample would settle it.
  */
 
 const HOUR_MS = 3_600_000;

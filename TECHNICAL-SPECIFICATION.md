@@ -1,7 +1,7 @@
 # Savdo Copilot — Texnik spetsifikatsiya
 
-**Versiya:** 2.4.0
-**Hujjat sanasi:** 2026-08-16
+**Versiya:** 2.5.0
+**Hujjat sanasi:** 2026-09-14
 **Maqsad:** [FUNCTIONAL-SPECIFICATION.md](./FUNCTIONAL-SPECIFICATION.md) dagi har bir
 talab texnik jihatdan qanday amalga oshirilganini ifodalash.
 
@@ -16,7 +16,9 @@ Bog'liq hujjatlar:
 ### 1.1. Serversiz model
 
 **Ilova serveri yo'q.** Brauzer to'g'ridan-to'g'ri `api-seller.uzum.uz` bilan
-gaplashadi, foydalanuvchining o'z tokeni bilan.
+gaplashadi, foydalanuvchining o'z tokeni bilan. AI Copilot ham xuddi shunday:
+sotuvchi tanlagan LLM provayderiga uning o'z kaliti bilan brauzerdan murojaat
+qiladi (10-bo'lim).
 
 ```
 ┌──────────────────────────── Brauzer ────────────────────────────┐
@@ -25,17 +27,19 @@ gaplashadi, foydalanuvchining o'z tokeni bilan.
 │      │                                                          │
 │      ├── TanStack Query ──── axios ──┐                          │
 │      │                               │                          │
-│      └── IndexedDB ('savdo', v3)     │                          │
-│            15 object store           │                          │
-│                                      │                          │
-└──────────────────────────────────────┼──────────────────────────┘
-                                       │
-                          ┌────────────┴────────────┐
-                          │  dev: Vite proxy (CORS) │
-                          └────────────┬────────────┘
-                                       ▼
-                        https://api-seller.uzum.uz
-                            /api/seller-openapi
+│      ├── IndexedDB ('savdo', v3)     │                          │
+│      │     15 object store           │                          │
+│      │                               │                          │
+│      └── AI Copilot ── services/ai ──┼──────────────┐           │
+│                                      │              │           │
+└──────────────────────────────────────┼──────────────┼───────────┘
+                                       │              │
+                          ┌────────────┴────────────┐ │
+                          │  dev: Vite proxy (CORS) │ │
+                          └────────────┬────────────┘ │
+                                       ▼              ▼
+                        https://api-seller.uzum.uz   LLM provayder
+                            /api/seller-openapi      (Claude, OpenAI, Gemini, …)
 ```
 
 **Nega shunday.** Uzum tokeni sotuvchining o'ziniki. Uni serverga saqlash
@@ -72,6 +76,9 @@ rejalashtirilgan sinxronizatsiya uchun.
 | HTTP | axios |
 | Animatsiya | framer-motion |
 | Saqlash | IndexedDB (to'g'ridan-to'g'ri, ORM'siz) |
+| AI | Provayder adapterlari qo'lda yozilgan: Anthropic Messages, Google `generateContent`, OpenAI-mos `/chat/completions` (OpenRouter, DeepSeek, Mistral, Ollama va boshqalar) |
+| Matn | react-markdown + remark-gfm (Copilot javobidagi prose, xom HTML'siz) |
+| Testlar | Vitest (node muhiti) |
 
 ---
 
@@ -86,6 +93,8 @@ features/       ekran bloklari
    ↑
 services/queries/    TanStack Query hooklari (kalit, enabled, dedup)
    ↑
+services/insights/   AI Copilot: suhbat sikli, toolkit, bloklar, amallar
+   ↑                   └── services/ai/  LLM provayder transporti
 services/data/       kolleksiyalarga yagona eshik — `sync` bayrog'i
    ↑
 services/derive/     hisob-kitob (sof funksiyalar)
@@ -99,7 +108,13 @@ services/api/        axios, xatolar, rate limit
 ```
 
 **Qoida:** yuqori qatlam pastkini biladi, aksi yo'q. `derive/` sof — na tarmoq,
-na saqlash, na DOM.
+na saqlash, na DOM. Yagona qabul qilingan chetlanish — shartnoma modullari:
+`insights/blocks.ts` (karta tanasi tili, uni `derive/insights.ts` qoidalari ham
+yozadi) va `queries/sources.ts` dagi manba tiplari pastdan import qilinishi
+mumkin.
+
+Qaysi papka qaysi agentga tegishli ekani va chegara qoidalari ildizdagi
+[CLAUDE.md](./CLAUDE.md) da; agentlar ta'rifi — [`.claude/agents/`](./.claude/agents/).
 
 ### 2.1. Kolleksiyalarga yagona eshik
 
@@ -178,9 +193,10 @@ faqat `429` keltiradi.
 
 ### 3.5. Xatolar
 
-`ApiError` turlarga bo'linadi: `unauthorized`, `forbidden`, `notFound`,
-`rateLimited`, `timeout`, `cancelled`, `server`, `client`. Har bir ekran shu
-turga qarab nima ko'rsatishini biladi.
+`ApiError` turlarga bo'linadi: `network`, `timeout`, `unauthorized`,
+`forbidden`, `rateLimited`, `notFound`, `server`, `client`, `cancelled`,
+`unconfigured`. Har bir ekran — va Copilot — shu turga qarab nima
+ko'rsatishini biladi.
 
 ---
 
@@ -358,7 +374,7 @@ chunki rejalashtiruvchi qoplama yozuviga so'zsiz ishonadi.
 | `series.ts` | Vaqt seriyalari, bucket'lash |
 | `products.ts` | Katalog qatorlari, holat normalizatsiyasi |
 | `modules.ts` | To'rt jadval ekranining ta'rifi (ustunlar, KPI, amallar) |
-| `insights.ts` | Avtomatik kuzatuvlar |
+| `insights.ts` | Qoida asosidagi kuzatuv kartalari — chegarani kesib o'tgan ko'rsatkichni topadi va raqamlarni blokka `format` bilan qiymat sifatida yozadi |
 | `priceImpact.ts` | Narx o'zgarishining sotuvga ta'siri |
 
 ### Wire → domen tarjimasi
@@ -439,7 +455,184 @@ mijozda.
 
 ---
 
-## 10. Qurish va tekshirish
+## 10. AI Copilot
+
+**Funksional talab** (funksional spetsifikatsiya, 5-bo'lim): sotuvchi o'z
+ma'lumoti haqida oddiy tilda so'raydi va javob haqiqiy ma'lumotdan tuziladi;
+model Uzum'ga o'zi hech narsa yozmaydi.
+
+Kod: [`services/insights/`](./frontend/src/services/insights/) (suhbat, toolkit,
+bloklar, amallar), [`services/ai/`](./frontend/src/services/ai/) (provayder
+transporti), [`features/chat/`](./frontend/src/features/chat/) va
+[`features/insights/`](./frontend/src/features/insights/) (panel, rail, chizish).
+
+### 10.1. Suhbat sikli
+
+[`agent.ts`](./frontend/src/services/insights/agent.ts) — bir savol bir necha
+**raund**dan iborat:
+
+```
+system prompt           kimligi, chegaralar, "kerakligini o'zing so'ra"
+  ↳ toolkit'ni ochish   qaysi so'rovlar va amallar bor — bir thread'da bir marta
+  ↳ lookup chaqirish    arxivdan ma'lumot o'qiladi (10.2)
+  ↳ widget qo'llanmasi  javob qanday chiziladi — bir thread'da bir marta
+  ↳ bloklar             javob, raqamlari bilan, oqimda (10.3)
+```
+
+- **Ikki protokol, bitta sikl.** Claude, OpenAI va Gemini'da chaqiruvlar
+  provayderning o'z tool API'si orqali keladi; boshlanishda faqat bitta tool —
+  `open_toolkit` — e'lon qilinadi, qolganlari toolkit ochilgandan keyin.
+  Boshqa provayderlarda xuddi shu suhbat JSON qatorlari orqali boradi
+  (`{"need":"tools"}`, `{"call":"window.totals","args":{}}`).
+- **Byudjet.** Chuqur rejimda 5 raund va 12 lookup, oddiy rejimda 2 va 4. Oxirgi
+  raundga "bu oxirgisi, bor narsang bilan javob ber" deb oldindan aytiladi.
+  Bitta savol ichida takrorlangan lookup keshdan beriladi.
+- **Ochilgan hujjatlar keyingi savolga o'tadi.** Keyingi savolning tarixi oldingi
+  javoblarning qisqa mazmuni, hujjatlarning o'zi emas. Shuning uchun thread'da
+  ochilgan toolkit va widget qo'llanmasi yangi savolning system prompt'iga
+  qo'shiladi (`withOpenedDocuments`). Aks holda model "sizda bor" deb aytilgan,
+  lekin ko'rmayotgan qo'llanma bo'yicha shakllarni taxmin qilardi.
+- **Davom ettirish.** Raund o'rtasida uzilsa (`503`, tarmoq), sessiya saqlanadi:
+  **Davom ettirish** o'sha raunddan boshlaydi, o'qilgan lookup'lar keshdan
+  keladi va ekranga chiqqan matn takrorlanmaydi (`checkpoint`).
+
+### 10.2. Toolkit — model nimani o'qiy oladi
+
+[`toolkit.ts`](./frontend/src/services/insights/toolkit.ts). Har bir lookup
+2.1-bo'limdagi yagona eshikdan `sync: true` bilan o'qiydi — ya'ni avval arxiv,
+yetishmagan qism Uzum'dan. Natija **ma'lumotning o'zi**: sarlavha (tool, davr,
+do'konlar, qator soni, `TRUNCATED`, qisqartirilgan davr), birliklar qatori va
+birinchi qatori ustun nomlari bo'lgan `|` bilan ajratilgan jadvallar
+([`plaintext.ts`](./frontend/src/services/insights/plaintext.ts)).
+
+| Lookup | Nima beradi |
+|---|---|
+| `window.totals` | Davrning butun pul modeli: sellPrice, komissiya, logistika, sellerProfit, tannarx, xarajatlar manba bo'yicha, sof foyda, marja, buyurtma, birlik, bekor qilish, qaytarish |
+| `period.compare` | Ikki davr yonma-yon, farq va farq % bilan |
+| `sales.timeline` | Soat/kun/hafta/oy kesimida sotuv — butun do'kon yoki 8 tagacha mahsulot yonma-yon, sotilmagan kunda nol |
+| `sales.pattern` | Soat yoki hafta kuni bo'yicha buyurtma, birlik, tushum — sotuvchi vaqt zonasida |
+| `products.rank` | Davrda sotilgan barcha mahsulotlar reytingi, foyda zanjiri, ulush va marjalar; `order:"asc"` — eng zaiflari |
+| `product.find` | Bitta mahsulot: SKU'lar (skuId, shtrix-kod), qoldiq, davrdagi natijasi |
+| `expenses.breakdown`, `stock.health`, `orders.pipeline`, `supply.invoices`, `price.impact` | Xarajatlar, qoldiq muammolari, buyurtmalar muddati, nakladnoy kamomadi, narx o'zgarishi ta'siri |
+| `data.rows` | **Xom qatorlar**, sahifalab (`limit` ≤ 1000, `offset`): `sales`, `expenses`, `orders`, `catalogue` — hisoblovchi lookup javob bermaydigan chuqur tahlil uchun |
+| `archive.coverage`, `alerts.list`, `shops.list` | Arxiv qamrovi, doimiy qoidalar, do'konlar |
+
+**Nega ikki chuqurlik.** Hisoblovchi lookup'lar arifmetikani har bir qator
+ustida kodda bajaradi ([`datasets.ts`](./frontend/src/services/insights/datasets.ts),
+testlangan) — model uch yuz qatorni boshida qo'shganidan aniqroq. `data.rows`
+esa oldindan ko'zda tutilmagan savol uchun: savatcha tahlili, SKU kesimi,
+qaytarish sabablari.
+
+**Token tejash.** Mahsulot nomi sahifada bir marta lug'at sifatida, yil
+sarlavhada bir marta, ajratgich atrofida bo'shliq yo'q, 400 dan ortiq bucket
+so'ralsa granularlik yiriklashtiriladi.
+
+### 10.3. Javob — bloklar
+
+Model javobni **NDJSON** qilib yozadi: har qatorda bitta blok. Qator tugashi
+bilan zod sxemasi bo'yicha tekshiriladi va chiziladi
+([`ndjson.ts`](./frontend/src/services/insights/ndjson.ts),
+[`blocks.ts`](./frontend/src/services/insights/blocks.ts)). Faqat `text` bloki
+yozilayotganda ko'rinadi — yarim jadval chizilmaydi.
+
+| Blok | Tarkibi |
+|---|---|
+| `text` | Markdown, 4000 belgigacha |
+| `metric` | `value`, `format`, ixtiyoriy `change` (%) |
+| `kv`, `steps` | yorliq/qiymat qatorlari (≤ 12), hisob-kitob zanjiri (≤ 10) |
+| `table` | ≤ 6 ustun × 30 qator, katak — matn yoki son, ustun `formats` |
+| `chart` | `waterfall`/`bar`/`donut` — `items` (2–12); `line` — `labels` (≤ 120) va `series` (≤ 4), har seriyada har yorliqqa bitta qiymat |
+| `badges`, `callout`, `action` | teglar, ramkali tavsiya (bir daraja ichma-ich), registrdagi tugma |
+
+**Raqamlar qayerdan.** Blok raqamni **qiymat** sifatida olib keladi va uning
+turini aytadi: `money`, `percent`, `count`, `number`.
+[`figures.ts`](./frontend/src/services/insights/figures.ts) uni ekrandagi
+boshqa raqamlar bilan bir xil formatlaydi: guruhlash, so'm, o'nlik ajratgich.
+Model raqamni lookup natijasidan oladi yoki undan hisoblaydi va o'zi hisoblagan
+raqamni qanday olganini ko'rsatadi. Qaysi lookup o'qilgani suhbatda `trace`
+qatori bo'lib ko'rinadi.
+
+**Nega shunday.** Avval bloklar raqam o'rniga fakt jadvaliga `ref` ko'rsatardi,
+qiymatni esa ilova topardi. Model raqam yoza olmasdi, lekin buning narxi baland
+edi:
+- jadvalda `ref` bo'lmagan savol — ulush, farq, 7 kunlik dinamika — umuman
+  javobsiz qolardi;
+- ekran davri uchun oldindan to'ldirilgan `ref`lar boshqa davr haqidagi
+  javobga jimgina tushib qolardi.
+
+Endi model ma'lumotni oladi va hisoblaydi. Ilovaga shakl, tekshiruv va
+formatlash qoladi.
+
+**Darvoza.**
+- Noma'lum blok turi, limitdan oshgan maydon yoki registr rad etgan amal
+  parametrlari chizilmaydi. Har biri sababi bilan modelga qaytariladi va bitta
+  savolda **bir marta** qayta yuborish so'raladi.
+- Limitlar ([`WIDGET_LIMITS`](./frontend/src/services/insights/blocks.ts))
+  widget qo'llanmasiga ham shu yerdan o'qiladi
+  ([`widgets.ts`](./frontend/src/services/insights/widgets.ts)), shuning uchun
+  ular bir-biridan ajrab ketmaydi.
+
+### 10.4. Amallar
+
+[`actions.ts`](./frontend/src/services/insights/actions.ts) — yopiq registr,
+har bir amal route'i, xavf darajasi va zod parametrlari bilan:
+
+| Xavf | Kim bajaradi |
+|---|---|
+| `none` | Model darhol bajaradi (ekran ochish, davr almashtirish, qoida qo'yish). Istisno — `copilot.ask`: u doim javob ostidagi taklif chipi bo'ladi, o'zi so'ralmaydi |
+| `low` | Tugma — faqat o'qiydigan so'rov (etiketka, akt PDF) |
+| `mid` | Tugma — qaytarib bo'ladigan yozish (tasdiqlash, bekor qilish) |
+| `high` | Tugma + tasdiq oynasi (narx, qoldiq, DBS qaytarish) |
+
+Model hech qachon yozish amalini o'zi bajarmaydi va tugma bosilmaganini bilib
+turadi: unga "sotuvchi bosmagan, bajarildi dema" deb javob qaytariladi.
+
+### 10.5. Panelga qadalgan javob
+
+[`pins.ts`](./frontend/src/services/insights/pins.ts) — javob **qanday yozilgan
+bo'lsa shunday** saqlanadi: bloklar, saqlangan vaqt va o'sha paytdagi davr.
+Tugma va `trace` bloklari olib tashlanadi.
+
+**Nega surat.** Raqamlar model yozgan jumlalar ichida. Lookup'larni qayta
+o'qib raqamlarni yangilash eski jumla ostiga yangi raqam qo'yardi — o'zi bilan
+o'zi zid, lekin eskirgani ko'rinmaydigan karta. Buning o'rniga kartada
+"yangi ma'lumot bilan qayta so'rash" tugmasi bor: savol Copilot'ga qayta
+beriladi va tahlil ham qaytadan yoziladi. Eski formatdagi (`ref`li) saqlangan
+kartalar o'qilayotganda sxemadan o'tmaydi va tashlab yuboriladi.
+
+### 10.6. Insights paneli (rail)
+
+Ikki muallif, bitta karta tili:
+
+- **Qoidalar** ([`derive/insights.ts`](./frontend/src/services/derive/insights.ts))
+  — kalitsiz, internetsiz, har doim ishlaydi.
+- **Model** ([`ai.ts`](./frontend/src/services/insights/ai.ts)) — davrning
+  ma'lumot digest'ini ([`digest.ts`](./frontend/src/services/insights/digest.ts))
+  bitta prompt'da oladi va qoidalar topmagan topilmalarni yozadi. Model har bir
+  **ma'lumot oynasi** uchun bir marta so'raladi (so'rov kalitida digest barmoq
+  izi). Qayta mount yoki fokus kredit sarflamaydi.
+
+### 10.7. Provayder transporti
+
+[`services/ai/`](./frontend/src/services/ai/):
+
+- **Uch xil so'rov shakli:** Anthropic Messages, Google `generateContent`,
+  OpenAI-mos `/chat/completions`.
+- **Streaming va native tool chaqiruvlari.** Gemini 3'ning `thoughtSignature`i
+  chaqiruv bilan birga qaytariladi.
+- **Qayta urinish** (`RETRIES = 3`): `429`/`5xx`/tarmoq xatosida, `Retry-After`
+  hurmat qilinadi.
+  - Faqat javobdan hali hech narsa ekranga chiqmagan bo'lsa takrorlanadi. Aks
+    holda matn ikki marta yozilardi, shuning uchun uzilgan javob sotuvchiga
+    **Davom ettirish** bilan qaytariladi.
+  - Bekor qilingan so'rov va noto'g'ri kalit takrorlanmaydi.
+- **Narx hisobi:** kesh orqali berilgan tokenlar alohida hisoblanadi.
+- **Kalit:** ilova kalit olib kelmaydi — Sozlamalardagi kalit ishlatiladi, u
+  bo'sh bo'lsa Copilot so'rov yubormaydi.
+
+---
+
+## 11. Qurish va tekshirish
 
 ```bash
 npm run dev        # Vite dev server, port 5173, CORS proxy bilan
@@ -450,12 +643,22 @@ npm test           # vitest run
 npm run test:watch # vitest
 ```
 
-**Chunk bo'linishi** ([vite.config.ts](./frontend/vite.config.ts#L9)):
-`vendor-react`, `vendor-query`, `vendor-motion`, `vendor-forms` — yuqori
-paneldagi o'zgarish grafik bundle keshini buzmasligi uchun.
+**Chunk bo'linishi** ([vite.config.ts](./frontend/vite.config.ts)):
+`vendor-markdown`, `vendor-react`, `vendor-query`, `vendor-motion`,
+`vendor-forms` — yuqori paneldagi o'zgarish grafik bundle keshini buzmasligi
+uchun. Tekshiruv modul nomida qism-satr bo'yicha, shuning uchun tartib muhim:
+`vendor-markdown` `vendor-react` dan oldin turadi.
 
-**Hozirgi holat:** typecheck ✅ · lint ✅ · test ✅ (122 ta) · build ✅ (~3s, asosiy
-bundle 466 KB / gzip 152 KB)
+**Hozirgi holat (2026-09-14):** typecheck ✅ · lint ✅ · test ✅ (160 ta) · build ✅
+(asosiy bundle 474 KB / gzip 156 KB)
+
+**Ishlab chiqish jamoasi.** Loyiha ustida ishlaydigan agentlar tuzilmasi
+[CLAUDE.md](./CLAUDE.md) va [`.claude/agents/`](./.claude/agents/) da:
+- har bir prompt avval `orchestrator` ga tushadi
+  ([`.claude/settings.json`](./.claude/settings.json));
+- u vazifani papka egasi bo'lgan mutaxassisga beradi (API, saqlash, sync,
+  hisob-kitob, so'rovlar, Copilot, UI, tooling, testlar, review, hujjatlar) va
+  natijani yuqoridagi buyruqlar bilan tekshiradi.
 
 **IndexedDB testlari** (`fake-indexeddb` bilan qo'lda o'tkazilgan):
 - Sxema: 15 store yaratiladi, indekslar joyida, period indeksi do'konlarni
@@ -467,22 +670,26 @@ bundle 466 KB / gzip 152 KB)
 | Fayl | Nima qoplangan |
 |---|---|
 | `archive/coverage.test.ts` | Interval algebrasi — `normalize`, `missing`, `unseal`, `clip`, `chunk`. Eng xavfli joy: noto'g'ri qoplama = hech qachon to'lmaydigan teshik |
-| `insights/plaintext.test.ts` | Tool natijasi formati — sana chegaralari, jadval qatorlari, `\|` belgisi bo'lgan nom |
-| `insights/ndjson.test.ts` | Oqim parseri va yozilayotgan qatorning oldindan ko'rinishi — bloklar o'zgarmasligi, raqam qo'riqchisi, yarim escape |
+| `idb/aggregation.test.ts` | Worker arifmetikasi — bucket'lar, mahsulot bo'yicha foyda zanjiri |
+| `insights/plaintext.test.ts` | Tool natijasi formati — sana chegaralari, `\|` bilan ajratilgan jadval, bo'sh katak, `\|` belgisi bo'lgan nom |
+| `insights/datasets.test.ts` | Toolkit arifmetikasi — sotilmagan kunda nol, buyurtma bir marta sanaladi, bekor qilingan qator, mahsulotlar yonma-yon, sahifalash |
+| `insights/figures.test.ts` | Qiymatni formatlash — so'm, foiz, son, satr, NaN o'rniga tire |
+| `insights/ndjson.test.ts` | Oqim parseri — rad etish sababi to'g'ri shoxdan, line/donut tekshiruvi, yozilayotgan jumla |
 | `insights/agent.test.ts` | Matnli protokol — direktivani o'qish, kesh kaliti |
-| `insights/actions.test.ts` | Registr darvozasi — noto'g'ri yozishni rad etish, raqam qo'riqchisi, pin filtri |
+| `insights/agent.loop.test.ts` | Suhbat sikli — rad etilgan qatorni bir marta qayta so'rash, noto'g'ri tugma parametri, ochilgan hujjatlar keyingi savolda, `copilot.ask` chip bo'lishi |
+| `insights/actions.test.ts` | Registr darvozasi — noto'g'ri yozishni rad etish, pin filtri |
+| `insights/pins.test.ts` | Saqlangan kartani o'qish — eski `ref`li kartalar tashlanadi |
 | `insights/alerts.test.ts` | Qoidalar — imzo, sovish vaqti, har bir tur |
-| `insights/template.test.ts` | `{{ref}}` yechish va narx hisobi (kesh chegirmasi bilan) |
 | `ai/jsonSchema.test.ts` | Zod → JSON Schema konvertatsiyasi |
 | `ai/stream.test.ts` | Qayta urinish qarori — qaysi xato takrorlanadi, `Retry-After`, chekinish oralig'i |
-| `insights/session.test.ts` | Javob sessiyasi — to'xtagan joydan davom ettirish uchun saqlanadigan holat |
+| `insights/session.test.ts` | Javob sessiyasi — to'xtagan joydan davom ettirish, ochilgan hujjatlar nusxasi |
 
 > ⚠️ IndexedDB va worker qatlamlari hali qoplanmagan — ular uchun
 > `fake-indexeddb` kerak bo'ladi.
 
 ---
 
-## 11. Funksional talab → texnik yechim
+## 12. Funksional talab → texnik yechim
 
 | Funksional talab | Yechim |
 |---|---|
@@ -496,21 +703,40 @@ bundle 466 KB / gzip 152 KB)
 | Bir nechta do'kon | `store_id` har bir yozuvda; konsolidatsiya do'kon bo'yicha alohida o'qib, keyin birlashtirish |
 | Rate limitga moslashish | `rateLimit.ts` — bitta kanal, ketma-ket, `Retry-After` |
 | Uch til | `lib/i18n/dictionary.ts` — kalit → [en, ru, uz] |
+| Copilot haqiqiy ma'lumotdan javob beradi | Lookup'lar arxivdan ma'lumotning o'zini beradi (10.2); model hisoblaydi, bloklar qiymat + `format` bilan tekshirilib chiziladi (10.3); o'qilgan lookup `trace` bo'lib ko'rinadi |
+| Chuqur tahlil | `data.rows` — xom qatorlar sahifalab; hisoblovchi lookup'lar arifmetikani kodda bajaradi |
+| Model Uzum'ga yozmaydi | Yopiq amallar registri, xavf darajasi, tugma + tasdiq oynasi (10.4) |
+| Provayder band bo'lsa davom ettirish | `RETRIES`, `Retry-After`, sessiya `checkpoint` dan davom etadi (10.1, 10.7) |
+| Javobni panelga qadash | Sana va davr bilan surat, "qayta so'rash" tugmasi (10.5) |
 
 ---
 
-## 12. Texnik qarz va keyingi qadamlar
+## 13. Texnik qarz va keyingi qadamlar
 
 Ustuvorlik tartibida:
 
-### 1. Testlar boshlandi, lekin saqlash qatlami qoplanmagan
-Runner o'rnatildi va sof funksiyalar qoplandi (122 ta test) — jumladan
-`coverage.ts` interval algebrasi, ya'ni eng xavfli joy endi himoyalangan.
-Qolgani: `paginate()`, wire→row mapperlar, `missingRanges()` va v1→v2
-migratsiyasi. Bular IndexedDB talab qiladi, shuning uchun `fake-indexeddb`
+### 1. `sellPrice` birligi hal qilinmagan, ikki formula bir-biridan farq qiladi
+- **Qaysi joyda:** `derive/finance.ts` (`summariseFinance`) va
+  `derive/series.ts` (`buildSeries`) tushumni `Σ sellPrice` deb hisoblaydi.
+  Arxivning `revenue` ustuni, worker va Copilot lookup'lari esa
+  `sellPrice × amount` ishlatadi.
+- **Qachon farq chiqadi:** faqat `amount > 1` bo'lgan qatorda. Namunada bunday
+  qatorlar kam — `group=false` rejimidagi 50 qatordan 1 tasi.
+- **Dalil:** o'sha yagona qator `sellPrice` bir dona narxi ekanini ko'rsatadi,
+  ya'ni ekrandagi tushum va sof foyda bunday qatorlarda kam chiqadi. Lekin bitta
+  qator yetarli dalil emas. `purchasePrice` birligi ham isbotlanmagan.
+- **Keyingi qadam:** `amount > 1` bo'lgan yana bir real namuna olish, keyin
+  formulani bitta qilish. Tafsilot:
+  [ENDPOINTS.md](./frontend/src/services/uzum/ENDPOINTS.md), 12.3-bo'lim.
+
+### 2. Testlar bor, lekin saqlash qatlami qoplanmagan
+Sof funksiyalar qoplandi (160 ta test): `coverage.ts` interval algebrasi,
+Copilot protokoli, toolkit arifmetikasi. Qolgani: `archivePlan.ts`,
+`paginate()`, wire→row mapperlar, `missingRanges()` va v2→v3 migratsiyasi.
+Oxirgi uchtasi IndexedDB talab qiladi, shuning uchun `fake-indexeddb`
 qo'shilishi kerak.
 
-### 2. Kod va OpenAPI hujjat orasidagi 8 ta ziddiyat
+### 3. Kod va OpenAPI hujjat orasidagi 8 ta ziddiyat
 Namunalarda faqat GET so'rovlar yozilgan, shuning uchun POST va print
 endpointlari tekshirilmagan. Eng shubhalilari — `fetchOrderLabel`,
 `fetchBarcodeTypes`, `fetchSupplyAct`, `fetchAcceptanceAct`: spec to'g'ri bo'lsa,
@@ -518,11 +744,11 @@ kod `payload` o'rniga `payload.document` ni olishi kerak.
 
 Tafsilot: [ENDPOINTS.md](./frontend/src/services/uzum/ENDPOINTS.md), 12.3-bo'lim.
 
-### 3. FBS nakladnoy yaratish to'liq emas
+### 4. FBS nakladnoy yaratish to'liq emas
 `GET /v1/fbs/invoice/dop/drop-off-points` va `GET /v1/fbs/invoice/dop/time-slot`
 ulanmagan — ularsiz `createFbsInvoice` uchun kerak bo'lgan UUID'larni olib
 bo'lmaydi.
 
-### 4. `backend/` bo'sh shablon
+### 5. `backend/` bo'sh shablon
 Agar jamoaviy ishlash yoki serverdagi zaxira kerak bo'lsa, arxitektura qarori
 qaytadan ko'rib chiqilishi kerak.

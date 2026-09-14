@@ -1,7 +1,7 @@
 # Savdo Copilot — Funksional spetsifikatsiya
 
-**Versiya:** 2.4.0
-**Hujjat sanasi:** 2026-08-16
+**Versiya:** 2.5.0
+**Hujjat sanasi:** 2026-09-14
 **Maqsad:** Mahsulot oddiy foydalanuvchi — Uzum Market sotuvchisi — nuqtai nazaridan
 nima qilishini ifodalash. Bu yerda texnik yechim yo'q; u
 [TECHNICAL-SPECIFICATION.md](./TECHNICAL-SPECIFICATION.md) da.
@@ -249,7 +249,23 @@ javobni ekranda qanday chizish mumkinligi haqidagi qo'llanmani. So'rov
 yuborilganda panel avval shu mashinadagi arxivga qaraydi; davr saqlanmagan
 bo'lsa, faqat yetishmagan qismini Uzum API'dan olib, saqlab, keyin javob
 beradi. Model bir savol ustida bir necha marta o'qishi mumkin: birinchi natija
-ikkinchi savolni tug'dirsa, yana so'raydi.
+ikkinchi savolni tug'dirsa, yana so'raydi. Bir suhbatda ochilgan ro'yxat va
+qo'llanma keyingi savollarda ham modelda qoladi — qayta so'ralmaydi.
+
+**Raqamlar qayerdan keladi.** Model ma'lumotning o'zini oladi va o'zi tahlil
+qiladi. Ikki xil o'qish bor:
+- **Tayyor hisoblangan jadvallar** — davr yakuni, ikki davrni taqqoslash, kun
+  yoki hafta kesimidagi sotuv (bir nechta mahsulotni yonma-yon ham), eng ko'p
+  sotilgan mahsulotlar reytingi, soat va hafta kuni bo'yicha sotuv. Bu
+  hisob-kitob panelning o'zida har bir qator ustida bajariladi.
+- **Xom qatorlar** — har bir sotuv, xarajat, buyurtma yoki SKU. Tayyor jadval
+  javob bermaydigan chuqurroq savol uchun (bitta buyurtmada nechta tovar,
+  qaysi o'lcham ko'proq qaytariladi va hokazo).
+
+Model shu ma'lumotdan kerakli raqamni hisoblaydi va o'zi hisoblagan raqamni
+qanday olganini ko'rsatadi — masalan, hisob-kitob zanjiri bilan. Ma'lumotda
+bo'lmagan raqamni o'ylab topmaydi: yetishmasa yana so'raydi yoki
+"ma'lumot yo'q" deydi. Bashorat qilmaydi.
 
 Javob yozilishi bilan ekranda paydo bo'la boshlaydi: model gapni tugatishini
 kutmasdan, yozilayotgan jumla kursor bilan ko'rinib turadi va jumla tugagach
@@ -258,9 +274,13 @@ faqat butun holda chiqadi — yarim jadval kichik jadval emas, noto'g'ri jadval.
 
 Suhbatda o'qilgan har bir so'rov ko'rinib turadi — qaysi davr, nechta qator —
 shuning uchun javobdagi raqamni qayerdan kelganini tekshirsa bo'ladi. Javob
-shakli savolga qarab o'zgaradi: qisqa savolga bir jumla, "nega" savoliga
-hisob-kitob zanjiri, "nima qilay" savoliga esa dalil va tugma. Chizmalarni ham,
-jadval yoki ko'rsatkich blokini ham model o'zi tanlaydi.
+shakli savolga qarab o'zgaradi: qisqa savolga bir jumla, "oxirgi 7 kun qanday
+o'tdi" savoliga topilma va chiziqli grafik, "nega" savoliga hisob-kitob
+zanjiri, "nima qilay" savoliga esa dalil va tugma. Chizmalarni ham, jadval yoki
+ko'rsatkich blokini ham model o'zi tanlaydi. Bloklardagi raqamlar ekrandagi
+boshqa raqamlar kabi formatlanadi (so'm, foiz, guruhlash). Model noto'g'ri
+shakldagi blok yuborsa, u ko'rsatilmaydi va modelga sababi aytilib, bir marta
+qayta yuborish so'raladi.
 
 **Provayder javob bermasa.** AI provayder band bo'lsa (`503`), so'rov chegarasi
 oshsa yoki ulanish uzilsa, panel so'rovni o'zi uch marta takrorlaydi — har
@@ -275,7 +295,8 @@ hech narsani o'zgartirmaydi.
 qo'yadi — tugmada qaysi route chaqirilishi va xavf darajasi yozilgan — bosishni
 sotuvchi hal qiladi, yuqori xavfli amal esa qo'shimcha tasdiq oynasidan o'tadi.
 Ekranni almashtirish yoki davrni o'zgartirish kabi hech narsani yozmaydigan
-amallarni model darhol bajaradi.
+amallarni model darhol bajaradi. Keyingi savol taklifini esa o'zi so'ramaydi —
+u javob ostida chip bo'lib chiqadi, bosishni sotuvchi hal qiladi.
 
 Ko'p SKU'ni bir yo'la o'zgartiradigan taklif esa ro'yxat bilan ochiladi: qaysi
 SKU, hozirgi qiymat, yangi qiymat — har qatorni belgisidan olib tashlash mumkin,
@@ -286,11 +307,14 @@ va yuboriladigan narsa aynan sotuvchi ko'rgan narsa bo'ladi.
 > aytadi — o'ylab topmaydi.
 
 **Javobni panelga qadash.** Yoqqan javobni "Panelga qadash" tugmasi bilan
-Overview'ga qo'yish mumkin. Karta javobning suratini emas, uning ortidagi
-so'rovlarni saqlaydi — shuning uchun davr almashtirilganda raqamlar o'zi qayta
-o'qiladi. Avgustda qadalgan "qaysi mahsulot zarar keltiryapti" kartasi
-sentyabrda sentyabr haqida gapiradi. Karta ichida tugma qolmaydi: eski
-parametrlar bilan turgan narx yozish tugmasi tuzoq bo'lardi.
+Overview'ga qo'yish mumkin. Karta javobni **yozilgan holicha** saqlaydi va
+qachon saqlangani hamda qaysi davr haqida ekanini ko'rsatib turadi. Raqamlar
+javob jumlalarining ichida bo'lgani uchun ular o'z-o'zidan yangilanmaydi —
+aks holda eski jumla ostida yangi raqam turib qolardi. Yangilash uchun kartadagi
+"yangi ma'lumot bilan qayta so'rash" tugmasi bosiladi: savol Copilot'ga qayta
+beriladi, u joriy davr ma'lumotini o'qib, tahlilni qaytadan yozadi. Karta ichida
+amal tugmasi qolmaydi: eski parametrlar bilan turgan narx yozish tugmasi tuzoq
+bo'lardi.
 
 **Doimiy qoidalar.** Sotuvchi chatda "SKU tugasa ayt" yoki "buyurtma tasdig'iga
 6 soat qolganda ayt" desa, bu qoida bo'lib saqlanadi va har sinxronizatsiyadan
@@ -375,6 +399,7 @@ Ochiq aytilishi kerak bo'lganlar:
 | **Tarix chuqurligi** | Eng ko'pi 2 yil |
 | **Bir so'rovdagi hajm** | Juda katta davrlarda API o'z chegarasini qo'yadi; panel buni ko'rsatadi va davrni bo'lib o'qiydi |
 | **O'zgarish tarixi** | Narx o'zgarishlari faqat panel o'rnatilgan kundan boshlab kuzatiladi — Uzum eski narxlarni bermaydi |
+| **Copilot hisob-kitobi** | Ekrandagi KPI'lar panel kodida hisoblanadi. Copilot javobidagi raqamlarni esa model o'qigan ma'lumotdan hisoblaydi. Tayyor hisoblangan jadvaldan olingan raqam aniq; xom qatorlardan model o'zi qo'shgan raqamda xato bo'lishi mumkin — shuning uchun javobda qaysi so'rovlar o'qilgani va hisob-kitob zanjiri ko'rsatiladi |
 
 ---
 

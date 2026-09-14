@@ -104,13 +104,13 @@ birlik iqtisodiyoti (unit economics) hisob-kitoblarining asosiy manbasi.
 | `productId` / `productTitle` | number / string | Mahsulot |
 | `skuTitle` | string | SKU nomi (variant: rang, o'lcham…) |
 | `shopId` | number | Qaysi do'kon |
-| `sellPrice` | number | Sotuv narxi |
+| `sellPrice` | number | Sotuv narxi — **bir dona uchun** bo'lishi ehtimoli katta, lekin to'liq isbotlanmagan (12.3) |
 | `amount` | number | Soni |
 | `amountReturns` | number | Qaytarilgan soni |
-| `commission` | number | Uzum komissiyasi |
-| `logisticDeliveryFee` | number | Logistika xarajati |
-| `purchasePrice` | number \| null | Tannarx (kiritilgan bo'lsa) |
-| `sellerProfit` | number | Sotuvchi foydasi |
+| `commission` | number | Uzum komissiyasi — butun pozitsiya uchun |
+| `logisticDeliveryFee` | number | Logistika xarajati — butun pozitsiya uchun |
+| `purchasePrice` | number \| null | Tannarx (kiritilgan bo'lsa) — dona yoki pozitsiya uchun ekani isbotlanmagan |
+| `sellerProfit` | number | Sotuvchi foydasi — butun pozitsiya uchun: `sellPrice × amount − commission − logisticDeliveryFee` |
 | `withdrawnProfit` | number | Yechib olingan foyda |
 | `cancelled` | boolean \| null | Bekor qilinganmi |
 | `returnCause` / `comment` | string \| null | Qaytarish sababi / izoh |
@@ -715,6 +715,29 @@ Bulardan **`fetchBarcodeTypes`, `fetchOrderLabel`, `fetchSupplyAct`,
 `fetchAcceptanceAct`** eng shubhalilari: agar spec to'g'ri bo'lsa, kod `payload`
 o'rniga `payload.document` ni olishi kerak — hozircha PDF o'rniga obyekt qaytadi
 va Base64 dekodlash buziladi.
+
+**`/v1/finance/orders` — `sellPrice` bir donaniki mi, pozitsiyaniki mi** ⚠️ dalil kam
+
+Bu GET so'rov namunada bor, lekin savolni hal qiladigan qatorlar juda kam.
+
+| Rejim | Namunadagi dalil | Nimani ko'rsatadi |
+|---|---|---|
+| `group=false` (kod shuni ishlatadi) | 50 qator, ulardan **faqat 1 tasida** `amount > 1`: `sellPrice 48 900`, `amount 2`, `commission 24 450`, `logisticDeliveryFee 11 000`, `sellerProfit 62 350` | `48 900 × 2 − 24 450 − 11 000 = 62 350` — ya'ni `sellPrice` **bir dona** narxi, pul maydonlari esa butun pozitsiya uchun. `amount = 1` bo'lgan qolgan qatorlarda ikkala o'qish ham bir xil natija beradi |
+| `group=true` | Guruh ichidagi `items[]` da `sellPrice` guruh bo'yicha jami (`54 800 − 11 757 − 11 000 = 32 043`, `amount 2`) | Guruh summasi — yuqoridagiga zid emas |
+
+Kodga ta'siri:
+- `derive/finance.ts` (`summariseFinance`) va `derive/series.ts` (`buildSeries`)
+  tushumni `Σ sellPrice` deb oladi.
+- `storage/idb/mappers.ts` (`revenue`), analitika worker'i va Copilot lookup'lari
+  (`insights/datasets.ts`) esa `sellPrice × amount` ishlatadi.
+- Ikkalasi faqat `amount > 1` bo'lgan qatorlarda farq qiladi. Agar `sellPrice`
+  bir donaniki bo'lsa, ekrandagi tushum va sof foyda bunday qatorlarda kam
+  chiqadi.
+- `purchasePrice` ning birligi ham shu sabab bilan ochiq.
+
+**Hal qilish uchun:** `amount > 1` bo'lgan bir necha real `group=false` qatorini
+yozib olish va `sellerProfit` ayniyatini tekshirish. Keyin ikkala formula bitta
+qilinadi.
 
 ### 12.4. Kichik kuzatuvlar
 
