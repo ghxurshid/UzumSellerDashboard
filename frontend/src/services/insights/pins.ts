@@ -1,22 +1,20 @@
-import type { Block } from './blocks';
-import type { ExecutedCall } from './agent';
-import type { Fact, FactSeries, FactTable, SeriesTable } from './facts';
-import { runReadTool, type ToolContext } from './toolkit';
+import { blockLineSchema, type Block } from './blocks';
 
 /**
  * An answer the seller decided to keep.
  *
- * The naive way to save a chat answer is to save what it said — the blocks and
- * the numbers that were in them. That produces a photograph: correct on the day
- * it was taken and quietly wrong every day after, which in a finance tool is
- * the worst of the two failure modes because nothing about it looks stale.
+ * A pin used to store the lookups behind an answer and replay them, so that the
+ * blocks' refs re-resolved against whatever period was selected later. That only
+ * worked because the figures lived outside the blocks. They now live inside
+ * them — the model computed them from the rows it read — so there is nothing to
+ * re-resolve, and replaying the lookups would refresh the data under an analysis
+ * written about different data.
  *
- * A pin therefore stores **the blocks and the lookups behind them**, not the
- * figures. The blocks already cite by `ref` rather than carrying values — that
- * is what `facts.ts` exists for — so replaying the lookups against whatever
- * period is selected now re-resolves every figure in the card. The seller pins
- * "which products are losing money" once and reads it every morning against
- * this morning's rows.
+ * So a pin is what it looks like: **the answer as it was, and when it was
+ * written.** The card says its date out loud, because a snapshot that does not
+ * look like one is the failure worth avoiding in a finance tool, and it offers to
+ * ask the question again — which re-reads the rows *and* re-does the analysis,
+ * the only refresh that keeps the sentences and the figures in step.
  *
  * ## What is deliberately dropped
  *
@@ -30,12 +28,12 @@ import { runReadTool, type ToolContext } from './toolkit';
 
 export interface PinnedAnswer {
   readonly id: string;
-  /** The question that produced it — the card's heading. */
+  /** The question that produced it — the card's heading, and what a refresh asks. */
   readonly title: string;
   readonly blocks: readonly Block[];
-  /** The lookups to replay. Empty means the card cannot be refreshed. */
-  readonly plan: readonly ExecutedCall[];
   readonly createdAt: number;
+  /** The period the seller had selected when the answer was written. */
+  readonly window?: { readonly fromMs: number; readonly toMs: number };
 }
 
 /** How many a dashboard can carry before it stops being a dashboard. */
@@ -66,41 +64,38 @@ export function pinnableBlocks(blocks: readonly Block[]): readonly Block[] {
   return kept;
 }
 
-export interface ReplayResult {
-  readonly facts: FactTable;
-  readonly series: SeriesTable;
-  /** Lookups that failed — the card says so rather than showing dashes. */
-  readonly failures: number;
-}
-
 /**
- * Run a pinned card's lookups again.
+ * A stored pin this build can draw, or null.
  *
- * The same call the chat made, through the same door: the archive answers if it
- * holds the period, and fetches the missing part if it does not. A card is
- * therefore as current as the screen it sits on, and costs nothing extra when
- * the screen has already loaded the window.
+ * Pins outlive builds. One written while blocks carried refs has metrics with no
+ * value and charts with no items, and drawing it would put a card of dashes on
+ * the dashboard. Every block is checked against the same schema a streamed line
+ * is, and a pin with any block this build no longer understands is dropped whole
+ * rather than shown with holes in it.
  */
-export async function replayPlan(
-  plan: readonly ExecutedCall[],
-  context: ToolContext,
-): Promise<ReplayResult> {
-  const facts = new Map<string, Fact>();
-  const series = new Map<string, FactSeries>();
-  let failures = 0;
+export function readStoredPin(value: unknown): PinnedAnswer | null {
+  if (value === null || typeof value !== 'object') return null;
+  const pin = value as Record<string, unknown>;
 
-  for (const call of plan) {
-    try {
-      const result = await runReadTool(call.tool, call.args, context);
-      for (const fact of result.facts ?? []) facts.set(fact.ref, fact);
-      for (const entry of result.series ?? []) series.set(entry.ref, entry);
-      if ((result.facts?.length ?? 0) === 0 && (result.series?.length ?? 0) === 0) failures += 1;
-    } catch {
-      /* One lookup failing costs its own figures, not the card. Whatever else
-         resolved still renders, and the unresolved refs draw as dashes. */
-      failures += 1;
-    }
+  if (typeof pin['id'] !== 'string' || typeof pin['title'] !== 'string') return null;
+  if (!Array.isArray(pin['blocks']) || pin['blocks'].length === 0) return null;
+
+  const blocks: Block[] = [];
+  for (const block of pin['blocks']) {
+    const parsed = blockLineSchema.safeParse(block);
+    if (!parsed.success) return null;
+    blocks.push(parsed.data as Block);
   }
 
-  return { facts: facts as FactTable, series: series as SeriesTable, failures };
+  const window = pin['window'] as { fromMs?: unknown; toMs?: unknown } | undefined;
+
+  return {
+    id: pin['id'],
+    title: pin['title'],
+    blocks,
+    createdAt: typeof pin['createdAt'] === 'number' ? pin['createdAt'] : Date.now(),
+    ...(window !== undefined && typeof window.fromMs === 'number' && typeof window.toMs === 'number'
+      ? { window: { fromMs: window.fromMs, toMs: window.toMs } }
+      : {}),
+  };
 }

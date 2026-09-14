@@ -43,15 +43,13 @@ export interface BlockStreamState {
 /**
  * A line the seller will not see, and why.
  *
- * A count on its own turned out not to be enough to act on. Three unrelated
- * failures reached the same counter — a figure typed into a sentence, a block
- * whose shape the schema refuses, a line that is not JSON — and the note under
- * the answer blamed unverifiable numbers whichever one it had been. The reason
- * now travels with the line, so the model can be told what to fix and the
- * seller can be told what happened.
+ * A count on its own turned out not to be enough to act on. Unrelated failures
+ * reached the same counter — a block whose shape the schema refuses, a line that
+ * is not JSON, a button whose parameters the registry rejects — and the note
+ * under the answer could not say which. The reason now travels with the line, so
+ * the model can be told what to fix and the seller can be told what happened.
  *
- * `line` is the model's own text and may hold the very figure the guard exists
- * to keep off the screen. It goes back to the model and nowhere else.
+ * `line` is the model's own text. It goes back to the model and nowhere else.
  */
 export interface Rejection {
   readonly line: string;
@@ -89,8 +87,8 @@ export function createBlockStream(): BlockStreamState {
  *
  * The wording is the whole point of this function: it is what the model is
  * shown when it is asked to send the line again. `text: Required` is not
- * something it can act on. `rows.0.1: Expected string, received number` is a
- * table cell it can quote.
+ * something it can act on. `series.0.values: needs exactly one value per label
+ * (7)` is a chart it can count.
  */
 function whyNotABlock(error: ZodError): string {
   const branches = error.issues.flatMap((issue) =>
@@ -289,15 +287,5 @@ export function previewText(state: BlockStreamState): string {
   const opening = TEXT_FIELD.exec(line.slice(kind.index));
   if (opening === null) return '';
 
-  const body = line.slice(kind.index + opening.index + opening[0].length);
-
-  /**
-   * A placeholder is only worth showing whole.
-   *
-   * `{{totals.netPro` is a fact reference the model is halfway through typing.
-   * Rendering it literally would flash braces into the middle of a sentence for
-   * a frame or two, and cutting the fragment costs nothing — the next chunk
-   * brings it back complete and it resolves to a figure.
-   */
-  return decodePartial(body).replace(/\{\{[^}]*$/, '');
+  return decodePartial(line.slice(kind.index + opening.index + opening[0].length));
 }

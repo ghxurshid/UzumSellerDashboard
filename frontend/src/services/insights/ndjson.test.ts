@@ -116,16 +116,6 @@ describe('previewText', () => {
     expect(previewText(split)).toBe('Bir');
   });
 
-  it('hides a placeholder that is still being typed', () => {
-    const state = createBlockStream();
-
-    pushChunk(state, '{"kind":"text","text":"Sof foyda {{totals.netPro');
-    expect(previewText(state)).toBe('Sof foyda ');
-
-    pushChunk(state, 'fit}} bo‘ldi');
-    expect(previewText(state)).toBe('Sof foyda {{totals.netProfit}} bo‘ldi');
-  });
-
   it('shows a figure the model typed, because the block will too', () => {
     const state = createBlockStream();
     pushChunk(state, '{"kind":"text","text":"Sof foyda 457 924 so‘m');
@@ -138,13 +128,13 @@ describe('previewText', () => {
   });
 
   it('never shows a sentence the finished block would not', () => {
-    const line = '{"kind":"text","text":"Avgustda {{totals.netProfit}} foyda."}\n';
+    const line = '{"kind":"text","text":"Avgustda **457 924 so\'m** foyda."}\n';
     const { blocks, drafts } = drip(line);
 
     expect(blocks).toBe(1);
     /* Every draft is a prefix of the final text, so nothing appears mid-stream
        that the block itself does not go on to say. */
-    const final = 'Avgustda {{totals.netProfit}} foyda.';
+    const final = "Avgustda **457 924 so'm** foyda.";
     for (const draft of drafts) {
       expect(final.startsWith(draft)).toBe(true);
     }
@@ -167,24 +157,62 @@ describe('a line that was meant to be a block', () => {
 
   it('names the field the author actually got wrong', () => {
     expect(
-      reasonFor({ kind: 'table', columns: ['SKU', 'Foyda'], rows: [['Abaya', 450_000]] }),
-    ).toBe('rows.0.1: Expected string, received number');
+      reasonFor({ kind: 'table', columns: ['SKU', 'Foyda'], rows: [['Abaya', { value: 450_000 }]] }),
+    ).toMatch(/^rows\.0\.1: /);
 
-    expect(reasonFor({ kind: 'metric', label: 'Foyda' })).toBe('ref: Required');
+    expect(reasonFor({ kind: 'metric', label: 'Foyda' })).toBe(
+      'value: must be a plain number, or a string of at most 60 characters',
+    );
 
     expect(reasonFor({ kind: 'text', text: 'x'.repeat(5_000) })).toBe(
       'text: String must contain at most 4000 character(s)',
     );
 
     expect(
-      reasonFor({ kind: 'chart', chart: 'donut', steps: [{ label: 'a', ref: 'p.1.profit' }] }),
-    ).toBe('steps: Array must contain at least 2 element(s)');
+      reasonFor({ kind: 'chart', chart: 'donut', items: [{ label: 'a', value: 1 }] }),
+    ).toBe('items: Array must contain at least 2 element(s)');
   });
 
-  it('refuses a chart that names nothing to draw', () => {
-    expect(reasonFor({ kind: 'chart', chart: 'bar' })).toBe(
-      'line: a chart needs steps, or seriesRef for a line',
+  it('accepts a table whose cells are numbers', () => {
+    const state = createBlockStream();
+    const harvest = pushChunk(
+      state,
+      `${JSON.stringify({ kind: 'table', columns: ['SKU', 'Foyda'], rows: [['Abaya', 450_000]] })}\n`,
     );
+
+    expect(harvest.blocks).toHaveLength(1);
+    expect(harvest.rejected).toHaveLength(0);
+  });
+
+  it('refuses a chart that has nothing to draw', () => {
+    expect(reasonFor({ kind: 'chart', chart: 'bar' })).toBe('items: a bar chart needs items');
+    expect(reasonFor({ kind: 'chart', chart: 'line', labels: ['a', 'b'] })).toBe(
+      'series: a line chart needs labels and series',
+    );
+  });
+
+  it('counts a line chart against its labels', () => {
+    expect(
+      reasonFor({
+        kind: 'chart',
+        chart: 'line',
+        labels: ['09-07', '09-08'],
+        series: [{ name: 'Sotuv', values: [3] }],
+      }),
+    ).toBe('series.0.values: needs exactly one value per label (2)');
+  });
+
+  it('refuses a negative donut slice', () => {
+    expect(
+      reasonFor({
+        kind: 'chart',
+        chart: 'donut',
+        items: [
+          { label: 'Foyda', value: -10 },
+          { label: 'Xarajat', value: 30 },
+        ],
+      }),
+    ).toBe('items.0.value: a donut slice cannot be negative — use a bar chart');
   });
 
   it('says so plainly when the kind is not a block at all', () => {

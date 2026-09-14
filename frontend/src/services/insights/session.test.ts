@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createSession } from './agent';
-import type { Fact, FactTable } from './facts';
+import { createSession, type Capability } from './agent';
 
 /**
  * What survives a failure.
@@ -13,20 +12,14 @@ import type { Fact, FactTable } from './facts';
  * quietly mean "start again".
  */
 
-const seed = (): FactTable => {
-  const fact: Fact = { ref: 'totals.netProfit', label: 'Net profit', value: 12, format: 'money' };
-  return new Map([[fact.ref, fact]]);
-};
-
 describe('createSession', () => {
   it('opens with the question and the history behind it', () => {
     const session = createSession({
       question: 'Bu oy sellerProfit qayerga ketmoqda?',
       history: [
         { role: 'user', content: 'Avgust qanday?' },
-        { role: 'assistant', content: 'Net profit: 12' },
+        { role: 'assistant', content: "Sof foyda: 457 924 so'm" },
       ],
-      seed: new Map(),
     });
 
     expect(session.messages).toHaveLength(3);
@@ -36,23 +29,26 @@ describe('createSession', () => {
     });
   });
 
-  it('copies the seed rather than sharing it', () => {
-    const table = seed();
-    const session = createSession({ question: 'nima?', history: [], seed: table });
+  it('copies the documents the thread holds rather than sharing the set', () => {
+    const grants = new Set<Capability>(['widgets']);
+    const session = createSession({ question: 'nima?', history: [], carried: grants });
 
-    session.facts.delete('totals.netProfit');
-    /* The screen's own table is not the run's scratch space. */
-    expect(table.has('totals.netProfit')).toBe(true);
+    /* A document granted during this question lands in the thread's set — and
+       must not appear in this question's system prompt as well as its
+       transcript. */
+    grants.add('tools');
+    expect(session.carried.has('tools')).toBe(false);
+    expect(session.carried.has('widgets')).toBe(true);
   });
 
   it('starts at the first round with nothing spent', () => {
-    const session = createSession({ question: 'nima?', history: [], seed: new Map() });
+    const session = createSession({ question: 'nima?', history: [] });
 
     expect(session.round).toBe(0);
     expect(session.calls).toBe(0);
     expect(session.emitted).toBe(0);
     expect(session.checkpoint).toBe(0);
     expect(session.answered.size).toBe(0);
-    expect(session.plan).toHaveLength(0);
+    expect(session.carried.size).toBe(0);
   });
 });

@@ -1137,11 +1137,11 @@ const TUPLES = {
   pinAnswer: ['Pin to dashboard', 'Закрепить на панели', "Panelga qadash"],
   pinned: ['Pinned', 'Закреплено', 'Qadaldi'],
   unpin: ['Remove from dashboard', 'Убрать с панели', 'Paneldan olib tashlash'],
-  pinLoading: ['Re-reading the figures…', 'Пересчитываю цифры…', 'Raqamlar qayta o‘qilmoqda…'],
-  pinStale: [
-    'Some figures could not be re-read for this period',
-    'Часть цифр не удалось пересчитать за этот период',
-    "Ba'zi raqamlar bu davr uchun qayta o'qilmadi",
+  pinRefresh: ['Ask again with fresh data', 'Спросить заново по свежим данным', "Yangi ma'lumot bilan qayta so'rash"],
+  pinnedAt: [
+    'Saved {when} · period {window}',
+    'Сохранено {when} · период {window}',
+    'Saqlangan: {when} · davr {window}',
   ],
 
   /* — standing rules — */

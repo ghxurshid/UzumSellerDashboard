@@ -1,15 +1,14 @@
 import { Database } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { Markdown } from '@/components/common/Markdown';
 import { Pill } from '@/components/ui/Pill';
 import type { Translator } from '@/lib/i18n/useTranslation';
 import { cn } from '@/lib/utils';
 import { resolveAction, type ResolvedAction } from '@/services/insights/actions';
 import type { Block } from '@/services/insights/blocks';
-import { EMPTY_SERIES, formatFact, type FactTable, type SeriesTable } from '@/services/insights/facts';
+import { formatChange, formatFigure } from '@/services/insights/figures';
 import { phrase } from '@/services/insights/phrase';
-import { Markdown } from '@/components/common/Markdown';
-import { renderTemplate } from '@/services/insights/template';
 import type { Language, Tone } from '@/types/domain';
 
 import { ChartBlockView } from './ChartBlock';
@@ -20,8 +19,12 @@ import { ChartBlockView } from './ChartBlock';
  * Everything the rail can show is a `switch` arm below, which is the property
  * that makes a model-authored card safe to render: an author picks from this
  * vocabulary or it does not appear. There is no `dangerouslySetInnerHTML`, no
- * markdown pass, no class names from the document — a block carries data, and
- * the styling is this component's alone.
+ * class names from the document — a block carries data, and the styling is this
+ * component's alone.
+ *
+ * Every figure a block carries goes through `formatFigure`, so a number the
+ * model wrote and a number a screen computed are grouped, suffixed and
+ * separated by the same code path.
  *
  * Adding an expression to the language is a type in `blocks.ts` and an arm
  * here. That is the whole cost, and it is why the set can grow with what the
@@ -46,30 +49,18 @@ const TONE_BORDER: Record<Tone, string> = {
 
 export interface BlockRendererProps {
   readonly blocks: readonly Block[];
-  readonly facts: FactTable;
-  /** Only the chat populates this; the rail has no time series to draw. */
-  readonly series?: SeriesTable;
   readonly t: Translator;
   readonly language: Language;
   readonly onAction: (action: ResolvedAction) => void;
 }
 
-export function BlockRenderer({
-  blocks,
-  facts,
-  series = EMPTY_SERIES,
-  t,
-  language,
-  onAction,
-}: BlockRendererProps): ReactNode {
+export function BlockRenderer({ blocks, t, language, onAction }: BlockRendererProps): ReactNode {
   return (
     <>
       {blocks.map((block, index) => (
         <BlockView
           key={`${block.kind}-${index}`}
           block={block}
-          facts={facts}
-          series={series}
           t={t}
           language={language}
           onAction={onAction}
@@ -80,53 +71,21 @@ export function BlockRenderer({
 }
 
 /**
- * A paragraph, drawn as its author wrote it.
- *
- * Two things happen here and the order is the point. `{{ref}}` placeholders are
- * resolved first, because the rules in `derive/insights.ts` still write their
- * sentences that way and a card pinned last month has to show this month's
- * figure rather than a photograph of the one it was written with. What comes
- * out of that is Markdown, and Markdown is what reaches the screen.
- *
- * The model no longer uses placeholders. It writes the figure, in a sentence it
- * formats itself — see `components/common/Markdown` for what that traded away.
- */
-function Prose({
-  text,
-  facts,
-  language,
-}: {
-  readonly text: string;
-  readonly facts: FactTable;
-  readonly language: Language;
-}): ReactNode {
-  return <Markdown>{renderTemplate(text, facts, language)}</Markdown>;
-}
-
-/**
  * The paragraph that has not finished arriving.
  *
  * Drawn here rather than in the panel so a sentence looks the same while it is
  * being written as it will the moment it becomes a block — same size, same
- * leading, same placeholder resolution. The only difference is the caret, and
- * the fact that this text is never a `Block`: it is not exported, not pinned,
- * not read back to the model, and it is replaced rather than appended to.
+ * leading. The only difference is the caret, and the fact that this text is
+ * never a `Block`: it is not exported, not pinned, not read back to the model,
+ * and it is replaced rather than appended to.
  */
-export function DraftText({
-  text,
-  facts,
-  language,
-}: {
-  readonly text: string;
-  readonly facts: FactTable;
-  readonly language: Language;
-}): ReactNode {
+export function DraftText({ text }: { readonly text: string }): ReactNode {
   return (
     <p className="m-0 text-xs leading-[1.55] text-dim">
       {/* Plain, while it is still arriving. Half-written Markdown draws its own
           asterisks and reflows the panel on every chunk, and the finished block
           replaces this the moment its line ends. */}
-      {renderTemplate(text, facts, language)}
+      {text}
       <span
         aria-hidden
         className="ml-3 inline-block h-11 w-2 translate-y-[1px] animate-caret rounded-[1px] bg-acc align-middle"
@@ -137,20 +96,12 @@ export function DraftText({
 
 interface BlockViewProps {
   readonly block: Block;
-  readonly facts: FactTable;
-  readonly series: SeriesTable;
   readonly t: Translator;
   readonly language: Language;
   readonly onAction: (action: ResolvedAction) => void;
 }
 
-function BlockView({ block, facts, series, t, language, onAction }: BlockViewProps): ReactNode {
-  /** Every numeric block goes through here — nothing prints a raw value. */
-  const value = (ref: string): string => {
-    const fact = facts.get(ref);
-    return fact === undefined ? '—' : formatFact(fact, language);
-  };
-
+function BlockView({ block, t, language, onAction }: BlockViewProps): ReactNode {
   switch (block.kind) {
     case 'text':
       return (
@@ -160,11 +111,25 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
             block.tone === undefined ? 'text-dim' : TONE_TEXT[block.tone],
           )}
         >
-          <Prose text={phrase(t, block.text)} facts={facts} language={language} />
+          <Markdown>{phrase(t, block.text)}</Markdown>
         </div>
       );
 
-    case 'metric':
+    case 'metric': {
+      const figure = formatFigure(block.value, block.format, language);
+      const change =
+        block.change === undefined ? null : (
+          <span
+            data-numeric
+            className={cn(
+              'text-tiny',
+              block.change > 0 ? 'text-pos' : block.change < 0 ? 'text-neg' : 'text-faint',
+            )}
+          >
+            {formatChange(block.change)}
+          </span>
+        );
+
       return block.emphasis === true ? (
         <div className="flex flex-col gap-2">
           {block.label !== undefined && (
@@ -172,8 +137,11 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
               {phrase(t, block.label)}
             </span>
           )}
-          <span data-numeric className="text-xl font-medium tracking-[-0.02em]">
-            {value(block.ref)}
+          <span className="flex items-baseline gap-6">
+            <span data-numeric className="text-xl font-medium tracking-[-0.02em]">
+              {figure}
+            </span>
+            {change}
           </span>
         </div>
       ) : (
@@ -182,10 +150,12 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
             <span className="text-faint">{phrase(t, block.label)}</span>
           )}
           <span data-numeric className="text-text">
-            {value(block.ref)}
+            {figure}
           </span>
+          {change}
         </div>
       );
+    }
 
     /* The `↳` gutter of the design: a derivation read top to bottom, each line
        a step and the figure it rests on. */
@@ -198,9 +168,9 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
                 ↳
               </span>
               <span className="min-w-0 flex-1">{phrase(t, item.text)}</span>
-              {item.ref !== undefined && (
+              {item.value !== undefined && (
                 <span data-numeric className="shrink-0 text-text">
-                  {value(item.ref)}
+                  {formatFigure(item.value, item.format, language)}
                 </span>
               )}
             </span>
@@ -215,8 +185,11 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
             <span key={index} className="flex items-baseline gap-8 text-xs text-dim">
               {phrase(t, row.label)}
               <span className="flex-1 border-b border-dashed border-line" />
-              <span data-numeric className="text-text">
-                {value(row.ref)}
+              <span
+                data-numeric
+                className={row.tone === undefined ? 'text-text' : TONE_TEXT[row.tone]}
+              >
+                {formatFigure(row.value, row.format, language)}
               </span>
             </span>
           ))}
@@ -224,7 +197,8 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
       );
 
     /* Scrolls inside itself rather than widening the rail — a product name is
-       longer than 320px more often than not. */
+       longer than 320px more often than not. A numeric cell aligns right; a
+       text cell reads left, wherever in the row it is. */
     case 'table':
       return (
         <div className="-mx-2 overflow-x-auto px-2">
@@ -236,8 +210,8 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
                     key={index}
                     className={cn(
                       'border-b border-line py-4 pr-8 text-left font-normal uppercase',
-                      'tracking-[0.08em] text-faint',
-                      index === block.columns.length - 1 && 'pr-0 text-right',
+                      'tracking-[0.08em] text-faint last:pr-0',
+                      numericColumn(block, index) && 'text-right',
                     )}
                   >
                     {phrase(t, column)}
@@ -248,18 +222,24 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
             <tbody>
               {block.rows.map((row, rowIndex) => (
                 <tr key={rowIndex}>
-                  {row.map((cell, cellIndex) => (
-                    <td
-                      key={cellIndex}
-                      className={cn(
-                        'border-b border-line/60 py-4 pr-8 text-dim',
-                        cellIndex === row.length - 1 && 'pr-0 text-right text-text',
-                      )}
-                      {...(cellIndex === row.length - 1 ? { 'data-numeric': '' } : {})}
-                    >
-                      {phrase(t, cell)}
-                    </td>
-                  ))}
+                  {row.map((cell, cellIndex) =>
+                    typeof cell === 'number' ? (
+                      <td
+                        key={cellIndex}
+                        data-numeric
+                        className="whitespace-nowrap border-b border-line/60 py-4 pr-8 text-right text-text last:pr-0"
+                      >
+                        {formatFigure(cell, block.formats?.[cellIndex], language)}
+                      </td>
+                    ) : (
+                      <td
+                        key={cellIndex}
+                        className="border-b border-line/60 py-4 pr-8 text-dim last:pr-0"
+                      >
+                        {phrase(t, cell)}
+                      </td>
+                    ),
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -279,9 +259,7 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
       );
 
     case 'chart':
-      return (
-        <ChartBlockView block={block} facts={facts} series={series} t={t} language={language} />
-      );
+      return <ChartBlockView block={block} t={t} language={language} />;
 
     case 'callout':
       return (
@@ -289,14 +267,7 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
           <span className="text-tiny uppercase tracking-[0.08em] text-faint">
             {phrase(t, block.title)}
           </span>
-          <BlockRenderer
-            blocks={block.blocks}
-            facts={facts}
-            series={series}
-            t={t}
-            language={language}
-            onAction={onAction}
-          />
+          <BlockRenderer blocks={block.blocks} t={t} language={language} onAction={onAction} />
         </div>
       );
 
@@ -316,6 +287,13 @@ function BlockView({ block, facts, series, t, language, onAction }: BlockViewPro
         </span>
       );
   }
+}
+
+/** Whether a column holds numbers, judged by its format or by its first row. */
+function numericColumn(block: Extract<Block, { kind: 'table' }>, index: number): boolean {
+  const format = block.formats?.[index];
+  if (format !== undefined) return format !== 'text';
+  return typeof block.rows[0]?.[index] === 'number';
 }
 
 interface ActionButtonProps {

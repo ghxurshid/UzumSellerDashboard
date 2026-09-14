@@ -14,7 +14,7 @@ import {
   type InsightCard,
   type InsightGroup,
 } from '@/services/insights/blocks';
-import { formatFact, type FactTable } from '@/services/insights/facts';
+import { formatFigure } from '@/services/insights/figures';
 import { phrase } from '@/services/insights/phrase';
 import { useInsightsQuery } from '@/services/queries/useInsightsQuery';
 import { useToastStore } from '@/store/toast.store';
@@ -64,7 +64,7 @@ export function InsightsRail(): ReactNode {
   const toggleInsights = useUiStore((state) => state.toggleInsights);
   const push = useToastStore((state) => state.push);
 
-  const { cards, facts, pending, aiPending } = useInsightsQuery();
+  const { cards, pending, aiPending } = useInsightsQuery();
   const runner = useInsightActionRunner();
 
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
@@ -207,7 +207,6 @@ export function InsightsRail(): ReactNode {
             <CardView
               key={card.id}
               card={card}
-              facts={facts}
               t={t}
               language={language}
               expanded={openByDefault !== toggled}
@@ -226,7 +225,6 @@ export function InsightsRail(): ReactNode {
 
 interface CardViewProps {
   readonly card: InsightCard;
-  readonly facts: FactTable;
   readonly t: Translator;
   readonly language: Language;
   readonly expanded: boolean;
@@ -237,7 +235,6 @@ interface CardViewProps {
 
 function CardView({
   card,
-  facts,
   t,
   language,
   expanded,
@@ -245,7 +242,7 @@ function CardView({
   onAction,
   onDismiss,
 }: CardViewProps): ReactNode {
-  const signal = card.signalRef === undefined ? null : (facts.get(card.signalRef) ?? null);
+  const signal = card.signal === undefined ? null : formatFigure(card.signal.value, card.signal.format, language);
 
   /* Built through the registry rather than hand-assembled, so the footer's two
      buttons are validated on exactly the path every other action takes. */
@@ -288,7 +285,7 @@ function CardView({
         <span className="text-tiny uppercase tracking-[0.08em] text-faint">{t('insSignal')}</span>
         {signal !== null && (
           <span data-numeric className="text-xs text-text">
-            {formatFact(signal, language)}
+            {signal}
           </span>
         )}
       </button>
@@ -297,7 +294,6 @@ function CardView({
         <div className="flex animate-[rise_0.14s_ease] flex-col gap-8 border-t border-line pt-9">
           <BlockRenderer
             blocks={card.blocks}
-            facts={facts}
             t={t}
             language={language}
             onAction={onAction}

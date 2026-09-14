@@ -3,8 +3,7 @@ import type { AiSettings } from '@/types/settings';
 import type { Language } from '@/types/domain';
 
 import { resolveAction, INSIGHT_ACTIONS, ACTION_IDS } from './actions';
-import { aiDocumentSchema, type Block, type InsightCard } from './blocks';
-import { describeFacts, type FactTable } from './facts';
+import { aiDocumentSchema, WIDGET_LIMITS, type Block, type InsightCard } from './blocks';
 
 /**
  * The model as a card author.
@@ -15,11 +14,13 @@ import { describeFacts, type FactTable } from './facts';
  * revenue fell. Those are not thresholds anybody can write in advance, which is
  * the whole argument for a model being here at all.
  *
- * What it is not allowed to do is state a number, invent a remedy, or design a
- * layout. It composes blocks from a closed vocabulary, cites facts by `ref`, and
- * selects actions from a registry. Everything it sends is validated before it
- * reaches the screen, and anything that fails validation is dropped rather than
- * repaired — a half-understood card is not worth showing in a finance tool.
+ * It reads the window as data — the digest from `digest.ts` — works out what
+ * is worth a card, and writes the figures that support it into the blocks. What
+ * it is not allowed to do is invent a remedy or design a layout: it composes
+ * blocks from a closed vocabulary and selects actions from a registry, and
+ * everything it sends is validated before it reaches the screen. Anything that
+ * fails validation is dropped rather than repaired — a half-understood card is
+ * not worth showing in a finance tool.
  *
  * ## Structured output without structured-output support
  *
@@ -40,7 +41,8 @@ const LANGUAGE_NAME: Record<Language, string> = {
 
 export interface GenerateOptions {
   readonly ai: AiSettings;
-  readonly facts: FactTable;
+  /** The window, written out by `buildDigest`. */
+  readonly digest: string;
   readonly language: Language;
   /** Ids the rules already produced, so the model does not restate them. */
   readonly covered: readonly string[];
@@ -51,7 +53,7 @@ function actionCatalogue(): string {
   return ACTION_IDS.map((id) => {
     const definition = INSIGHT_ACTIONS[id];
     const route = definition.endpoint ?? 'no request — navigation only';
-    return `${id} — ${route} (risk: ${definition.risk})`;
+    return `${id} ${definition.argsDoc} — ${route} (risk: ${definition.risk})`;
   }).join('\n');
 }
 
@@ -59,9 +61,9 @@ function actionCatalogue(): string {
  * The instructions.
  *
  * The language rule is first and stated twice, because it is the one the model
- * is most likely to drop: the facts it is reading are labelled in English and
- * the field names are English, so left to itself it answers in English however
- * the interface is set. Everything a seller reads on this card — titles, prose,
+ * is most likely to drop: the data it is reading is labelled in English and the
+ * field names are English, so left to itself it answers in English however the
+ * interface is set. Everything a seller reads on this card — titles, prose,
  * evidence labels, callout headings — is theirs to write, and all of it must be
  * in the language they chose.
  */
@@ -74,48 +76,50 @@ function buildSystem(options: GenerateOptions): string {
     `WRITE EVERY PIECE OF TEXT IN ${language.toUpperCase()}.`,
     `The seller has chosen ${language} as their interface language. Card titles, paragraphs,`,
     'evidence labels, table headers, badge text and callout titles must all be in that language.',
-    'The fact labels below are in English only because they are internal identifiers — never',
-    'copy them through to the card. Field names from the API (sellPrice, commission,',
-    'quantityAvailable) stay in English, because they are what the seller sees in the API.',
+    'The data below is labelled in English only because those are field names — never copy a',
+    'label through as prose. Field names from the API (sellPrice, commission, quantityAvailable)',
+    'may stay in English, because they are what the seller sees in the API.',
     '',
     'You return ONE JSON object and nothing else. No prose before it, no code fence around it.',
     '',
-    '{ "cards": [ { id, severity, group, source, title, signalRef?, target?, blocks: [...] } ] }',
+    '{ "cards": [ { id, severity, group, source, title, signal?, target?, blocks: [...] } ] }',
     '',
     '  id        a short stable slug you invent, e.g. "ai-margin-leader"',
     '  severity  critical | high | watch | idea',
     '  group     profit | stockOps | anomaly',
-    '  source    the route the claim rests on, e.g. "GET /v1/finance/orders"',
+    '  source    the data the claim rests on, e.g. "GET /v1/finance/orders"',
     '  title     one sentence, the finding itself — not a heading like "Margin analysis"',
-    '  signalRef a fact ref whose value is the headline figure of the card',
+    '  signal    {"value":457924,"format":"money"} — the headline figure of the card',
     '  target    the screen that shows the rows: overview | products | inventory | ops |',
     '            invoices | finance | settings',
     '',
     'Block kinds — compose freely, in any order, as many as the finding needs:',
     '',
     '  { "kind": "text", "text": "…", "tone"?: positive|negative|warning|neutral|accent }',
-    '  { "kind": "metric", "ref": "totals.netProfit", "label"?: "…", "emphasis"?: true }',
-    '  { "kind": "steps", "items": [ { "text": "…", "ref"?: "…" } ] }',
-    '  { "kind": "kv", "rows": [ { "label": "…", "ref": "…" } ] }',
-    '  { "kind": "table", "columns": ["…"], "rows": [["…"]] }',
+    '  { "kind": "metric", "label"?: "…", "value": 457924, "format": "money", "change"?: -12.4 }',
+    '  { "kind": "steps", "items": [ { "text": "…", "value"?: 1250000, "format"?: "money" } ] }',
+    '  { "kind": "kv", "rows": [ { "label": "…", "value": 9.2, "format": "percent" } ] }',
+    '  { "kind": "table", "columns": ["…"], "rows": [["…", 12]], "formats"?: ["text", "count"] }',
     '  { "kind": "badges", "items": [ { "text": "…", "tone"?: … } ] }',
     '  { "kind": "callout", "tone": …, "title": "…", "blocks": [ … ] }',
     '  { "kind": "action", "actionId": "…", "params": { … }, "note"?: "…" }',
     '',
+    '  format is money (so\'m), percent (9.2 means 9.2%), count or number. Write values as plain',
+    '  numbers — no grouping, no currency, no % sign; the renderer formats them.',
+    `  Labels, titles and cells are at most ${WIDGET_LIMITS.label} characters; text at most ${WIDGET_LIMITS.text}.`,
+    '',
     'RULES, in order of how much damage breaking them does:',
     '',
-    '1. NEVER write a number, a sum, a percentage or a money amount into any text, title or',
-    '   table cell. Every figure is cited with "ref" and the application renders it. If a fact',
-    '   you need is not in the table below, the card cannot be written — drop it.',
-    '2. Only use refs that appear verbatim in the fact table. A ref you invent is discarded and',
-    '   takes its block with it.',
-    '3. Only use actionId values from the action registry, with the parameters that registry',
-    '   expects. Never describe an HTTP request in prose as if the seller could press it.',
-    '4. Every card states a finding that costs or earns money, and says what to do about it.',
+    '1. Every figure is either copied from the DATA below or calculated by you from it. Calculate',
+    '   carefully; when a card rests on a figure you calculated, show the calculation in a steps',
+    '   block. Never invent a figure the data does not support — if it is not there, drop the card.',
+    '2. Only use actionId values from the action registry, with the parameters it lists. Never',
+    '   describe an HTTP request in prose as if the seller could press it.',
+    '3. Every card states a finding that costs or earns money, and says what to do about it.',
     '   A card that only restates a total is noise — do not send it.',
-    '5. Do not predict, forecast or score. The seller API publishes no such data and neither do',
+    '4. Do not predict, forecast or score. The seller API publishes no such data and neither do',
     '   you. Say what the rows already show.',
-    '6. At most four cards. Fewer is better. An account with nothing wrong gets an empty array.',
+    '5. At most four cards. Fewer is better. An account with nothing wrong gets an empty array.',
     '',
     'Actions available:',
     actionCatalogue(),
@@ -124,8 +128,8 @@ function buildSystem(options: GenerateOptions): string {
       ? `Rules already produced these findings — do not repeat them: ${options.covered.join(', ')}`
       : 'No rule-derived findings fired for this window.',
     '',
-    'FACT TABLE — the only numbers that exist:',
-    describeFacts(options.facts, options.language),
+    'DATA — the selected window and the catalogue:',
+    options.digest,
   ].join('\n');
 }
 
@@ -174,49 +178,26 @@ function extractJson(text: string): string | null {
 /**
  * Drop what cannot be rendered honestly.
  *
- * A block citing a ref that is not in the table would render blank; a block
- * naming an action the registry rejects would render a button that does
- * nothing. Both are removed here rather than defended against in the renderer,
- * so the component can assume everything it receives resolves.
+ * A block naming an action the registry rejects would render a button that does
+ * nothing. It is removed here rather than defended against in the renderer, so
+ * the component can assume every button it receives resolves.
  */
-function sanitizeBlocks(blocks: readonly Block[], facts: FactTable): readonly Block[] {
+function sanitizeBlocks(blocks: readonly Block[]): readonly Block[] {
   const kept: Block[] = [];
 
   for (const block of blocks) {
-    switch (block.kind) {
-      case 'metric': {
-        if (facts.has(block.ref)) kept.push(block);
-        break;
-      }
-      case 'kv': {
-        const rows = block.rows.filter((row) => facts.has(row.ref));
-        if (rows.length > 0) kept.push({ ...block, rows });
-        break;
-      }
-      case 'steps': {
-        /* A step without a ref is prose, and prose is allowed — it is the
-           reasoning between two figures. Only a step citing a ref that does not
-           exist is dropped, because that one was meant to show a number. */
-        const items = block.items.filter((item) => item.ref === undefined || facts.has(item.ref));
-        if (items.length > 0) kept.push({ ...block, items });
-        break;
-      }
-      case 'action': {
-        if (resolveAction(block.actionId, block.params) !== null) kept.push(block);
-        break;
-      }
-      case 'callout': {
-        const inner = sanitizeBlocks(block.blocks, facts);
-        if (inner.length > 0) kept.push({ ...block, blocks: inner });
-        break;
-      }
-      case 'text':
-      case 'table':
-      case 'badges': {
-        kept.push(block);
-        break;
-      }
+    if (block.kind === 'action') {
+      if (resolveAction(block.actionId, block.params) !== null) kept.push(block);
+      continue;
     }
+
+    if (block.kind === 'callout') {
+      const inner = sanitizeBlocks(block.blocks);
+      if (inner.length > 0) kept.push({ ...block, blocks: inner });
+      continue;
+    }
+
+    kept.push(block);
   }
 
   return kept;
@@ -248,7 +229,7 @@ export async function generateInsightCards(
       {
         role: 'user',
         content:
-          'Analyse this window and return the JSON object. Remember: every figure by ref, all text in the interface language.',
+          'Analyse this window and return the JSON object. Remember: figures as plain numbers with a format, all text in the interface language.',
       },
     ],
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
@@ -270,7 +251,7 @@ export async function generateInsightCards(
   const cards: InsightCard[] = [];
 
   for (const card of document.data.cards) {
-    const blocks = sanitizeBlocks(card.blocks as readonly Block[], options.facts);
+    const blocks = sanitizeBlocks(card.blocks as readonly Block[]);
     if (blocks.length === 0) continue;
 
     cards.push({
@@ -285,9 +266,7 @@ export async function generateInsightCards(
       title: card.title,
       blocks,
       origin: 'ai',
-      ...(card.signalRef !== undefined && options.facts.has(card.signalRef)
-        ? { signalRef: card.signalRef }
-        : {}),
+      ...(card.signal !== undefined ? { signal: card.signal } : {}),
       ...(card.target !== undefined ? { target: card.target } : {}),
     });
   }

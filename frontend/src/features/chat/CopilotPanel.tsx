@@ -43,10 +43,9 @@ import { useCopilotAnswers } from './useCopilotAnswers';
  * Shift+Enter breaks the line, which is what a chat input is expected to do.
  *
  * An assistant turn is a document rather than a paragraph: the same blocks the
- * insights rail renders, drawn by the same component, resolving figures against
- * the fact table that turn was grounded on. That is what lets an answer carry a
- * table, a waterfall and a button without this file knowing anything about any
- * of them.
+ * insights rail renders, drawn by the same component, with the figures the
+ * model computed written into them. That is what lets an answer carry a table,
+ * a waterfall and a button without this file knowing anything about any of them.
  */
 export function CopilotPanel(): ReactNode {
   const { t, language } = useTranslation();
@@ -59,6 +58,7 @@ export function CopilotPanel(): ReactNode {
   const navigate = useNavigate();
   const messages = useChatStore((state) => state.messages);
   const pending = useChatStore((state) => state.pending);
+  const queued = useChatStore((state) => state.queued);
   const reset = useChatStore((state) => state.reset);
   const deep = useChatStore((state) => state.deep);
   const setDeep = useChatStore((state) => state.setDeep);
@@ -73,18 +73,23 @@ export function CopilotPanel(): ReactNode {
   }, [messages]);
 
   /**
-   * A question handed over by an insight card.
+   * A question handed over by an insight card or a pinned answer.
    *
    * The card knows what to ask but not how — `ask` is this panel's closure, and
    * the panel may not have been mounted when the button was pressed. So the
-   * card leaves the question in the store and it is claimed here, once, on the
-   * first render after the panel opens.
+   * card leaves the question in the store and it is claimed here, once.
+   *
+   * Watching `queued` rather than only the panel opening is what makes the
+   * button work when the panel is already open: setting it open again changes
+   * nothing, and the question used to wait in the store until the next time the
+   * panel happened to mount. It also waits for an answer in flight to finish,
+   * because starting a question aborts the one before it.
    */
   useEffect(() => {
-    if (!chatOpen || unconfigured) return;
-    const queued = useChatStore.getState().claim();
-    if (queued !== null) ask(queued);
-  }, [ask, chatOpen, unconfigured]);
+    if (!chatOpen || unconfigured || pending || queued === null) return;
+    const claimed = useChatStore.getState().claim();
+    if (claimed !== null) ask(claimed);
+  }, [ask, chatOpen, pending, queued, unconfigured]);
 
   if (!chatOpen) return null;
 
@@ -318,6 +323,7 @@ function AnswerTurn({
     block.kind === 'action' && block.actionId === 'copilot.ask';
 
   const body = turn.blocks.filter((block) => !isFollowUp(block));
+  const pinnable = pinnableBlocks(turn.blocks);
   const followUps = turn.blocks.filter(isFollowUp).flatMap((block) => {
     if (block.kind !== 'action') return [];
     const resolved = resolveAction(block.actionId, block.params);
@@ -361,19 +367,10 @@ function AnswerTurn({
             </button>
           </span>
         ) : (
-          <BlockRenderer
-            blocks={body}
-            facts={turn.facts}
-            series={turn.series}
-            t={t}
-            language={language}
-            onAction={onAction}
-          />
+          <BlockRenderer blocks={body} t={t} language={language} onAction={onAction} />
         )}
 
-        {writing !== '' && turn.pending === true && (
-          <DraftText text={writing} facts={turn.facts} language={language} />
-        )}
+        {writing !== '' && turn.pending === true && <DraftText text={writing} />}
 
         {/* What stopped, and the offer to carry on. The button is only drawn
             when the run can actually be resumed — a wrong key is not something
@@ -418,7 +415,6 @@ function AnswerTurn({
               onClick={() =>
                 void exportAnswerCsv({
                   blocks: body,
-                  facts: turn.facts,
                   t,
                   language,
                   title: t('askCopilot'),
@@ -438,11 +434,11 @@ function AnswerTurn({
               {t('exportPdf')}
             </button>
 
-            {/* Keeping an answer keeps the lookups behind it, not the figures —
-                the card on the dashboard re-reads them. Offered only when there
-                are lookups to replay: an answer composed from nothing would pin
-                as a card that can never refresh. */}
-            {meta !== undefined && meta.plan.length > 0 && (
+            {/* Keeping an answer keeps the answer — sentences and figures as
+                they were, with the period they were written about. Offered only
+                when there is something left to show once the buttons and traces
+                are taken out. */}
+            {pinnable.length > 0 && (
               <button
                 type="button"
                 disabled={pinned}
@@ -450,9 +446,9 @@ function AnswerTurn({
                   addPin({
                     id: turn.id,
                     title: question === '' ? t('askCopilot') : question,
-                    blocks: pinnableBlocks(turn.blocks),
-                    plan: meta.plan,
+                    blocks: pinnable,
                     createdAt: Date.now(),
+                    window: meta.window,
                   })
                 }
                 className="tap flex h-26 cursor-pointer items-center gap-5 rounded-6 border border-line-2 bg-transparent px-8 text-tiny text-dim hover:border-acc-line hover:text-acc-dim disabled:cursor-default disabled:text-faint"

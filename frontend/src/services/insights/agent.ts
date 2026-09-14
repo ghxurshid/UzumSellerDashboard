@@ -16,7 +16,7 @@ import {
   type ResolvedAction,
 } from './actions';
 import type { Block } from './blocks';
-import { formatFact, type Fact, type FactSeries, type FactTable, type SeriesTable } from './facts';
+import { formatChange, formatFigure } from './figures';
 import {
   createBlockStream,
   flush,
@@ -26,7 +26,7 @@ import {
   type Harvest,
   type Rejection,
 } from './ndjson';
-import { renderTemplate } from './template';
+import { withOpenedDocuments } from './prompt';
 import {
   describeToolkit,
   nativeToolSchemas,
@@ -49,16 +49,17 @@ import { WIDGET_GUIDE } from './widgets';
  *
  * This is the same idea taken to its conclusion. The model starts with a small
  * prompt that says who it is and that a toolkit exists. It asks for what it
- * needs, reads, thinks, asks again if the first answer raised a second
- * question, and stops when it has enough. Each request is one round; the
- * documents and results it collected stay in the message list, so nothing is
- * re-derived and nothing is re-sent that was not asked for.
+ * needs, reads the data a lookup returns, works out what the question needs from
+ * it, asks again if the first answer raised a second question, and stops when it
+ * has enough. Each request is one round; the documents and results it collected
+ * stay in the message list, so nothing is re-read and nothing is re-sent that
+ * was not asked for.
  *
  *     base system prompt          identity, boundaries, "ask for what you need"
  *       ↳ open the toolkit        the catalogue, once per thread
- *       ↳ call a lookup           run against the archive
+ *       ↳ call a lookup           run against the archive, answered with data
  *       ↳ open the widget guide   how to draw, once per thread
- *       ↳ blocks                  the answer, streamed
+ *       ↳ blocks                  the answer, with its figures in it, streamed
  *
  * ## Two ways to ask, one loop
  *
@@ -134,17 +135,16 @@ export function capabilityOf(args: unknown): Capability | null {
   return null;
 }
 
+/** The document behind a capability, as the model is handed it. */
+export function capabilityDocument(capability: Capability, context: ToolContext): string {
+  return capability === 'tools' ? describeToolkit(context) : WIDGET_GUIDE;
+}
+
 /* ── options ────────────────────────────────────────────────────────────── */
 
 export interface AgentMessage {
   readonly role: 'user' | 'assistant';
   readonly content: string;
-}
-
-/** A lookup that ran and produced figures — what a pinned answer replays. */
-export interface ExecutedCall {
-  readonly tool: string;
-  readonly args: unknown;
 }
 
 export interface AgentOptions {
@@ -164,7 +164,7 @@ export interface AgentOptions {
    * Capabilities this thread has already been handed.
    *
    * Held by the caller and mutated here, so a follow-up question does not spend
-   * a round re-asking for a document that is already in the transcript.
+   * a round re-asking for a document it already holds.
    */
   readonly granted: Set<Capability>;
   readonly signal: AbortSignal;
@@ -180,8 +180,6 @@ export interface AgentOptions {
    * caller that ignores this option gets exactly the behaviour it had before.
    */
   readonly onDraft?: (text: string) => void;
-  /** The tables the answer's refs resolve against, after every round. */
-  readonly onGround: (facts: FactTable, series: SeriesTable) => void;
   /** An action the model may perform outright — navigation and the like. */
   readonly onRun: (action: ResolvedAction) => void;
   /**
@@ -202,18 +200,10 @@ export interface AgentOutcome {
   readonly cachedInputTokens: number;
   /** How many lines the seller never saw, after the rewrite had its turn. */
   readonly dropped: number;
-  /**
-   * Why each of them was refused, in the same order.
-   *
-   * Reasons only. The lines themselves are the model's own text and can hold
-   * the figure the number guard exists to keep off the screen, so they go back
-   * to the model and no further.
-   */
+  /** Why each of them was refused, in the same order. */
   readonly rejected: readonly string[];
   readonly rounds: number;
   readonly calls: number;
-  /** Lookups that ran, in order — enough to reproduce this answer later. */
-  readonly plan: readonly ExecutedCall[];
 }
 
 /**
@@ -227,16 +217,20 @@ export interface AgentOutcome {
  *
  * So the run's state is an object the caller owns. `runAgent` mutates it, and a
  * second call with the same session picks up at the round that failed — with
- * the documents it was handed, the lookups it ran and the facts they produced
- * all still there.
+ * the documents it was handed and the lookups it ran all still there.
  */
 export interface AgentSession {
   /** The conversation so far. A round is appended only once it has completed. */
   readonly messages: ChatMessage[];
-  readonly facts: Map<string, Fact>;
-  readonly series: Map<string, FactSeries>;
+  /**
+   * Documents granted before this question began.
+   *
+   * Frozen at creation: they ride in the system prompt, and a document granted
+   * *during* the question is already in the transcript as a tool reply — so a
+   * resumed run must not print it a second time in the system prompt.
+   */
+  readonly carried: ReadonlySet<Capability>;
   readonly routes: Set<string>;
-  readonly plan: ExecutedCall[];
   /**
    * Lookups already answered during this question.
    *
@@ -264,12 +258,7 @@ export interface AgentSession {
    * second number that can drift out of step with this list.
    */
   readonly rejected: Rejection[];
-  /**
-   * Where this round's share of `rejected` begins.
-   *
-   * The same bookkeeping `checkpoint` does for blocks, and for the same reason:
-   * a round about to be handed back has to know which losses are its own.
-   */
+  /** Where this round's share of `rejected` begins. */
   rejectedAt: number;
   /** Whether the one rewrite this question is allowed has been spent. */
   corrected: boolean;
@@ -289,15 +278,13 @@ export interface AgentSession {
 export function createSession(input: {
   readonly question: string;
   readonly history: readonly AgentMessage[];
-  /** Facts that resolve before any lookup runs — the screen's own totals. */
-  readonly seed: FactTable;
+  /** Capabilities the thread already holds. Copied, never shared. */
+  readonly carried?: ReadonlySet<Capability>;
 }): AgentSession {
   return {
     messages: [...input.history, { role: 'user', content: input.question }],
-    facts: new Map(input.seed),
-    series: new Map(),
+    carried: new Set(input.carried ?? []),
     routes: new Set(),
-    plan: [],
     answered: new Map(),
     round: 0,
     calls: 0,
@@ -322,11 +309,12 @@ const ECHO_LIMIT = 6_000;
 const LINE_ECHO_LIMIT = 300;
 
 /**
- * The turn that asks for a discarded paragraph back.
+ * The turn that asks for a discarded line back.
  *
- * The sentences are quoted rather than counted. "You stated a figure" is not
- * something a model can act on; the sentence it wrote is, and reading it beside
- * the rule is what makes the rewrite mechanical rather than a guess.
+ * The lines are quoted rather than counted. "A line was refused" is not
+ * something a model can act on; the line it wrote beside the reason is, and
+ * reading the two together is what makes the rewrite mechanical rather than a
+ * guess.
  *
  * It is asked for only those lines because the rest of the round is already on
  * the seller's screen. A model that starts the answer over writes every
@@ -340,19 +328,72 @@ function rewriteRequest(rejected: readonly Rejection[]): string {
       `    -> ${rejection.reason}`,
     ]),
     '',
-    'Send them again, fixed. Every figure must be a {{ref}} placeholder into a fact you hold —',
-    'where no ref carries one, leave the figure out and say what the rows show without it. Send',
-    'only these lines: the rest of your answer is already on the seller\'s screen.',
+    'Send them again, fixed: the same content in a shape the widget guide accepts — one JSON',
+    'object per line, \\n for a line break inside a string, figures as plain numbers with a',
+    "format, text within the limits. Send only these lines: the rest of your answer is already",
+    "on the seller's screen.",
   ].join('\n');
+}
+
+/**
+ * Buttons whose parameters the registry refuses, taken out before they are shown.
+ *
+ * The block schema accepts any `params`, because each action has its own and the
+ * schema cannot know which. The renderer would then draw nothing for a malformed
+ * one — silently, under a sentence telling the seller to press it. Checking here
+ * turns that into a refused line with a reason, which the rewrite turn can fix.
+ */
+function checkActions(
+  blocks: readonly Block[],
+  reject: (line: string, reason: string) => void,
+): readonly Block[] {
+  const kept: Block[] = [];
+
+  for (const block of blocks) {
+    if (block.kind === 'action') {
+      if (resolveAction(block.actionId, block.params) === null) {
+        reject(
+          JSON.stringify(block),
+          `params: ${explainRejection(block.actionId, block.params)} — expected ${INSIGHT_ACTIONS[block.actionId].argsDoc}`,
+        );
+        continue;
+      }
+      kept.push(block);
+      continue;
+    }
+
+    if (block.kind === 'callout') {
+      const inner = checkActions(block.blocks, reject);
+      if (inner.length > 0) kept.push({ ...block, blocks: inner });
+      continue;
+    }
+
+    kept.push(block);
+  }
+
+  return kept;
 }
 
 /* ── the loop ───────────────────────────────────────────────────────────── */
 
 export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
   const { session } = options;
-  const { facts, series, routes, plan, answered, messages } = session;
+  const { routes, answered, messages } = session;
 
   const native = supportsNativeTools(options.settings.provider);
+
+  /* Documents granted by an earlier question, printed where the model can see
+     them. The order is fixed so the prefix stays byte-identical between
+     questions and a provider's prompt cache can serve it. */
+  const system = withOpenedDocuments(
+    options.system,
+    (['tools', 'widgets'] as const)
+      .filter((capability) => session.carried.has(capability))
+      .map((capability) => ({
+        name: capability === 'tools' ? 'TOOLKIT' : 'WIDGET GUIDE',
+        text: capabilityDocument(capability, options.context),
+      })),
+  );
 
   /**
    * Blocks reach the transcript through here and nowhere else.
@@ -383,10 +424,10 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
   /**
    * One place a line is lost, whatever lost it.
    *
-   * A block shape the schema refuses, a line that never parsed and a request
-   * that read as nothing are three different mistakes with one remedy: say what
-   * happened and let the model write the line again. Routing them through here
-   * is what lets a single turn fix any of them.
+   * A block shape the schema refuses, a line that never parsed, a button the
+   * registry rejects and a request that read as nothing are different mistakes
+   * with one remedy: say what happened and let the model write the line again.
+   * Routing them through here is what lets a single turn fix any of them.
    */
   const reject = (line: string, reason: string): void => {
     session.rejected.push({ line, reason });
@@ -412,7 +453,7 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
     const asked: Request[] = [];
 
     const harvest = (value: Harvest): void => {
-      emit(value.blocks);
+      emit(checkActions(value.blocks, reject));
 
       for (const rejection of value.rejected) reject(rejection.line, rejection.reason);
 
@@ -426,7 +467,7 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
     const completion = await streamComplete({
       settings: options.settings,
       request: {
-        system: options.system,
+        system,
         messages,
         ...(native ? { tools: nativeToolSchemas(options.granted) } : {}),
         signal: options.signal,
@@ -457,7 +498,7 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
     const requests = [...parsed, ...asked];
 
     /* A model that answered in a sentence despite being asked for objects has
-       still answered, and a sentence is exactly what a text block now holds. */
+       still answered, and a sentence is exactly what a text block holds. */
     const prose = takeProse(stream);
     if (requests.length === 0 && session.emitted === 0 && prose !== '') {
       emit([{ kind: 'text', text: prose }]);
@@ -468,10 +509,11 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
        * A line the seller never saw is worth one more turn.
        *
        * Whatever refused it — the block schema, a line that never parsed, a
-       * request that read as nothing — used to tell nobody. A round whose only
-       * paragraph was refused therefore ended as an empty answer with a warning
-       * underneath it, and the model, which could have written the line another
-       * way, never learned there was anything to write again.
+       * button the registry rejected, a request that read as nothing — used to
+       * tell nobody. A round whose only paragraph was refused therefore ended as
+       * an empty answer with a warning underneath it, and the model, which could
+       * have written the line another way, never learned there was anything to
+       * write again.
        *
        * Once per question. A second failure means the model cannot say the
        * thing within the rule, and a third turn would spend tokens reaching the
@@ -524,17 +566,19 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
 
         if (capability === null) {
           text = `[${OPEN_TOOLKIT}] "capability" must be "tools" or "widgets".`;
+        } else if (session.carried.has(capability)) {
+          text = `[${capability}] already open — it is printed under OPENED DOCUMENTS in your instructions. Use it from there.`;
         } else if (options.granted.has(capability)) {
-          text = `[${capability}] already open in this thread — use what you were given rather than asking again.`;
+          text = `[${capability}] already open in this conversation — use what you were given above rather than asking again.`;
         } else {
           options.granted.add(capability);
-          text = capability === 'tools' ? describeToolkit(options.context) : WIDGET_GUIDE;
+          text = capabilityDocument(capability, options.context);
         }
       } else if (session.calls >= maxCalls) {
         text = `[${request.tool}] not run — this question has spent its ${maxCalls} lookups. Answer with what you have.`;
       } else {
         session.calls += 1;
-        text = await serve(request, options, emit, { facts, series, routes, plan, answered });
+        text = await serve(request, options, emit, { routes, answered });
       }
 
       if (request.call !== null) {
@@ -543,8 +587,6 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
         textReplies.push(text);
       }
     }
-
-    options.onGround(new Map(facts) as FactTable, new Map(series) as SeriesTable);
 
     /**
      * The nudge rides on the last result rather than in a message of its own.
@@ -581,8 +623,6 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
     session.round = round + 1;
   }
 
-  options.onGround(new Map(facts) as FactTable, new Map(series) as SeriesTable);
-
   return {
     routes: [...routes],
     inputTokens: session.inputTokens,
@@ -592,17 +632,13 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
     rejected: session.rejected.map((rejection) => rejection.reason),
     rounds: session.round,
     calls: session.calls,
-    plan,
   };
 }
 
 /* ── serving one call ───────────────────────────────────────────────────── */
 
 interface Ledger {
-  readonly facts: Map<string, Fact>;
-  readonly series: Map<string, FactSeries>;
   readonly routes: Set<string>;
-  readonly plan: ExecutedCall[];
   readonly answered: Map<string, string>;
 }
 
@@ -643,6 +679,14 @@ async function serve(
       return `[${tool}] rejected — ${explainRejection(tool, args)}. Expected ${definition.argsDoc}`;
     }
 
+    /* A follow-up question called rather than placed. Running it would start a
+       second question underneath the one still being answered, so it becomes
+       the chip it was meant to be. */
+    if (resolved.actionId === 'copilot.ask') {
+      emit([{ kind: 'action', actionId: resolved.actionId, params: resolved.params }]);
+      return `[${tool}] follow-up chip placed under your answer. Carry on with the answer itself.`;
+    }
+
     if (definition.risk === 'none') {
       options.onRun(resolved);
       return `[${tool}] done. It changed nothing at Uzum — mention it in passing, do not make it the answer.`;
@@ -670,14 +714,7 @@ async function serve(
      claim from the same figure appearing on its own. */
   emit([{ kind: 'trace', tool, detail: result.trace ?? '' }]);
 
-  for (const fact of result.facts ?? []) ledger.facts.set(fact.ref, fact);
-  for (const entry of result.series ?? []) ledger.series.set(entry.ref, entry);
   for (const route of result.routes ?? []) ledger.routes.add(route);
-
-  /* Only a lookup that produced figures is worth replaying later. */
-  if ((result.facts?.length ?? 0) > 0 || (result.series?.length ?? 0) > 0) {
-    ledger.plan.push({ tool, args });
-  }
 
   ledger.answered.set(key, result.text);
   return result.text;
@@ -691,37 +728,57 @@ async function serve(
  * The obvious thing is to send the model its own blocks back. It is also the
  * wasteful thing: the JSON scaffolding is several times the size of what it
  * actually said, and the model does not need to re-read its own markup to
- * remember its own argument. So a past turn is flattened to a sentence or two
- * with the figures resolved — which is both cheaper and closer to what a person
- * would recall of the exchange.
+ * remember its own argument. So a past turn is flattened to its sentences and
+ * the figures it showed — enough for "and what about that product?" to know
+ * which product, and cheaper than the answer it summarises.
  */
-export function summariseAnswer(
-  blocks: readonly Block[],
-  facts: FactTable,
-  language: Language,
-): string {
+export function summariseAnswer(blocks: readonly Block[], language: Language): string {
   const parts: string[] = [];
+  const LIMIT = 10;
 
   const walk = (list: readonly Block[]): void => {
     for (const block of list) {
-      if (parts.length >= 6) return;
+      if (parts.length >= LIMIT) return;
 
       switch (block.kind) {
         case 'text':
-          if (typeof block.text === 'string') {
-            parts.push(renderTemplate(block.text, facts, language));
-          }
+          if (typeof block.text === 'string') parts.push(block.text.slice(0, 600));
           break;
         case 'metric': {
-          const fact = facts.get(block.ref);
-          if (fact !== undefined) parts.push(`${fact.label}: ${formatFact(fact, language)}`);
+          const label = typeof block.label === 'string' ? `${block.label}: ` : '';
+          const change = block.change === undefined ? '' : ` (${formatChange(block.change)})`;
+          parts.push(`${label}${formatFigure(block.value, block.format, language)}${change}`);
           break;
         }
         case 'kv':
-          for (const row of block.rows.slice(0, 4)) {
-            const fact = facts.get(row.ref);
-            if (fact !== undefined) parts.push(`${fact.label}: ${formatFact(fact, language)}`);
-          }
+          parts.push(
+            block.rows
+              .slice(0, 6)
+              .map((row) => `${typeof row.label === 'string' ? row.label : ''}: ${formatFigure(row.value, row.format, language)}`)
+              .join('; '),
+          );
+          break;
+        case 'steps':
+          parts.push(
+            block.items
+              .slice(0, 6)
+              .map((item) =>
+                `${typeof item.text === 'string' ? item.text : ''}${item.value === undefined ? '' : ` ${formatFigure(item.value, item.format, language)}`}`,
+              )
+              .join('; '),
+          );
+          break;
+        case 'table':
+          parts.push(
+            `[table ${block.columns.filter((column) => typeof column === 'string').join(' | ')}: ${block.rows.length} rows, first: ${block.rows[0]?.map(String).join(' | ') ?? ''}]`,
+          );
+          break;
+        case 'chart':
+          parts.push(
+            block.chart === 'line'
+              ? `[line chart${typeof block.title === 'string' ? ` "${block.title}"` : ''} over ${block.labels?.length ?? 0} buckets]`
+              : `[${block.chart} chart: ${(block.items ?? []).map((item) => `${typeof item.label === 'string' ? item.label : ''} ${formatFigure(item.value, block.format, language)}`).join('; ')}]`,
+          );
           break;
         case 'callout':
           walk(block.blocks);
@@ -733,5 +790,5 @@ export function summariseAnswer(
   };
 
   walk(blocks);
-  return parts.join(' ');
+  return parts.join('\n');
 }

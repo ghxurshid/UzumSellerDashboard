@@ -16,9 +16,9 @@ import remarkGfm from 'remark-gfm';
  * bubble.
  *
  * So prose is now prose. The model writes Markdown, the seller reads Markdown,
- * and figures are the model's own words. The other block kinds are unchanged
- * and still resolve every number from the fact table, which is where the
- * answer's arithmetic belongs — this renders the sentences around them.
+ * and figures are the model's own words. The other block kinds carry their
+ * figures as plain numbers with a format, and the renderer prints those — this
+ * renders the sentences around them.
  *
  * ## What is deliberately not supported
  *

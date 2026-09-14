@@ -5,10 +5,8 @@ import { ApiError } from '@/services/api/client';
 import { estimateCost } from '@/services/ai/pricing';
 import { supportsNativeTools } from '@/services/ai/messages';
 import { createSession, runAgent, summariseAnswer, type AgentSession } from '@/services/insights/agent';
-import { buildFacts, type FactTable } from '@/services/insights/facts';
 import { buildBaseSystem } from '@/services/insights/prompt';
 import type { ToolContext } from '@/services/insights/toolkit';
-import { useOverviewQuery } from '@/services/queries/useOverviewQuery';
 import { useProductsQuery } from '@/services/queries/useProductsQuery';
 import { useScope } from '@/services/queries/useScope';
 import { useShops } from '@/services/queries/useConnection';
@@ -72,12 +70,11 @@ interface UseCopilotAnswersResult {
  * and the action runner that performs the two actions a model is allowed to
  * perform itself.
  *
- * An answer is still composed the same way an insight card is: blocks citing
- * facts the application resolved. What changed underneath is that the model is
- * no longer handed a fact table and a vocabulary up front. It is handed a
- * question and a way to ask, and it goes and gets what the question needs —
- * which is why two different questions no longer produce two answers with the
- * same furniture.
+ * An answer is composed the same way an insight card is: blocks, with the
+ * figures the model worked out from the data written into them. The model is
+ * not handed a fact table and a vocabulary up front. It is handed a question and
+ * a way to ask, and it goes and gets what the question needs — which is why two
+ * different questions no longer produce two answers with the same furniture.
  *
  * Cancellation cuts every round: one `AbortController` is threaded through the
  * model requests, the archive fetches and the worker jobs between them.
@@ -89,7 +86,6 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
   const begin = useChatStore((state) => state.begin);
   const append = useChatStore((state) => state.append);
   const draft = useChatStore((state) => state.draft);
-  const ground = useChatStore((state) => state.ground);
   const settle = useChatStore((state) => state.settle);
   const fail = useChatStore((state) => state.fail);
   const truncate = useChatStore((state) => state.truncate);
@@ -97,7 +93,6 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
 
   const scope = useScope();
   const shops = useShops();
-  const { summary } = useOverviewQuery();
   const { products } = useProductsQuery();
   const { run: runAction } = useInsightActionRunner();
 
@@ -117,20 +112,6 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
     /* The clock the seller started, not the clock of the attempt that failed. */
     readonly startedAt: number;
   } | null>(null);
-
-  /**
-   * What already resolves before anyone asks anything.
-   *
-   * Not context for the model — it is never told these exist — but a table the
-   * screen has already computed for the selected period. Seeding it means a
-   * `window.totals` lookup over that same period lands on refs that were
-   * already consistent with the tiles behind the panel, rather than creating a
-   * second set that could disagree by a rounding.
-   */
-  const seed = useMemo<FactTable>(() => {
-    if (summary === null) return new Map();
-    return buildFacts({ totals: summary.totals, products, invoices: undefined });
-  }, [products, summary]);
 
   const shopNames = useMemo(() => {
     const selected = new Set(scope.shopIds);
@@ -184,7 +165,6 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
            written rather than staying blank until the line ends. It resolves to
            nothing the moment `onBlocks` delivers the same text as a block. */
         onDraft: (text) => draft(id, text),
-        onGround: (facts, series) => ground(id, facts, series),
         onRun: runAction,
       })
         .then((outcome) => {
@@ -203,7 +183,7 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
             rounds: outcome.rounds,
             calls: outcome.calls,
             cachedInputTokens: outcome.cachedInputTokens,
-            plan: outcome.plan,
+            window: { fromMs: scope.fromMs, toMs: scope.toMs },
           });
         })
         .catch((error: unknown) => {
@@ -230,7 +210,6 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
       append,
       draft,
       fail,
-      ground,
       language,
       products,
       runAction,
@@ -261,13 +240,17 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
           content:
             message.role === 'user'
               ? message.text
-              : summariseAnswer(message.blocks, message.facts, language),
+              : summariseAnswer(message.blocks, language),
         }))
         .filter((message) => message.content !== '');
 
-      launch(id, createSession({ question: trimmed, history, seed }), deep, Date.now());
+      /* The documents this thread already holds ride into the new question's
+         system prompt — the summarised history above no longer contains them. */
+      const carried = new Set(useChatStore.getState().grants);
+
+      launch(id, createSession({ question: trimmed, history, carried }), deep, Date.now());
     },
-    [begin, language, launch, seed],
+    [begin, language, launch],
   );
 
   const retry = useCallback(

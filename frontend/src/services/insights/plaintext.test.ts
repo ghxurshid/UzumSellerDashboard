@@ -64,13 +64,23 @@ describe('formatting', () => {
 });
 
 describe('table', () => {
-  it('declares its columns and separates cells with pipes', () => {
-    expect(table(['ref', 'units'], [['p.1', 12]])).toBe('cols: ref | units\np.1 | 12');
+  it('names its columns on the first line and separates cells with bare pipes', () => {
+    /* No padding around the separator: two spaces a cell is tokens a row that
+       say nothing, and the model is reading hundreds of rows. */
+    expect(table(['productId', 'units'], [[4471, 12]])).toBe('productId|units\n4471|12');
   });
 
   it('strips a pipe out of a product name so the row keeps its shape', () => {
-    const rendered = table(['ref', 'name'], [['p.1', 'Abaya | XL']]);
-    expect(rendered).toBe('cols: ref | name\np.1 | Abaya XL');
+    const rendered = table(['productId', 'name'], [[4471, 'Abaya | XL']]);
+    expect(rendered).toBe('productId|name\n4471|Abaya XL');
+  });
+
+  it('writes a missing value as an empty cell, not a zero', () => {
+    expect(table(['a', 'b', 'c'], [[1, null, 3]])).toBe('a|b|c\n1||3');
+  });
+
+  it('keeps two decimals of a fraction and none of an integer', () => {
+    expect(table(['v'], [[2.346], [7]])).toBe('v\n2.35\n7');
   });
 
   it('flattens a newline inside a cell', () => {

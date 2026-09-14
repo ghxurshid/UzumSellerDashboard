@@ -1,10 +1,8 @@
 import { create } from 'zustand';
 
 import { formatClock } from '@/lib/format';
-import type { Capability, ExecutedCall } from '@/services/insights/agent';
+import type { Capability } from '@/services/insights/agent';
 import type { Block } from '@/services/insights/blocks';
-import type { FactTable, SeriesTable } from '@/services/insights/facts';
-import { EMPTY_SERIES } from '@/services/insights/facts';
 import type { ChatRole } from '@/types/domain';
 
 /**
@@ -17,12 +15,11 @@ import type { ChatRole } from '@/types/domain';
  *
  * ## An answer is a document, not a string
  *
- * A turn carries blocks, and the fact table that resolves them. Keeping the
- * facts *per turn* is what makes an old answer keep meaning what it meant: the
- * period selector moves, the totals change, and a message from three questions
- * ago still renders the figures it was written about rather than silently
- * re-resolving to today's. The alternative — one shared table — would quietly
- * rewrite history every time the scope changed.
+ * A turn carries blocks, and every figure in them is written into the block
+ * itself — the model computed it from the rows it read. So an old answer keeps
+ * meaning what it meant without any bookkeeping: the period selector moves, the
+ * totals change, and a message from three questions ago still says what it said
+ * about the data it was written over.
  */
 
 export interface AnswerMeta {
@@ -48,15 +45,8 @@ export interface AnswerMeta {
   readonly calls: number;
   /** Prefix tokens the provider served from its cache. */
   readonly cachedInputTokens: number;
-  /**
-   * The lookups behind this answer, in order.
-   *
-   * Kept because it is what makes an answer *reproducible*: pinning one to the
-   * dashboard replays these against whatever period is selected then, so the
-   * card shows today's figures rather than a photograph of the day it was
-   * written. See `insights/pins.ts`.
-   */
-  readonly plan: readonly ExecutedCall[];
+  /** The period the seller had selected when the question was asked. */
+  readonly window: { readonly fromMs: number; readonly toMs: number };
 }
 
 export interface ChatTurn {
@@ -65,8 +55,6 @@ export interface ChatTurn {
   /** The question, for a user turn. Empty for an assistant turn. */
   readonly text: string;
   readonly blocks: readonly Block[];
-  readonly facts: FactTable;
-  readonly series: SeriesTable;
   readonly time: string;
   readonly pending?: boolean;
   /**
@@ -123,9 +111,11 @@ interface ChatState {
    *
    * The toolkit and the widget guide are asked for, not pushed — but asking
    * costs a round trip, and a seller's third question should not spend one
-   * re-requesting a document that is already three messages up the transcript.
-   * So a grant is remembered for the life of the thread and forgotten when the
-   * thread is cleared. Mutated in place by the agent; nothing renders it.
+   * re-requesting a document it already holds. So a grant is remembered for the
+   * life of the thread and forgotten when the thread is cleared. A later
+   * question's history is a summary that no longer contains the document, so
+   * the agent prints every granted document into that question's system prompt.
+   * Mutated in place by the agent; nothing renders it.
    */
   readonly grants: Set<Capability>;
 
@@ -145,8 +135,6 @@ interface ChatState {
   truncate: (id: string, count: number) => void;
   /** Put a failed turn back into flight, before its run is started again. */
   resume: (id: string) => void;
-  /** Give the pending turn the tables its refs resolve against. */
-  ground: (id: string, facts: FactTable, series: SeriesTable) => void;
   settle: (id: string, meta: AnswerMeta) => void;
   /**
    * Stop a turn badly.
@@ -169,8 +157,6 @@ function createId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-const EMPTY_FACTS: FactTable = new Map();
-
 export const useChatStore = create<ChatState>()((set, get) => ({
   messages: [],
   pending: false,
@@ -190,8 +176,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           role: 'user',
           text: question,
           blocks: [],
-          facts: EMPTY_FACTS,
-          series: EMPTY_SERIES,
           time: now(),
         },
         {
@@ -199,8 +183,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           role: 'assistant',
           text: '',
           blocks: [],
-          facts: EMPTY_FACTS,
-          series: EMPTY_SERIES,
           time: now(),
           pending: true,
         },
@@ -249,13 +231,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         message.id === id
           ? { ...message, pending: true, draft: '', failure: undefined, resumable: false }
           : message,
-      ),
-    })),
-
-  ground: (id, facts, series) =>
-    set((state) => ({
-      messages: state.messages.map((message) =>
-        message.id === id ? { ...message, facts, series } : message,
       ),
     })),
 

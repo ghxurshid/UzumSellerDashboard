@@ -3,9 +3,8 @@ import type { Translator } from '@/lib/i18n/useTranslation';
 import type { Language } from '@/types/domain';
 
 import type { Block } from './blocks';
-import { formatFact, type FactTable } from './facts';
+import { formatChange, formatFigure } from './figures';
 import { phrase } from './phrase';
-import { renderTemplate } from './template';
 
 /**
  * Taking an answer out of the panel.
@@ -35,30 +34,30 @@ interface SheetRow {
 
 function collect(
   blocks: readonly Block[],
-  facts: FactTable,
   t: Translator,
   language: Language,
   section: string,
   rows: SheetRow[],
 ): void {
-  const resolve = (ref: string): string => {
-    const fact = facts.get(ref);
-    return fact === undefined ? '' : formatFact(fact, language);
-  };
-
   for (const block of blocks) {
     switch (block.kind) {
       case 'metric':
         rows.push({
           section,
-          label: block.label === undefined ? block.ref : phrase(t, block.label),
-          value: resolve(block.ref),
+          label: block.label === undefined ? '' : phrase(t, block.label),
+          value: `${formatFigure(block.value, block.format, language)}${
+            block.change === undefined ? '' : ` (${formatChange(block.change)})`
+          }`,
         });
         break;
 
       case 'kv':
         for (const row of block.rows) {
-          rows.push({ section, label: phrase(t, row.label), value: resolve(row.ref) });
+          rows.push({
+            section,
+            label: phrase(t, row.label),
+            value: formatFigure(row.value, row.format, language),
+          });
         }
         break;
 
@@ -66,33 +65,53 @@ function collect(
         for (const item of block.items) {
           rows.push({
             section,
-            label: renderTemplate(phrase(t, item.text), facts, language),
-            value: item.ref === undefined ? '' : resolve(item.ref),
+            label: phrase(t, item.text),
+            value: item.value === undefined ? '' : formatFigure(item.value, item.format, language),
           });
         }
         break;
 
-      case 'chart':
-        for (const step of block.steps ?? []) {
-          rows.push({ section, label: phrase(t, step.label), value: resolve(step.ref) });
+      case 'chart': {
+        const title = block.title === undefined ? section : phrase(t, block.title);
+        for (const item of block.items ?? []) {
+          rows.push({
+            section: title,
+            label: phrase(t, item.label),
+            value: formatFigure(item.value, block.format, language),
+          });
+        }
+        /* A line goes out a row per bucket and a column per series would need a
+           second sheet shape; one row per bucket and series keeps the three
+           columns every other block fills. */
+        for (const series of block.series ?? []) {
+          block.labels?.forEach((label, index) => {
+            const value = series.values[index];
+            if (value === undefined) return;
+            rows.push({
+              section: `${title} · ${phrase(t, series.name)}`,
+              label,
+              value: formatFigure(value, block.format, language),
+            });
+          });
         }
         break;
+      }
 
       /* A table keeps its own shape: the first column is the label and the
-         last is the value, which is how every table in this design is built. */
+         rest are the value, formatted by the column's own format. */
       case 'table':
         for (const row of block.rows) {
-          const cells = row.map((cell) => phrase(t, cell));
-          rows.push({
-            section,
-            label: cells[0] ?? '',
-            value: cells.slice(1).join(' · '),
-          });
+          const cells = row.map((cell, index) =>
+            typeof cell === 'number'
+              ? formatFigure(cell, block.formats?.[index], language)
+              : phrase(t, cell),
+          );
+          rows.push({ section, label: cells[0] ?? '', value: cells.slice(1).join(' · ') });
         }
         break;
 
       case 'callout':
-        collect(block.blocks, facts, t, language, phrase(t, block.title), rows);
+        collect(block.blocks, t, language, phrase(t, block.title), rows);
         break;
 
       /* Prose, pills, buttons and the read trace state nothing a cell can
@@ -116,13 +135,12 @@ function collect(
  */
 export async function exportAnswerCsv(options: {
   readonly blocks: readonly Block[];
-  readonly facts: FactTable;
   readonly t: Translator;
   readonly language: Language;
   readonly title: string;
 }): Promise<void> {
   const rows: SheetRow[] = [];
-  collect(options.blocks, options.facts, options.t, options.language, options.title, rows);
+  collect(options.blocks, options.t, options.language, options.title, rows);
 
   if (rows.length === 0) return;
 

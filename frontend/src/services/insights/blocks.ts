@@ -4,6 +4,7 @@ import type { TranslationKey } from '@/lib/i18n/dictionary';
 import type { InsightSeverity, ScreenKey, Tone } from '@/types/domain';
 
 import { ACTION_IDS, type InsightActionId } from './actions';
+import { FIGURE_FORMATS, type FigureFormat, type FigureValue } from './figures';
 
 /**
  * The card body language.
@@ -16,28 +17,22 @@ import { ACTION_IDS, type InsightActionId } from './actions';
  * same document.
  *
  * So a card carries a **list of blocks** instead, drawn from the closed set
- * below. The author — a rule in `derive/insights.ts` or the model in `ai.ts` —
- * chooses how many, in what order, nested how deeply. The renderer only ever
- * sees kinds it already knows, which is what keeps a generated card inside the
- * design system rather than beside it.
+ * below. The author — a rule in `derive/insights.ts` or the model in `ai.ts` and
+ * `agent.ts` — chooses how many, in what order, nested how deeply. The renderer
+ * only ever sees kinds it already knows, which is what keeps a generated card
+ * inside the design system rather than beside it.
  *
  * ## Where a number comes from
  *
- * Every *numeric block* — `metric`, `kv`, `steps`, `chart` — cites a `ref` into
- * the fact table (`facts.ts`) rather than carrying a figure. The author picks
- * which fact to show and how to frame it; the application resolves what the
- * fact is, from the same sums the tables on screen were drawn from. A `ref`
- * that does not resolve renders as a dash, so the failure is a missing figure
- * rather than a wrong one.
+ * From its author, written into the block. A rule computes it from the totals it
+ * was handed; the model computes it from the rows a lookup returned it. Neither
+ * cites anything the application has to look up at render time — see
+ * `figures.ts` for why the fact table that used to stand between them went.
  *
- * `text` is the exception, and it was not always one. Prose used to be held to
- * the same rule by a regular expression that discarded any paragraph holding a
- * percent sign or a grouped thousand. It worked exactly as designed and cost
- * more than it was worth: a ranking answered in shares had no ref for a share,
- * so the model wrote the percentage, and the paragraph carrying the answer was
- * thrown away — leaving an empty bubble and a warning nobody could act on. The
- * model now writes its own figures in prose. The blocks that carry the
- * arithmetic still resolve every one of theirs.
+ * What the application still owns is the *shape*: every figure says what kind of
+ * number it is (`money`, `percent`, `count`, `number`), and the renderer formats
+ * it through the same code path as the tables on screen, so a model's 457924 and
+ * the dashboard's 457 924 so'm read as the same number.
  */
 
 /* ── phrases ────────────────────────────────────────────────────────────── */
@@ -58,28 +53,29 @@ export type Phrase =
       readonly vars?: Readonly<Record<string, string | number>>;
     };
 
+/** A value and what kind of number it is. */
+export interface Figure {
+  readonly value: FigureValue;
+  readonly format?: FigureFormat;
+}
+
 /* ── blocks ─────────────────────────────────────────────────────────────── */
 
-/**
- * A paragraph. The prose of the card.
- *
- * A string authored by the model may carry `{{ref}}` placeholders, which
- * `template.ts` resolves against the fact table at render time. That is how a
- * sentence gets to read "net profit is 457 924 of 4 966 180 sellPrice (9.2%)"
- * without the model ever having typed a digit — see `SUSPECT_NUMBER` below for
- * the guard that keeps it honest.
- */
+/** A paragraph, in Markdown. The prose of the card. */
 export interface TextBlock {
   readonly kind: 'text';
   readonly text: Phrase;
   readonly tone?: Tone;
 }
 
-/** One fact, stated large — the headline figure of a finding. */
+/** One figure, stated large — the headline of a finding. */
 export interface MetricBlock {
   readonly kind: 'metric';
   readonly label?: Phrase;
-  readonly ref: string;
+  readonly value: FigureValue;
+  readonly format?: FigureFormat;
+  /** Signed change in percent against whatever the answer compared it with. */
+  readonly change?: number;
   /** Renders at heading size rather than inline. */
   readonly emphasis?: boolean;
 }
@@ -89,7 +85,8 @@ export interface StepsBlock {
   readonly kind: 'steps';
   readonly items: ReadonlyArray<{
     readonly text: Phrase;
-    readonly ref?: string;
+    readonly value?: FigureValue;
+    readonly format?: FigureFormat;
   }>;
 }
 
@@ -98,23 +95,24 @@ export interface KeyValueBlock {
   readonly kind: 'kv';
   readonly rows: ReadonlyArray<{
     readonly label: Phrase;
-    readonly ref: string;
+    readonly value: FigureValue;
+    readonly format?: FigureFormat;
+    readonly tone?: Tone;
   }>;
 }
 
 /**
  * A small table.
  *
- * Cells are text rather than refs: a table enumerates rows the fact table does
- * not index individually — three invoice ids, four SKU codes — and every one of
- * them was already put in front of the model as a fact. Numbers that carry the
- * argument belong in `metric` or `kv`, where they are resolved rather than
- * transcribed.
+ * A cell is text or a number. `formats`, when given, says per column what kind
+ * of number its cells hold, so a column of so'm is grouped and suffixed like
+ * money everywhere else; a column without one is drawn as written.
  */
 export interface TableBlock {
   readonly kind: 'table';
   readonly columns: readonly Phrase[];
-  readonly rows: ReadonlyArray<readonly Phrase[]>;
+  readonly rows: ReadonlyArray<ReadonlyArray<Phrase | number>>;
+  readonly formats?: readonly FigureFormat[];
 }
 
 /** A row of pills — statuses, tags, affected screens. */
@@ -124,14 +122,14 @@ export interface BadgesBlock {
 }
 
 /**
- * A drawing of figures that are already in the fact table.
+ * A drawing of figures the author already has.
  *
- * Two data shapes, and the split is forced rather than chosen. A waterfall or a
- * donut is four to six numbers, so the author names them by `ref` like any
- * other citation and the guarantee holds. A time series is ninety points, which
- * no author can name one at a time — so it cites a `seriesRef` instead, naming
- * a series the analytics worker computed. Either way the author never writes a
- * coordinate.
+ * Two data shapes, because the charts want two. A waterfall, a bar or a donut is
+ * a handful of labelled amounts — `items`. A line is a run of buckets with one or
+ * more measures over them — `labels` for the buckets, `series` for the measures,
+ * one value per label. The split is the smallest thing that lets a seven-day
+ * sales line and a three-product comparison both be written without the author
+ * inventing coordinates.
  *
  * The chart set is deliberately small and hand-drawn. `RevenueChart` already
  * establishes the house position: a charting dependency costs ~90 kB and brings
@@ -141,14 +139,21 @@ export interface ChartBlock {
   readonly kind: 'chart';
   readonly chart: 'waterfall' | 'bar' | 'donut' | 'line';
   readonly title?: Phrase;
+  /** What kind of number every value in the chart is. */
+  readonly format?: FigureFormat;
   /** For `waterfall`, `bar` and `donut` — one entry per column or segment. */
-  readonly steps?: ReadonlyArray<{
+  readonly items?: ReadonlyArray<{
     readonly label: Phrase;
-    readonly ref: string;
+    readonly value: number;
     readonly tone?: Tone;
   }>;
-  /** For `line` — names a precomputed series rather than listing its points. */
-  readonly seriesRef?: string;
+  /** For `line` — the buckets along the axis. */
+  readonly labels?: readonly string[];
+  /** For `line` — one entry per measure, one value per label. */
+  readonly series?: ReadonlyArray<{
+    readonly name: Phrase;
+    readonly values: readonly number[];
+  }>;
 }
 
 /** A bordered aside. What the design calls the recommended-action box. */
@@ -237,7 +242,7 @@ export interface InsightCard {
   readonly source: string;
   readonly title: Phrase;
   /** The headline figure, rendered beside the title. */
-  readonly signalRef?: string;
+  readonly signal?: Figure;
   readonly blocks: readonly Block[];
   readonly target?: ScreenKey;
   /** Whether a rule derived this or the model wrote it. */
@@ -262,25 +267,59 @@ export function isImportant(card: InsightCard): boolean {
  * What the model is allowed to send.
  *
  * Deliberately narrower than the types above: every phrase is a plain string
- * (the model has no dictionary keys), every bound is finite, and every list has
- * a ceiling. The limits are less about correctness than about a card that still
- * fits a 320px rail — a model asked for evidence will otherwise happily produce
- * forty rows of it.
+ * (the model has no dictionary keys), every number is finite, and every list
+ * has a ceiling. The limits are less about correctness than about a card that
+ * still fits a 320px rail — a model asked for evidence will otherwise happily
+ * produce forty rows of it.
+ *
+ * The limits are also written out in `widgets.ts`, because a line refused for a
+ * length nobody told the model about is a line it cannot fix. Change one, change
+ * the other — `WIDGET_LIMITS` below is what both read.
  */
+export const WIDGET_LIMITS = {
+  text: 4_000,
+  label: 120,
+  cell: 160,
+  step: 240,
+  kvRows: 12,
+  steps: 10,
+  tableColumns: 6,
+  tableRows: 30,
+  badges: 8,
+  chartItems: 12,
+  lineLabels: 120,
+  lineSeries: 4,
+  calloutBlocks: 8,
+} as const;
+
 const MAX_DEPTH = 2;
 
 const toneSchema = z.enum(['positive', 'negative', 'warning', 'neutral', 'accent']);
-const refSchema = z.string().trim().min(1).max(80);
+const formatSchema = z.enum(FIGURE_FORMATS);
+const finite = z.number().finite();
 /**
- * A paragraph. Generous, because prose now carries the answer.
+ * A figure's value: a number, or a short string for what is not one.
+ *
+ * The message is spelled out because a union's own is "Invalid input", which is
+ * what a model that sent `"ref"` instead of `"value"` would otherwise be told —
+ * and it cannot act on that.
+ */
+const valueSchema = z.union([finite, z.string().trim().min(1).max(60)], {
+  errorMap: () => ({ message: 'must be a plain number, or a string of at most 60 characters' }),
+});
+
+/**
+ * A paragraph. Generous, because prose carries the answer.
  *
  * 600 characters was the cap while a sentence was a frame around resolved
  * figures. A model writing a whole answer in Markdown — a heading, a list, the
  * reasoning under it — passes that inside two bullets, and the line was then
  * refused for a length nobody had told it about.
  */
-const longPhrase = z.string().trim().min(1).max(4_000);
-const shortPhrase = z.string().trim().min(1).max(120);
+const longPhrase = z.string().trim().min(1).max(WIDGET_LIMITS.text);
+const label = z.string().trim().min(1).max(WIDGET_LIMITS.label);
+const cellText = z.string().trim().max(WIDGET_LIMITS.cell);
+const stepText = z.string().trim().min(1).max(WIDGET_LIMITS.step);
 
 const severitySchema = z.enum(['critical', 'high', 'watch', 'idea']);
 const groupSchema = z.enum(['profit', 'stockOps', 'anomaly']);
@@ -297,6 +336,79 @@ const screenSchema = z.enum([
 type UnionMembers = readonly [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]];
 
 /**
+ * The chart, with its two data shapes checked against the chart they belong to.
+ *
+ * Every data field is optional in the object because a line uses two and the
+ * other three use one; the refinement is what says which. Each message names the
+ * field and what it needed, because it is read by a model being asked to send
+ * the line again.
+ */
+const chartSchema = z
+  .object({
+    kind: z.literal('chart'),
+    chart: z.enum(['waterfall', 'bar', 'donut', 'line']),
+    title: label.optional(),
+    format: formatSchema.optional(),
+    items: z
+      .array(z.object({ label, value: finite, tone: toneSchema.optional() }))
+      .min(2)
+      .max(WIDGET_LIMITS.chartItems)
+      .optional(),
+    labels: z.array(z.string().trim().min(1).max(40)).min(2).max(WIDGET_LIMITS.lineLabels).optional(),
+    series: z
+      .array(z.object({ name: label, values: z.array(finite) }))
+      .min(1)
+      .max(WIDGET_LIMITS.lineSeries)
+      .optional(),
+  })
+  .superRefine((block, context) => {
+    if (block.chart === 'line') {
+      if (block.labels === undefined || block.series === undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [block.labels === undefined ? 'labels' : 'series'],
+          message: 'a line chart needs labels and series',
+        });
+        return;
+      }
+      block.series.forEach((entry, index) => {
+        if (entry.values.length !== block.labels?.length) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['series', index, 'values'],
+            message: `needs exactly one value per label (${block.labels?.length ?? 0})`,
+          });
+        }
+      });
+      return;
+    }
+
+    if (block.items === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['items'],
+        message: `a ${block.chart} chart needs items`,
+      });
+      return;
+    }
+
+    /* A slice is a share of a whole, and a negative share has no arc — the
+       renderer used to take its magnitude, which drew a loss as a slice of
+       profit. */
+    if (block.chart === 'donut') {
+      block.items.forEach((item, index) => {
+        if (item.value < 0) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['items', index, 'value'],
+            message: 'a donut slice cannot be negative — use a bar chart',
+          });
+        }
+      });
+    }
+  });
+
+/**
  * Built per depth rather than with `z.lazy`.
  *
  * A recursive schema would let the model nest callouts inside callouts until
@@ -309,51 +421,61 @@ function blockSchemaAtDepth(depth: number): z.ZodTypeAny {
     z.object({ kind: z.literal('text'), text: longPhrase, tone: toneSchema.optional() }),
     z.object({
       kind: z.literal('metric'),
-      label: shortPhrase.optional(),
-      ref: refSchema,
+      label: label.optional(),
+      value: valueSchema,
+      format: formatSchema.optional(),
+      change: finite.optional(),
       emphasis: z.boolean().optional(),
     }),
     z.object({
       kind: z.literal('steps'),
-      items: z.array(z.object({ text: shortPhrase, ref: refSchema.optional() })).min(1).max(8),
+      items: z
+        .array(
+          z.object({
+            text: stepText,
+            value: valueSchema.optional(),
+            format: formatSchema.optional(),
+          }),
+        )
+        .min(1)
+        .max(WIDGET_LIMITS.steps),
     }),
     z.object({
       kind: z.literal('kv'),
-      rows: z.array(z.object({ label: shortPhrase, ref: refSchema })).min(1).max(10),
+      rows: z
+        .array(
+          z.object({
+            label,
+            value: valueSchema,
+            format: formatSchema.optional(),
+            tone: toneSchema.optional(),
+          }),
+        )
+        .min(1)
+        .max(WIDGET_LIMITS.kvRows),
     }),
     z.object({
       kind: z.literal('table'),
-      columns: z.array(shortPhrase).min(1).max(4),
-      rows: z.array(z.array(shortPhrase).min(1).max(4)).min(1).max(12),
+      columns: z.array(label).min(1).max(WIDGET_LIMITS.tableColumns),
+      rows: z
+        .array(z.array(z.union([finite, cellText])).min(1).max(WIDGET_LIMITS.tableColumns))
+        .min(1)
+        .max(WIDGET_LIMITS.tableRows),
+      formats: z.array(formatSchema).max(WIDGET_LIMITS.tableColumns).optional(),
     }),
     z.object({
       kind: z.literal('badges'),
-      items: z.array(z.object({ text: shortPhrase, tone: toneSchema.optional() })).min(1).max(6),
+      items: z
+        .array(z.object({ text: label, tone: toneSchema.optional() }))
+        .min(1)
+        .max(WIDGET_LIMITS.badges),
     }),
-    z
-      .object({
-        kind: z.literal('chart'),
-        chart: z.enum(['waterfall', 'bar', 'donut', 'line']),
-        title: shortPhrase.optional(),
-        steps: z
-          .array(z.object({ label: shortPhrase, ref: refSchema, tone: toneSchema.optional() }))
-          .min(2)
-          .max(8)
-          .optional(),
-        seriesRef: refSchema.optional(),
-      })
-      /* Both fields are optional because a line chart uses one and the other
-         three use the other. Neither of them means an axis, a legend and no
-         data — which validated, drew an empty frame, and looked to everyone
-         like the answer had simply failed to arrive. */
-      .refine((block) => block.steps !== undefined || block.seriesRef !== undefined, {
-        message: 'a chart needs steps, or seriesRef for a line',
-      }),
+    chartSchema,
     z.object({
       kind: z.literal('action'),
       actionId: z.enum(ACTION_IDS),
       params: z.unknown().optional(),
-      note: shortPhrase.optional(),
+      note: label.optional(),
     }),
   ];
 
@@ -362,8 +484,8 @@ function blockSchemaAtDepth(depth: number): z.ZodTypeAny {
   const callout = z.object({
     kind: z.literal('callout'),
     tone: toneSchema,
-    title: shortPhrase,
-    blocks: z.array(blockSchemaAtDepth(depth - 1)).min(1).max(8),
+    title: label,
+    blocks: z.array(blockSchemaAtDepth(depth - 1)).min(1).max(WIDGET_LIMITS.calloutBlocks),
   });
 
   return z.union([...leaves, callout] as unknown as UnionMembers);
@@ -374,8 +496,8 @@ export const aiCardSchema = z.object({
   severity: severitySchema,
   group: groupSchema,
   source: z.string().trim().min(1).max(80),
-  title: shortPhrase,
-  signalRef: refSchema.optional(),
+  title: label,
+  signal: z.object({ value: valueSchema, format: formatSchema.optional() }).optional(),
   target: screenSchema.optional(),
   blocks: z.array(blockSchemaAtDepth(MAX_DEPTH)).min(1).max(10),
 });
@@ -392,6 +514,9 @@ export const aiDocumentSchema = z.object({
  * a time is what makes streaming structured output tractable at all: a whole
  * document cannot be parsed until its last brace arrives, whereas a line can be
  * shown the moment its newline does.
+ *
+ * It is also what a pinned answer is checked against when it is read back from
+ * storage, so a card saved by an older build in a shape this one no longer draws
+ * is dropped rather than rendered half-empty.
  */
 export const blockLineSchema = blockSchemaAtDepth(MAX_DEPTH);
-

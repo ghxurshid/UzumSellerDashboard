@@ -21,18 +21,18 @@ import { flattenSkus } from './products';
  *
  * ## Why these look like the model's cards
  *
- * A rule and the model now emit the same thing: an `InsightCard` whose body is
- * a list of blocks. That is deliberate. The rail renders one card type, the
+ * A rule and the model emit the same thing: an `InsightCard` whose body is a
+ * list of blocks. That is deliberate. The rail renders one card type, the
  * dismiss/filter/open behaviour is written once, and a finding that starts as a
- * rule can gain a model-written explanation without changing shape. The only
- * difference between the two authors is where the text comes from — a rule
+ * rule can gain a model-written explanation without changing shape. The
+ * difference between the two authors is where the words come from — a rule
  * ships dictionary keys, because its wording is the same three sentences in
  * three languages, and the model ships strings it wrote in the seller's
  * language.
  *
- * Numbers are cited by `ref` from either author, for the reason set out in
- * `insights/facts.ts`: a figure typed into a sentence is a figure nobody can
- * check against the tables behind it.
+ * The figures are written into the blocks here, from the same totals the screens
+ * are drawn from, with a `format` so the renderer prints them the way every
+ * other number in the interface is printed.
  */
 
 export interface InsightInput {
@@ -64,6 +64,9 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
 
   const zeroStock = skus.filter((sku) => sku.quantityAvailable === 0);
   if (skus.length > 0 && zeroStock.length / skus.length >= ZERO_STOCK_SHARE) {
+    const share = (zeroStock.length / skus.length) * 100;
+    const runOut = products.filter((product) => product.status === 'RUN_OUT').length;
+
     cards.push({
       id: 'stock-zero',
       origin: 'rule',
@@ -72,7 +75,7 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
       categoryKey: 'catInventory',
       group: 'stockOps',
       source: 'GET /v1/product/shop/{shopId} · skuList.quantityAvailable',
-      signalRef: 'catalogue.zeroStockShare',
+      signal: { value: share, format: 'percent' },
       title: {
         key: 'insZeroT',
         vars: { n: formatNumber(zeroStock.length), total: formatNumber(skus.length) },
@@ -82,9 +85,9 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
         {
           kind: 'kv',
           rows: [
-            { label: { key: 'evZeroSku' }, ref: 'catalogue.zeroStock' },
-            { label: { key: 'evShare' }, ref: 'catalogue.zeroStockShare' },
-            { label: { key: 'evRunOut' }, ref: 'catalogue.runOut' },
+            { label: { key: 'evZeroSku' }, value: zeroStock.length, format: 'count' },
+            { label: { key: 'evShare' }, value: share, format: 'percent' },
+            { label: { key: 'evRunOut' }, value: runOut, format: 'count' },
           ],
         },
       ],
@@ -101,16 +104,15 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
       categoryKey: 'catAnomaly',
       group: 'anomaly',
       source: 'skuList.quantityAvailable < 0',
-      signalRef: 'catalogue.negativeStock',
+      signal: { value: negative.length, format: 'count' },
       title: { key: 'insNegT', vars: { n: formatNumber(negative.length) } },
       blocks: [
         { kind: 'text', text: { key: 'insNegB' }, tone: 'negative' },
         {
           kind: 'table',
           columns: [{ key: 'colSku' }, { key: 'colAvailable' }],
-          rows: negative
-            .slice(0, 5)
-            .map((sku) => [String(sku.skuId), formatNumber(sku.quantityAvailable)]),
+          rows: negative.slice(0, 5).map((sku) => [String(sku.skuId), sku.quantityAvailable]),
+          formats: ['text', 'count'],
         },
       ],
     });
@@ -127,16 +129,16 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
       categoryKey: 'catOperations',
       group: 'stockOps',
       source: 'GET /v1/finance/orders · statuses=CANCELED',
-      signalRef: 'totals.cancellationRate',
+      signal: { value: totals.cancellationRate, format: 'percent' },
       title: { key: 'insCancelT', vars: { pct: formatPercent(totals.cancellationRate) } },
       blocks: [
         { kind: 'text', text: { key: 'insCancelB' } },
         {
           kind: 'kv',
           rows: [
-            { label: { key: 'evCancelled' }, ref: 'totals.cancelledItems' },
-            { label: { key: 'evLive' }, ref: 'totals.liveItems' },
-            { label: { key: 'evLogistics' }, ref: 'expense.logistics' },
+            { label: { key: 'evCancelled' }, value: totals.cancelledItems, format: 'count' },
+            { label: { key: 'evLive' }, value: totals.liveItems, format: 'count' },
+            { label: { key: 'evLogistics' }, value: totals.expenseLogistics, format: 'money' },
           ],
         },
       ],
@@ -157,16 +159,16 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
       categoryKey: 'catMargin',
       group: 'profit',
       source: '(commission + logisticDeliveryFee) ÷ sellPrice',
-      signalRef: 'totals.takeRate',
+      signal: { value: takeRate, format: 'percent' },
       title: { key: 'insTakeT', vars: { pct: formatPercent(takeRate) } },
       blocks: [
         { kind: 'text', text: { key: 'insTakeB' } },
         {
           kind: 'steps',
           items: [
-            { text: { key: 'evCommission' }, ref: 'totals.commission' },
-            { text: { key: 'evLogistics' }, ref: 'totals.logistics' },
-            { text: { key: 'evRevenue' }, ref: 'totals.sellPrice' },
+            { text: { key: 'evCommission' }, value: totals.commission, format: 'money' },
+            { text: { key: 'evLogistics' }, value: totals.logisticDeliveryFee, format: 'money' },
+            { text: { key: 'evRevenue' }, value: totals.sellPrice, format: 'money' },
           ],
         },
       ],
@@ -183,7 +185,7 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
       categoryKey: 'catMargin',
       group: 'profit',
       source: 'sellerProfit − purchasePrice − expenses',
-      signalRef: 'totals.netProfit',
+      signal: { value: totals.netProfit, format: 'money' },
       title: atLoss
         ? { key: 'insLossT' }
         : { key: 'insThinT', vars: { pct: formatPercent(totals.netMargin) } },
@@ -192,10 +194,10 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
         {
           kind: 'steps',
           items: [
-            { text: { key: 'evSellerProfit' }, ref: 'totals.sellerProfit' },
-            { text: { key: 'evCost' }, ref: 'totals.purchasePrice' },
-            { text: { key: 'evExpenseOther' }, ref: 'expense.other' },
-            { text: { key: 'evNetProfit' }, ref: 'totals.netProfit' },
+            { text: { key: 'evSellerProfit' }, value: totals.sellerProfit, format: 'money' },
+            { text: { key: 'evCost' }, value: totals.purchasePrice, format: 'money' },
+            { text: { key: 'evExpenseOther' }, value: totals.expenseOther, format: 'money' },
+            { text: { key: 'evNetProfit' }, value: totals.netProfit, format: 'money' },
           ],
         },
       ],
@@ -209,7 +211,6 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
     const share = totals.sellPrice === 0 ? 0 : (value / totals.sellPrice) * 100;
     if (share < EXPENSE_SHARE) continue;
 
-    const ref = `expense.${slug(source)}`;
     cards.push({
       id: `expense-${source}`,
       origin: 'rule',
@@ -218,15 +219,15 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
       categoryKey: 'catOpportunity',
       group: 'profit',
       source: 'GET /v1/finance/expenses · paymentPrice',
-      signalRef: `${ref}.share`,
+      signal: { value: share, format: 'percent' },
       title: { key: 'insExpenseT', vars: { source, pct: formatPercent(share) } },
       blocks: [
         { kind: 'text', text: { key: 'insExpenseB' } },
         {
           kind: 'kv',
           rows: [
-            { label: source, ref },
-            { label: { key: 'evRevenue' }, ref: 'totals.sellPrice' },
+            { label: source, value, format: 'money' },
+            { label: { key: 'evRevenue' }, value: totals.sellPrice, format: 'money' },
           ],
         },
       ],
@@ -257,9 +258,8 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
         {
           kind: 'table',
           columns: [{ key: 'colProduct' }, { key: 'evReturnRate' }],
-          rows: returnHeavy
-            .slice(0, 5)
-            .map((product) => [product.name, formatPercent(product.returnedPct)]),
+          rows: returnHeavy.slice(0, 5).map((product) => [product.name, product.returnedPct]),
+          formats: ['text', 'percent'],
         },
       ],
     });
@@ -286,15 +286,15 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
       categoryKey: 'catInventory',
       group: 'stockOps',
       source: 'GET /v1/invoice · totalToStock vs totalAccepted',
-      signalRef: 'supply.missingUnits',
+      signal: { value: missing, format: 'count' },
       title: { key: 'insSupplyT', vars: { n: formatNumber(missing) } },
       blocks: [
         { kind: 'text', text: { key: 'insSupplyB' } },
         {
           kind: 'kv',
           rows: [
-            { label: { key: 'evMissingUnits' }, ref: 'supply.missingUnits' },
-            { label: { key: 'evShortInvoices' }, ref: 'supply.shortInvoices' },
+            { label: { key: 'evMissingUnits' }, value: missing, format: 'count' },
+            { label: { key: 'evShortInvoices' }, value: short.length, format: 'count' },
           ],
         },
         {
@@ -312,16 +312,6 @@ export function buildInsights(input: InsightInput): readonly InsightCard[] {
   }
 
   return cards.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
-}
-
-/** Mirrors `insights/facts.ts` — the two must agree on how a source becomes a ref. */
-function slug(source: string): string {
-  return source
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
 }
 
 /** Blocks are exported as a type-only convenience for the rail's tests. */

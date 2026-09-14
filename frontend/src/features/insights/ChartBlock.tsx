@@ -3,7 +3,7 @@ import { useId, type ReactNode } from 'react';
 import type { Translator } from '@/lib/i18n/useTranslation';
 import { cn } from '@/lib/utils';
 import type { ChartBlock as ChartBlockType } from '@/services/insights/blocks';
-import { formatFact, type FactTable, type SeriesTable } from '@/services/insights/facts';
+import { formatFigure } from '@/services/insights/figures';
 import { phrase } from '@/services/insights/phrase';
 import type { Language, Tone } from '@/types/domain';
 
@@ -12,8 +12,8 @@ import type { Language, Tone } from '@/types/domain';
  *
  * `RevenueChart` settled the house position on charting libraries: ninety
  * kilobytes and a second theming layer, for geometry that is a dozen lines of
- * arithmetic. Nothing about a model composing the chart changes that — it picks
- * *which* figures to draw, and the drawing is still four polygons.
+ * arithmetic. Nothing about a model composing the chart changes that — it
+ * supplies the figures, and the drawing is still four polygons.
  *
  * The waterfall is the one worth the trouble. "Where is my profit going" is a
  * question about a sequence of deductions, and a waterfall is the only common
@@ -43,10 +43,12 @@ const TONE_TEXT: Record<Tone, string> = {
   neutral: 'text-dim',
 };
 
+/** Line colours in series order; the first is the house accent. */
+const SERIES_STROKE = ['stroke-acc', 'stroke-warn', 'stroke-pos', 'stroke-neg'] as const;
+const SERIES_SWATCH = ['bg-acc', 'bg-warn', 'bg-pos', 'bg-neg'] as const;
+
 export interface ChartBlockProps {
   readonly block: ChartBlockType;
-  readonly facts: FactTable;
-  readonly series: SeriesTable;
   readonly t: Translator;
   readonly language: Language;
 }
@@ -58,45 +60,79 @@ interface Step {
   readonly tone: Tone;
 }
 
-export function ChartBlockView({
-  block,
-  facts,
-  series,
-  t,
-  language,
-}: ChartBlockProps): ReactNode {
+export function ChartBlockView({ block, t, language }: ChartBlockProps): ReactNode {
   const gradientId = useId();
 
-  const steps: readonly Step[] = (block.steps ?? []).flatMap((step, index, all) => {
-    const fact = facts.get(step.ref);
-    if (fact === undefined) return [];
+  if (block.chart === 'line') {
+    const labels = block.labels ?? [];
+    const series = (block.series ?? []).filter((entry) => entry.values.length === labels.length);
+    /* A line with nothing to draw is not drawn: an empty axis with a title
+       claims there was nothing to show, which is a different statement. */
+    if (labels.length < 2 || series.length === 0) return null;
 
+    return (
+      <figure className="m-0 flex flex-col gap-6 rounded-8 border border-line bg-grid/30 px-9 py-8">
+        {block.title !== undefined && (
+          <figcaption className="text-tiny uppercase tracking-[0.08em] text-faint">
+            {phrase(t, block.title)}
+          </figcaption>
+        )}
+
+        <LineChart
+          series={series.map((entry) => entry.values)}
+          gradientId={gradientId}
+        />
+
+        <div className="flex justify-between gap-6 text-tiny text-faint">
+          <span>{labels[0]}</span>
+          <span>{labels[labels.length - 1]}</span>
+        </div>
+
+        <div className="flex flex-wrap gap-x-9 gap-y-3">
+          {series.map((entry, index) => {
+            /* A total of daily units or so'm is a figure worth printing; a total
+               of daily percentages is not, so a rate shows where it ended. */
+            const summary =
+              block.format === 'percent'
+                ? `→ ${formatFigure(entry.values[entry.values.length - 1] ?? 0, block.format, language)}`
+                : `Σ ${formatFigure(entry.values.reduce((sum, value) => sum + value, 0), block.format, language)}`;
+
+            return (
+              <span key={index} className="flex items-baseline gap-4 text-tiny text-faint">
+                <span
+                  aria-hidden
+                  className={cn('size-6 shrink-0 rounded-2', SERIES_SWATCH[index % SERIES_SWATCH.length])}
+                />
+                {phrase(t, entry.name)}
+                <span data-numeric className="text-dim">
+                  {summary}
+                </span>
+              </span>
+            );
+          })}
+        </div>
+      </figure>
+    );
+  }
+
+  const items = block.items ?? [];
+  const steps: readonly Step[] = items.map((item, index) => {
     /* Red for a negative figure is right everywhere except mid-waterfall, where
        a negative deduction is the balance going back up — the one place the
        app's usual reading of the sign is inverted. */
-    const isBridgeStep =
-      block.chart === 'waterfall' && index > 0 && index < all.length - 1;
+    const isBridgeStep = block.chart === 'waterfall' && index > 0 && index < items.length - 1;
 
-    return [
-      {
-        label: phrase(t, step.label),
-        value: fact.value,
-        display: formatFact(fact, language),
-        tone:
-          step.tone ??
-          (fact.value >= 0 ? 'accent' : isBridgeStep ? 'positive' : 'negative'),
-      },
-    ];
+    return {
+      label: phrase(t, item.label),
+      value: item.value,
+      display: formatFigure(item.value, block.format, language),
+      tone: item.tone ?? (item.value >= 0 ? 'accent' : isBridgeStep ? 'positive' : 'negative'),
+    };
   });
 
-  const line = block.seriesRef === undefined ? undefined : series.get(block.seriesRef);
+  if (steps.length < 2) return null;
 
   const isColumn = block.chart === 'waterfall' || block.chart === 'bar';
-
-  /* A chart whose refs all failed to resolve is not drawn at all. An empty
-     axis with a title is a claim that there was nothing to show, which is a
-     different statement from "the figures behind this went missing". */
-  if (block.chart === 'line' ? line === undefined : steps.length < 2) return null;
 
   return (
     <figure className="m-0 flex flex-col gap-6 rounded-8 border border-line bg-grid/30 px-9 py-8">
@@ -106,45 +142,37 @@ export function ChartBlockView({
         </figcaption>
       )}
 
-      {block.chart === 'line' && line !== undefined ? (
-        <LineChart values={line.values} gradientId={gradientId} />
-      ) : block.chart === 'donut' ? (
+      {block.chart === 'donut' ? (
         <DonutChart steps={steps} />
       ) : (
         <ColumnChart steps={steps} waterfall={block.chart === 'waterfall'} />
       )}
 
       <div className="flex flex-wrap gap-x-9 gap-y-3">
-        {block.chart === 'line' && line !== undefined
-          ? null
-          : steps.map((step, index) => (
-              <span key={index} className="flex items-baseline gap-4 text-tiny text-faint">
-                {/* A donut is read by colour, so its swatch is the key. Columns
-                    stand in a row and a waterfall gives most of them the same
-                    tone, which leaves colour saying nothing about which entry
-                    belongs to which column — the position in the row is the
-                    only thing that distinguishes them, so the key is the
-                    number printed under it. */}
-                {isColumn ? (
-                  <span
-                    data-numeric
-                    className={cn('shrink-0 tabular-nums', TONE_TEXT[step.tone])}
-                    aria-hidden
-                  >
-                    {index + 1}
-                  </span>
-                ) : (
-                  <span
-                    className={cn('size-6 shrink-0 rounded-2', TONE_FILL[step.tone])}
-                    aria-hidden
-                  />
-                )}
-                {step.label}
-                <span data-numeric className="text-dim">
-                  {step.display}
-                </span>
+        {steps.map((step, index) => (
+          <span key={index} className="flex items-baseline gap-4 text-tiny text-faint">
+            {/* A donut is read by colour, so its swatch is the key. Columns stand
+                in a row and a waterfall gives most of them the same tone, which
+                leaves colour saying nothing about which entry belongs to which
+                column — the position in the row is the only thing that
+                distinguishes them, so the key is the number printed under it. */}
+            {isColumn ? (
+              <span
+                data-numeric
+                className={cn('shrink-0 tabular-nums', TONE_TEXT[step.tone])}
+                aria-hidden
+              >
+                {index + 1}
               </span>
-            ))}
+            ) : (
+              <span className={cn('size-6 shrink-0 rounded-2', TONE_FILL[step.tone])} aria-hidden />
+            )}
+            {step.label}
+            <span data-numeric className="text-dim">
+              {step.display}
+            </span>
+          </span>
+        ))}
       </div>
     </figure>
   );
@@ -181,10 +209,7 @@ function ColumnChart({
      *
      * A total runs from the baseline up to its own height. A deduction runs
      * from the balance before it *down* to the balance after — so the balance
-     * is the column's top edge, not something to be measured up from. Adding
-     * the span to the offset instead of hanging below it lifts every deduction
-     * by its own height, which puts the first one off the top of the plot and
-     * leaves the rest overlapping at the wrong altitudes.
+     * is the column's top edge, not something to be measured up from.
      */
     const from = isTotal ? 0 : running;
     /* Signed, so a deduction of a negative amount — a refund, a credit, a payout
@@ -199,10 +224,8 @@ function ColumnChart({
     const upper = Math.min(Math.max(from, to), height);
     const lower = Math.max(Math.min(from, to), 0);
 
-    /* A column too thin to see is still drawn, at a floor of two pixels — but
-       that floor is what makes a zero-valued one hang below the axis, since it
-       is grown downwards from a top edge sitting exactly on the baseline. Held
-       up to rest on the line instead. */
+    /* A column too thin to see is still drawn, at a floor of two pixels — held
+       up to rest on the line rather than hanging below it. */
     const h = Math.max(2, upper - lower);
 
     return {
@@ -222,16 +245,10 @@ function ColumnChart({
    * The treads between the columns.
    *
    * Only the opening and closing totals stand on the baseline; every deduction
-   * hangs in the air by construction, because what it measures is a stretch of
-   * the balance rather than a quantity counted up from zero. Left unjoined,
-   * that reads as scattered blocks and invites the question of what holds them
-   * up. A line from each column's exit to the next one's entry answers it: the
-   * eye follows one staircase down from revenue to profit, and the columns are
-   * its risers.
-   *
-   * It is also the one honest place for a set of steps that does not add up. A
-   * tread arriving above or below the closing column draws the shortfall to
-   * scale instead of hiding it behind a bar that starts wherever it likes.
+   * hangs in the air by construction. A line from each column's exit to the next
+   * one's entry lets the eye follow one staircase down from revenue to profit —
+   * and it is the honest place for a set of steps that does not add up: a tread
+   * arriving above or below the closing column draws the shortfall to scale.
    */
   const treads = !waterfall
     ? []
@@ -248,14 +265,7 @@ function ColumnChart({
       role="img"
       preserveAspectRatio="none"
     >
-      <line
-        x1={0}
-        y1={PLOT_BOTTOM}
-        x2={VIEW_WIDTH}
-        y2={PLOT_BOTTOM}
-        className="stroke-line"
-        strokeWidth={1}
-      />
+      <line x1={0} y1={PLOT_BOTTOM} x2={VIEW_WIDTH} y2={PLOT_BOTTOM} className="stroke-line" strokeWidth={1} />
       {treads.map((tread, index) => (
         <line
           key={`tread-${index}`}
@@ -279,17 +289,9 @@ function ColumnChart({
             rx={2}
             className={cn(TONE_FILL[column.tone], 'opacity-80')}
           />
-          {/**
-           * The column's number, under the axis.
-           *
-           * The panel is a few hundred pixels wide and a P&L has six columns in
-           * it, which leaves about fifty for a caption — not enough for "Boshqa
-           * xarajatlar" at any size a person would read. Spelling the labels out
-           * here would mean rotating or truncating them, and a truncated label is
-           * a worse key than a digit. So the column carries a number and the
-           * legend below carries the same one against the full name and figure,
-           * which stays legible at every width and in all three languages.
-           */}
+          {/* The column's number, under the axis — the legend carries the same
+              number against the full name and figure, which stays legible at
+              every width and in all three languages. */}
           <text
             x={column.x + column.w / 2}
             y={PLOT_BOTTOM + 10}
@@ -307,7 +309,10 @@ function ColumnChart({
 
 /** Shares of a whole, as arc lengths on a single stroked circle. */
 function DonutChart({ steps }: { readonly steps: readonly Step[] }): ReactNode {
-  const total = steps.reduce((sum, step) => sum + Math.abs(step.value), 0);
+  /* The schema refuses a negative slice; one that got here anyway is left out
+     rather than drawn by its magnitude as a share it is not. */
+  const parts = steps.filter((step) => step.value > 0);
+  const total = parts.reduce((sum, step) => sum + step.value, 0);
   if (total === 0) return null;
 
   const radius = 34;
@@ -317,9 +322,8 @@ function DonutChart({ steps }: { readonly steps: readonly Step[] }): ReactNode {
   return (
     <svg viewBox="0 0 120 100" className="h-auto w-full max-w-[220px] self-center" role="img">
       <g transform="translate(60 50) rotate(-90)">
-        {steps.map((step, index) => {
-          const share = Math.abs(step.value) / total;
-          const dash = share * circumference;
+        {parts.map((step, index) => {
+          const dash = (step.value / total) * circumference;
           const element = (
             <circle
               key={index}
@@ -340,22 +344,35 @@ function DonutChart({ steps }: { readonly steps: readonly Step[] }): ReactNode {
   );
 }
 
-/** One polyline and a wash beneath it — the same geometry as `RevenueChart`. */
+/**
+ * One polyline per series over a shared scale, the first with a wash beneath it.
+ *
+ * The scale runs from the lowest value to the highest across every series, so a
+ * product's line and the shop's can be read against each other — and a series
+ * that dips below zero, a loss-making day of sellerProfit, is drawn below the
+ * others rather than clipped at the axis.
+ */
 function LineChart({
-  values,
+  series,
   gradientId,
 }: {
-  readonly values: readonly number[];
+  readonly series: ReadonlyArray<readonly number[]>;
   readonly gradientId: string;
 }): ReactNode {
-  if (values.length < 2) return null;
+  const all = series.flat();
+  const high = Math.max(...all, 0);
+  const low = Math.min(...all, 0);
+  const range = high - low === 0 ? 1 : high - low;
+  const count = series[0]?.length ?? 0;
+  if (count < 2) return null;
 
-  const ceiling = Math.max(...values, 1);
-  const step = VIEW_WIDTH / (values.length - 1);
-  const y = (value: number): number =>
-    PLOT_BOTTOM - (value / ceiling) * (PLOT_BOTTOM - PLOT_TOP);
+  const step = VIEW_WIDTH / (count - 1);
+  const y = (value: number): number => PLOT_BOTTOM - ((value - low) / range) * (PLOT_BOTTOM - PLOT_TOP);
+  const baseline = y(0);
+  const pathOf = (values: readonly number[]): string =>
+    values.map((value, index) => `${index * step},${y(value)}`).join(' L ');
 
-  const points = values.map((value, index) => `${index * step},${y(value)}`).join(' L ');
+  const first = series[0];
 
   return (
     <svg
@@ -370,11 +387,22 @@ function LineChart({
           <stop offset="100%" className="text-acc" stopColor="currentColor" stopOpacity={0} />
         </linearGradient>
       </defs>
-      <path
-        d={`M 0,${PLOT_BOTTOM} L ${points} L ${VIEW_WIDTH},${PLOT_BOTTOM} Z`}
-        fill={`url(#${gradientId})`}
-      />
-      <path d={`M ${points}`} fill="none" strokeWidth={1.5} className="stroke-acc" />
+      <line x1={0} y1={baseline} x2={VIEW_WIDTH} y2={baseline} className="stroke-line" strokeWidth={1} />
+      {first !== undefined && (
+        <path
+          d={`M 0,${baseline} L ${pathOf(first)} L ${VIEW_WIDTH},${baseline} Z`}
+          fill={`url(#${gradientId})`}
+        />
+      )}
+      {series.map((values, index) => (
+        <path
+          key={index}
+          d={`M ${pathOf(values)}`}
+          fill="none"
+          strokeWidth={1.5}
+          className={SERIES_STROKE[index % SERIES_STROKE.length]}
+        />
+      ))}
     </svg>
   );
 }

@@ -4,31 +4,28 @@
  * A tool answers the model in **plain text**, not JSON. That is a deliberate
  * reversal of the usual instinct, and it is worth saying why: JSON spends most
  * of its tokens on punctuation and repeated key names, and a model reading
- * `{"productId":4471,"revenue":38400000,"units":312}` twelve times over pays
- * for `"revenue":` twelve times. The same twelve rows as a header line and
- * twelve pipe-separated lines cost roughly a third of that, and — the part that
- * matters more — read the way a table reads, which is what the model is being
- * asked to reason about.
+ * `{"productId":4471,"revenue":38400000,"units":312}` three hundred times over
+ * pays for `"revenue":` three hundred times. The same rows as one header line
+ * and pipe-separated values cost roughly a third of that — and read the way a
+ * spreadsheet reads, which is what the model is being asked to reason over.
  *
  * Compact is not the same as lossy. Every result carries its own context: what
- * was asked, which window and shops it covers, where the rows came from, what
- * the units are, and — the piece nothing else can supply — **the refs it
- * defined**. A figure the model cannot name by ref is a figure it cannot show,
- * so a result that lists rows without naming their refs would be data the
- * answer cannot use.
+ * was asked, which window and shops it covers, where the rows came from and what
+ * the units are. What it no longer carries is a citation footer — the model is
+ * handed the data itself, computes from it, and writes the result into the
+ * answer.
  *
  * ## The shape
  *
- *     [tool.id] archive · 2026-08-01..2026-08-31 · shops 1,2
- *     money=so'm, plain integers
- *     cols: ref | name | units | revenue | profit
- *     p.4471 | Abaya klassik | 312 | 38400000 | 9100000
- *     p.5512 | Ko'ylak yozgi | 210 | 12000000 | -300000
- *     refs: <row ref>.units .revenue .profit
+ *     [products.rank] 2026-08-01..2026-08-31 · shops 1,2 · by units
+ *     money so'm, whole numbers · pct = percent
+ *     productId|name|units|revenue|sellerProfit
+ *     4471|Abaya klassik|312|38400000|9100000
+ *     5512|Ko'ylak yozgi|210|12000000|-300000
  *
- * One header, one units line, a table, and a citation footer. Nothing about it
- * needs a parser on the other side, which is the point — the reader is a
- * language model, and the format it reads best is the one a person would.
+ * A header, a units line, and a table whose first row names its columns. No
+ * padding around the pipes: a space either side of every separator is two tokens
+ * a row that tell the reader nothing.
  */
 
 /** `2026-08-01`, always UTC — the clock the archive indexes on. */
@@ -63,7 +60,14 @@ export function parseDay(value: unknown, edge: 'start' | 'end' = 'start'): numbe
   return day && edge === 'end' ? at + 86_399_999 : at;
 }
 
-/** An integer, unpunctuated. The model never prints these — it cites refs. */
+/**
+ * An integer, unpunctuated.
+ *
+ * Grouped thousands are for the seller, not the model: `38 400 000` costs more
+ * tokens and reads as three numbers. The model groups them itself when it
+ * writes a figure into a sentence, and the renderer groups what it writes into
+ * a block.
+ */
 export function num(value: number): string {
   if (!Number.isFinite(value)) return '0';
   return String(Math.round(value));
@@ -79,11 +83,18 @@ export function dec(value: number, digits = 1): string {
  * A cell that cannot break the pipe-separated table it sits in.
  *
  * A product called "Abaya | XL" would otherwise read as an extra column, and
- * the model would take the shifted values as facts. Runs of whitespace collapse
- * on the way through, which also saves the tokens a padded name would cost.
+ * the model would take the shifted values as the next column's. Runs of
+ * whitespace collapse on the way through, which also saves the tokens a padded
+ * name would cost.
  */
 export function cell(value: string): string {
   return value.replace(/[|\n\r]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+}
+
+/** A name, cut to a length that identifies it without paying for all of it. */
+export function clip(value: string, max = 60): string {
+  const clean = cell(value);
+  return clean.length <= max ? clean : `${clean.slice(0, max - 1)}…`;
 }
 
 /**
@@ -102,22 +113,35 @@ export function windowLabel(fromMs: number, toMs: number): string {
   return `${isoDay(fromMs)}..${isoDay(toMs)}`;
 }
 
-/** A pipe-separated table with a declared column line. */
+/** A value for a table cell: integers bare, other numbers to two decimals. */
+function cellValue(value: string | number | null): string {
+  if (value === null) return '';
+  if (typeof value === 'string') return cell(value);
+  if (!Number.isFinite(value)) return '';
+  return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
+}
+
+/**
+ * A pipe-separated table whose first line names the columns.
+ *
+ * CSV in all but the separator: a comma is common inside a product name and a
+ * pipe is not, so the pipe needs no quoting rules for the model to get wrong.
+ * `null` is an empty cell — a value the row does not have, which is different
+ * from a zero it does.
+ */
 export function table(
   columns: readonly string[],
-  rows: ReadonlyArray<readonly (string | number)[]>,
+  rows: ReadonlyArray<readonly (string | number | null)[]>,
 ): string {
-  const lines = [`cols: ${columns.join(' | ')}`];
-  for (const row of rows) {
-    lines.push(row.map((value) => (typeof value === 'number' ? num(value) : cell(value))).join(' | '));
-  }
+  const lines = [columns.join('|')];
+  for (const row of rows) lines.push(row.map(cellValue).join('|'));
   return lines.join('\n');
 }
 
 /** `a=1 b=2` — for the handful of figures that do not want a table. */
 export function pairs(entries: ReadonlyArray<readonly [string, string | number]>): string {
   return entries
-    .map(([key, value]) => `${key}=${typeof value === 'number' ? num(value) : cell(value)}`)
+    .map(([key, value]) => `${key}=${typeof value === 'number' ? cellValue(value) : cell(value)}`)
     .join(' ');
 }
 

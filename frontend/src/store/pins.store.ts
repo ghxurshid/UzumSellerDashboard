@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { MAX_PINS, type PinnedAnswer } from '@/services/insights/pins';
+import { MAX_PINS, readStoredPin, type PinnedAnswer } from '@/services/insights/pins';
 import { readKv, writeKv } from '@/services/storage/idb/kv.repo';
 import { KV_KEYS } from '@/services/storage/idb/schema';
 
@@ -61,20 +61,18 @@ export const usePinsStore = create<PinsState>()((set, get) => ({
 export async function restorePins(): Promise<void> {
   try {
     const stored = await readKv<unknown>(KV_KEYS.pins);
-    const pins = Array.isArray(stored) ? (stored as PinnedAnswer[]) : [];
 
     /* Written by an older build, or by a build that stored a shape this one no
-       longer understands: keep only entries that still have the two things a
-       card cannot be drawn without. */
-    const usable = pins.filter(
-      (pin) =>
-        pin !== null &&
-        typeof pin === 'object' &&
-        typeof pin.id === 'string' &&
-        Array.isArray(pin.blocks),
-    );
+       longer understands — pins from before blocks carried their own figures
+       among them. Only entries every block of which still validates are kept. */
+    const usable = (Array.isArray(stored) ? stored : [])
+      .map(readStoredPin)
+      .filter((pin): pin is PinnedAnswer => pin !== null);
 
     applyPins(usable.slice(0, MAX_PINS));
+    /* Rewrite the slot when something was dropped, so a stale pin is not
+       re-read and re-rejected on every start. */
+    if (Array.isArray(stored) && usable.length !== stored.length) persist(usable);
   } catch {
     applyPins([]);
   }

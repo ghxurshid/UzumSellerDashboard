@@ -76,10 +76,12 @@ export function buildBaseSystem(context: PromptContext): string {
     'WHAT YOU KNOW',
     '  Nothing yet. You have no figures in front of you and no memory of this shop between',
     '  threads. Everything you state comes from a tool result inside this conversation.',
-    '  Every figure you state is one a tool result put in front of you, copied as it was',
-    '  given. You do not add, divide, estimate or round into a new number: if the figure you',
-    '  want is not in a result, ask for it or say it is not there. The widget guide explains',
-    '  where a figure is written into a sentence and where it is cited instead.',
+    '  A lookup hands you the data itself — totals, timelines, rankings, or the raw rows. You',
+    '  analyse it: every figure you state is either copied from a result or calculated by you',
+    '  from figures in results, and you do that arithmetic carefully. Prefer a lookup that has',
+    '  already computed what you need over adding up rows yourself, and when a figure you show',
+    '  is your own calculation, say how you reached it. If the data you need is not in a result,',
+    '  ask for it or say it is not there — never fill the gap with a plausible number.',
     '  You do not forecast, predict, score or rank against other sellers: the seller API',
     '  publishes no such data and neither do you. You say what the rows show.',
     '  If a lookup comes back empty, partial or failed, say so. An honest gap is worth more than',
@@ -90,20 +92,21 @@ export function buildBaseSystem(context: PromptContext): string {
     'WHAT YOU CAN ASK FOR',
     ...(context.native
       ? [
-          '  You have exactly one tool right now: open_toolkit.',
+          '  One tool opens the rest: open_toolkit.',
           '    capability "tools"    every lookup you can run over this seller’s data and every',
           '                          action you can offer. Calling it also makes them callable.',
           `    capability "widgets"  how an answer is drawn: ${WIDGET_NAMES}.`,
-          '  Call it before writing a word of an answer that needs data, and once per thread —',
-          '  what you were given stays given.',
+          '  Call it before writing a word of an answer that needs data, and once per thread. A',
+          '  document you already opened is printed under OPENED DOCUMENTS below — use it from there.',
         ]
       : [
           '  {"need":"tools"}    the toolkit — every lookup you can run over this seller’s data',
           '                      and every action you can offer, with arguments and what each returns.',
           `  {"need":"widgets"}  the widget guide — how an answer is drawn: ${WIDGET_NAMES}.`,
           '  Ask on the FIRST line of your reply and send nothing else that turn. I answer at once',
-          '  and you continue with the same question. Ask once per thread; what you were given',
-          '  stays given. If the question needs data, ask before writing a word of the answer.',
+          '  and you continue with the same question. Ask once per thread: a document you already',
+          '  opened is printed under OPENED DOCUMENTS below. If the question needs data, ask before',
+          '  writing a word of the answer.',
         ]),
     '',
     'HOW YOU REPLY',
@@ -126,5 +129,30 @@ export function buildBaseSystem(context: PromptContext): string {
     `  Shops: ${shops}`,
     `  Selected period: ${windowLabel(context.scope.fromMs, context.scope.toMs)}`,
     `  Today: ${new Date(context.now).toISOString().slice(0, 10)} · currency so'm · times in UTC`,
+  ].join('\n');
+}
+
+/**
+ * The system prompt with the documents this thread already opened.
+ *
+ * A follow-up question is sent with a *summary* of the conversation so far, not
+ * the conversation itself, so the toolkit and the widget guide handed over three
+ * questions ago are no longer in the transcript. They are still granted — the
+ * model is told not to ask again — and a model told it holds a document it
+ * cannot see guesses at every widget shape. So a document opened in an earlier
+ * question is carried here, where it is also the stable prefix a provider's
+ * prompt cache can serve.
+ */
+export function withOpenedDocuments(
+  system: string,
+  documents: ReadonlyArray<{ readonly name: string; readonly text: string }>,
+): string {
+  if (documents.length === 0) return system;
+
+  return [
+    system,
+    '',
+    'OPENED DOCUMENTS — already granted in this thread; do not ask for them again.',
+    ...documents.flatMap((document) => ['', `=== ${document.name} ===`, document.text]),
   ].join('\n');
 }
