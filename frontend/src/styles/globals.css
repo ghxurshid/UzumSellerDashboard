@@ -48,6 +48,23 @@
   --s-warn-soft: rgba(220, 177, 115, 0.13);
   --s-warn-line: rgba(220, 177, 115, 0.4);
 
+  /* Categorical chart palette — donut slices and line series, coloured by
+     fixed position (slot 1..8) rather than by meaning. A colour-vision
+     simulator checked every adjacent pair against this panel's own surfaces,
+     including the ring's 8-to-1 closure (worst CVD ΔE 8.6, worst normal
+     vision ΔE 19.3, all ≥3:1 contrast) — see ChartBlock.tsx for why a slot is
+     never reassigned or cycled. `--s-cat-none` is the unvalidated fallback for
+     a 9th+ slice, which only an old pin can produce. */
+  --s-cat-1: #9184d9;
+  --s-cat-2: #199e70;
+  --s-cat-3: #d95926;
+  --s-cat-4: #3987e5;
+  --s-cat-5: #c98500;
+  --s-cat-6: #d55181;
+  --s-cat-7: #008300;
+  --s-cat-8: #e66767;
+  --s-cat-none: #6b7086;
+
   /* Backdrop behind the extension window — the host page, dimmed. */
   --s-backdrop: #0a0b11;
   --s-shadow-menu: 0 22px 60px rgba(0, 0, 0, 0.55);
@@ -86,6 +103,23 @@
   --s-warn: #8a6522;
   --s-warn-soft: rgba(150, 112, 42, 0.12);
   --s-warn-line: rgba(150, 112, 42, 0.4);
+
+  /* Same slots, re-picked for the light surface. Normal vision passes every
+     pair (worst ΔE 19.6); slots 7↔8 only WARN under CVD (ΔE 7.2), which is why
+     a donut or line never relies on colour alone — the gap between segments,
+     the legend swatch and the printed label are the load-bearing encoding.
+     Slots 2, 5 and 6 read under 3:1 against this panel on their own, so a
+     value must always be reachable from the legend, never only from the
+     colour. */
+  --s-cat-1: #6d61ad;
+  --s-cat-2: #1baf7a;
+  --s-cat-3: #eb6834;
+  --s-cat-4: #2a78d6;
+  --s-cat-5: #eda100;
+  --s-cat-6: #e87ba4;
+  --s-cat-7: #008300;
+  --s-cat-8: #e34948;
+  --s-cat-none: #9aa1b8;
 
   --s-backdrop: #d6d9e8;
   --s-shadow-menu: 0 22px 60px rgba(41, 43, 49, 0.18);
@@ -128,6 +162,17 @@
   --color-warn: var(--s-warn);
   --color-warn-soft: var(--s-warn-soft);
   --color-warn-line: var(--s-warn-line);
+
+  /* — categorical chart palette — */
+  --color-cat-1: var(--s-cat-1);
+  --color-cat-2: var(--s-cat-2);
+  --color-cat-3: var(--s-cat-3);
+  --color-cat-4: var(--s-cat-4);
+  --color-cat-5: var(--s-cat-5);
+  --color-cat-6: var(--s-cat-6);
+  --color-cat-7: var(--s-cat-7);
+  --color-cat-8: var(--s-cat-8);
+  --color-cat-none: var(--s-cat-none);
 
   /* — type scale, matching the density of the source design — */
   --text-meta: 9.5px;

@@ -247,6 +247,15 @@ export interface InsightCard {
   readonly target?: ScreenKey;
   /** Whether a rule derived this or the model wrote it. */
   readonly origin: 'rule' | 'ai';
+  /**
+   * Why blocks the model wrote for this card were left out, one reason each.
+   *
+   * The rail has no second turn to ask for them again, so a block that fails is
+   * dropped and the card keeps the rest of its argument — but a card that lost a
+   * block is not the card the model wrote, and this is where that is said.
+   * Absent on rule cards and on a model card that arrived whole.
+   */
+  readonly rejected?: readonly string[];
 }
 
 export const SEVERITY_ORDER: Readonly<Record<InsightSeverity, number>> = {
@@ -281,12 +290,25 @@ export const WIDGET_LIMITS = {
   label: 120,
   cell: 160,
   step: 240,
+  /** A bucket along a line chart's axis — a date, a weekday, an hour. */
+  axisLabel: 40,
+  /** A figure that is not a number — "3 / 5", a date. */
+  valueText: 60,
   kvRows: 12,
   steps: 10,
   tableColumns: 6,
   tableRows: 30,
   badges: 8,
   chartItems: 12,
+  /**
+   * Slices a donut may have when the model draws one.
+   *
+   * The categorical palette has eight hues and a hue is never repeated, because
+   * two slices of one colour read as one slice. Pins saved before this limit may
+   * carry more; they are read back by the lenient schema and the renderer draws
+   * them without cycling.
+   */
+  donutItems: 8,
   lineLabels: 120,
   lineSeries: 4,
   calloutBlocks: 8,
@@ -297,6 +319,20 @@ const MAX_DEPTH = 2;
 const toneSchema = z.enum(['positive', 'negative', 'warning', 'neutral', 'accent']);
 const formatSchema = z.enum(FIGURE_FORMATS);
 const finite = z.number().finite();
+/**
+ * A position that holds a number and nothing else.
+ *
+ * Spelled out for the same reason as `valueSchema`: zod's own "Expected number,
+ * received string" does not tell a model that sent "9.2%" what to send instead.
+ * A plain numeric string never reaches this — `mendBlock` has already read it as
+ * the number it spells.
+ */
+const plainNumber = z
+  .number({
+    invalid_type_error:
+      'must be a plain JSON number — no quotes, %, spaces, currency or thousands separators',
+  })
+  .finite();
 /**
  * A figure's value: a number, or a short string for what is not one.
  *

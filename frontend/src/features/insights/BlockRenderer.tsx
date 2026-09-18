@@ -11,6 +11,7 @@ import { formatChange, formatFigure } from '@/services/insights/figures';
 import { phrase } from '@/services/insights/phrase';
 import type { Language, Tone } from '@/types/domain';
 
+import { padRow } from './blockTable';
 import { ChartBlockView } from './ChartBlock';
 
 /**
@@ -222,7 +223,7 @@ function BlockView({ block, t, language, onAction }: BlockViewProps): ReactNode 
             <tbody>
               {block.rows.map((row, rowIndex) => (
                 <tr key={rowIndex}>
-                  {row.map((cell, cellIndex) =>
+                  {padRow(row, block.columns.length).map((cell, cellIndex) =>
                     typeof cell === 'number' ? (
                       <td
                         key={cellIndex}

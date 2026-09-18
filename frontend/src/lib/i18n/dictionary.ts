@@ -973,6 +973,9 @@ const TUPLES = {
     "Bu filtrda hech nima yo'q",
   ],
   insSignal: ['Signal', 'Сигнал', 'Signal'],
+  /* The label a screen reader (and a mouse, and an arrow key) gets on a line
+     chart's hover/keyboard read-out control — see ChartBlock.tsx. */
+  chartValues: ['Chart values', 'Значения графика', 'Grafik qiymatlari'],
   aiPending: ['The model is reading the window…', 'Модель читает период…', 'Model davrni o‘qimoqda…'],
   aiWrote: ['Written by the model', 'Написано моделью', 'Model tomonidan yozilgan'],
   recAction: ['Recommended action', 'Рекомендуемое действие', 'Tavsiya etilgan amal'],
