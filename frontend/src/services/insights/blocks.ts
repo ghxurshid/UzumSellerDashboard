@@ -320,12 +320,12 @@ const toneSchema = z.enum(['positive', 'negative', 'warning', 'neutral', 'accent
 const formatSchema = z.enum(FIGURE_FORMATS);
 const finite = z.number().finite();
 /**
- * A position that holds a number and nothing else.
+ * A position that holds a number and nothing else — a chart value, a change.
  *
  * Spelled out for the same reason as `valueSchema`: zod's own "Expected number,
  * received string" does not tell a model that sent "9.2%" what to send instead.
- * A plain numeric string never reaches this — `mendBlock` has already read it as
- * the number it spells.
+ * Nothing reads a numeric string as the number it spells before this, so "9.2"
+ * is refused here just as "9.2%" is, and this message is the reason given back.
  */
 const plainNumber = z
   .number({
@@ -386,13 +386,13 @@ const chartSchema = z
     title: label.optional(),
     format: formatSchema.optional(),
     items: z
-      .array(z.object({ label, value: finite, tone: toneSchema.optional() }))
+      .array(z.object({ label, value: plainNumber, tone: toneSchema.optional() }))
       .min(2)
       .max(WIDGET_LIMITS.chartItems)
       .optional(),
     labels: z.array(z.string().trim().min(1).max(40)).min(2).max(WIDGET_LIMITS.lineLabels).optional(),
     series: z
-      .array(z.object({ name: label, values: z.array(finite) }))
+      .array(z.object({ name: label, values: z.array(plainNumber) }))
       .min(1)
       .max(WIDGET_LIMITS.lineSeries)
       .optional(),
@@ -460,7 +460,7 @@ function blockSchemaAtDepth(depth: number): z.ZodTypeAny {
       label: label.optional(),
       value: valueSchema,
       format: formatSchema.optional(),
-      change: finite.optional(),
+      change: plainNumber.optional(),
       emphasis: z.boolean().optional(),
     }),
     z.object({
