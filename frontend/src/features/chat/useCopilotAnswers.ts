@@ -1,9 +1,11 @@
 import { useCallback, useMemo, useRef } from 'react';
 
+import { formatClock } from '@/lib/format';
 import { useTranslation, type Translator } from '@/lib/i18n/useTranslation';
 import { ApiError } from '@/services/api/client';
 import { estimateCost } from '@/services/ai/pricing';
 import { supportsNativeTools } from '@/services/ai/messages';
+import { ModelQuotaError, nextPacificMidnight } from '@/services/ai/usage';
 import { createSession, runAgent, summariseAnswer, type AgentSession } from '@/services/insights/agent';
 import { buildBaseSystem } from '@/services/insights/prompt';
 import type { ToolContext } from '@/services/insights/toolkit';
@@ -25,6 +27,16 @@ import { useInsightActionRunner } from '@/features/insights/useInsightActionRunn
  * and paraphrasing it would remove the only detail that helps.
  */
 function describeFailure(error: ApiError, t: Translator): string {
+  /* A daily quota is not "busy" — retrying before the Pacific reset cannot
+     help, so the sentence names the reset time and the way out (another
+     model in Settings) instead of the generic "try again" `aiBusy` gives
+     every other rate limit. `error.isRetryable` is already `false` for this
+     one (see `ModelQuotaError`), which is what drops the continue button;
+     this only changes what the seller reads while it is missing. */
+  if (error instanceof ModelQuotaError && error.quota?.axis === 'rpd') {
+    return t('aiDailyQuotaExhausted', { time: formatClock(nextPacificMidnight(Date.now())) });
+  }
+
   switch (error.kind) {
     case 'rateLimited':
     case 'server':

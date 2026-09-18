@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/services/api/client';
 
 import { RETRIES, retryDelay, shouldRetry } from './stream';
+import { ModelQuotaError } from './usage';
 
 /**
  * When a failed request is worth repeating.
@@ -55,6 +56,33 @@ describe('shouldRetry', () => {
   it('ignores anything that is not an ApiError', () => {
     expect(shouldRetry(new Error('boom'), { attempt: 0, produced: false })).toBe(false);
     expect(shouldRetry(null, { attempt: 0, produced: false })).toBe(false);
+  });
+
+  describe('a daily quota', () => {
+    /* A DAILY quota does not reopen inside this session — only the Pacific day
+       turning over frees it — so a retry here is a request Google's own
+       counter would hold against the project for the same refusal. */
+    it('never repeats an rpd 429, however early in the attempts it is', () => {
+      const rpdExhausted = new ModelQuotaError('quota', { quota: { axis: 'rpd', limit: 20, retryAfterMs: null } });
+      expect(shouldRetry(rpdExhausted, { attempt: 0, produced: false })).toBe(false);
+    });
+
+    it('repeats an rpm 429 exactly like any other rate limit', () => {
+      const rpmExhausted = new ModelQuotaError('quota', { quota: { axis: 'rpm', limit: 5, retryAfterMs: null } });
+      expect(shouldRetry(rpmExhausted, { attempt: 0, produced: false })).toBe(true);
+      expect(shouldRetry(rpmExhausted, { attempt: 0, produced: true })).toBe(false);
+      expect(shouldRetry(rpmExhausted, { attempt: RETRIES, produced: false })).toBe(false);
+    });
+
+    it('repeats a 429 whose body said nothing about which axis ran out', () => {
+      const unspecified = new ModelQuotaError('quota', { quota: { axis: null, limit: null, retryAfterMs: null } });
+      expect(shouldRetry(unspecified, { attempt: 0, produced: false })).toBe(true);
+    });
+
+    it('repeats a 429 the body could not even be read as a quota error for', () => {
+      const noQuotaInfo = new ModelQuotaError('quota', { quota: null });
+      expect(shouldRetry(noQuotaInfo, { attempt: 0, produced: false })).toBe(true);
+    });
   });
 });
 

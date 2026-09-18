@@ -10,7 +10,9 @@ import {
 
 import { cn } from '@/lib/utils';
 
-const CONTROL = cn(
+/** Exported so a control built outside this file — a Radix-driven picker,
+ * say — can still look like every plain `<input>`/`<select>` beside it. */
+export const CONTROL = cn(
   'w-full max-w-full rounded-8 border bg-panel px-11 text-sm text-text outline-none',
   'transition-colors placeholder:text-faint',
   'hover:border-line-2 focus-visible:border-acc',
@@ -26,7 +28,7 @@ const CONTROL = cn(
  * to stop iOS zooming the viewport on focus. Back to the design's 32px from
  * `md` up, where the pointer is precise and the density is the point.
  */
-const CONTROL_HEIGHT = 'h-44 md:h-32';
+export const CONTROL_HEIGHT = 'h-44 md:h-32';
 
 interface FieldShellProps {
   readonly label: string;

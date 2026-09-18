@@ -22,6 +22,8 @@ import { useToastStore } from '@/store/toast.store';
 import type { AiProvider, ProviderStatus } from '@/types/settings';
 
 import { CredentialField } from './CredentialField';
+import { ModelPicker } from './ModelPicker';
+import { ModelQuotaPanel } from './ModelQuotaPanel';
 
 type TestState = 'idle' | 'testing' | 'ok' | 'failed';
 
@@ -214,7 +216,23 @@ export function AiSettings(): ReactNode {
                 onCommit={(orgId) => patch({ ai: { orgId } })}
               />
 
-              {provider.models.length > 0 ? (
+              {provider.models.length === 0 ? (
+                <CommitField
+                  label={t('model')}
+                  value={ai.model}
+                  mono
+                  placeholder={t('modelHint')}
+                  onCommit={(model) => patch({ ai: { model } })}
+                />
+              ) : provider.models.some((entry) => entry.limits !== undefined) ? (
+                <ModelPicker
+                  label={t('model')}
+                  provider={provider.id}
+                  options={provider.models}
+                  value={ai.model}
+                  onChange={(model) => patch({ ai: { model } })}
+                />
+              ) : (
                 <SelectField
                   label={t('model')}
                   value={ai.model}
@@ -223,14 +241,6 @@ export function AiSettings(): ReactNode {
                     value: entry.id,
                     label: entry.label,
                   }))}
-                />
-              ) : (
-                <CommitField
-                  label={t('model')}
-                  value={ai.model}
-                  mono
-                  placeholder={t('modelHint')}
-                  onCommit={(model) => patch({ ai: { model } })}
                 />
               )}
 
@@ -303,6 +313,8 @@ export function AiSettings(): ReactNode {
 
         {/* connection test */}
         <div className="flex flex-col gap-12">
+          <ModelQuotaPanel provider={ai.provider} model={ai.model} />
+
           <div className="flex flex-col gap-10 rounded-11 border border-line bg-panel px-11 py-13 sm:px-14">
             <div className="flex items-center gap-8">
               <span className="text-sm-plus font-medium">{t('testConn')}</span>

@@ -36,6 +36,12 @@ const PRICES: ReadonlyArray<readonly [string, ModelPrice]> = [
   ['gpt-4.1-mini', { input: 0.4, output: 1.6 }],
   ['gpt-4.1', { input: 2, output: 8 }],
   ['o4-mini', { input: 1.1, output: 4.4 }],
+  /* Listed ahead of `gemini-2.5-flash` in source order for readability, but
+     `priceOf`'s longest-prefix match is what actually keeps this one from
+     being shadowed by it — `gemini-2.5-flash-lite` starts with
+     `gemini-2.5-flash` too, and the shorter prefix would otherwise win and
+     price it as the non-lite model, more than double the real rate. */
+  ['gemini-2.5-flash-lite', { input: 0.1, output: 0.4 }],
   ['gemini-2.5-flash', { input: 0.3, output: 2.5 }],
   ['gemini-2.5-pro', { input: 1.25, output: 10 }],
   ['gemini-2.0-flash', { input: 0.1, output: 0.4 }],

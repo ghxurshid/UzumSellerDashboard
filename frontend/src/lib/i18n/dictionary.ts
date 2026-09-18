@@ -654,6 +654,78 @@ const TUPLES = {
     'ID модели точно как у вашего endpoint',
     "Model id — endpoint'ingizdagi kabi aynan",
   ],
+
+  /* — AI quota meter — */
+  quotaPanelTitle: ['Remaining quota', 'Остаток лимита', 'Qolgan limit'],
+  quotaAxisRpm: ['RPM', 'RPM', 'RPM'],
+  quotaAxisTpm: ['TPM', 'TPM', 'TPM'],
+  quotaAxisRpd: ['RPD', 'RPD', 'RPD'],
+  quotaLabelRpm: ['Requests / minute', 'Запросов / минуту', "So'rovlar / daqiqa"],
+  quotaLabelTpm: [
+    'Input tokens / minute',
+    'Входные токены / минуту',
+    'Kirish tokenlari / daqiqa',
+  ],
+  quotaLabelRpd: ['Requests / day', 'Запросов / день', "So'rovlar / kun"],
+  quotaRemainingOf: [
+    '{remaining} / {limit} left',
+    'Осталось {remaining} из {limit}',
+    '{remaining} / {limit} qoldi',
+  ],
+  quotaResetsInSeconds: [
+    'resets in {s}s',
+    'сброс через {s}с',
+    '{s}s dan keyin yangilanadi',
+  ],
+  quotaResetsInMinutes: [
+    'resets in {m} min',
+    'сброс через {m} мин',
+    '{m} daqiqadan keyin yangilanadi',
+  ],
+  quotaResetsAt: ['resets at {time}', 'сброс в {time}', '{time} da yangilanadi'],
+  quotaExhausted: ['Exhausted', 'Исчерпано', 'Tugagan'],
+  quotaBottleneckTag: ['Bottleneck', 'Узкое место', 'Tor joy'],
+  /* Count-safe in all three languages on purpose — "для {n} запросов" reads
+     wrong for {n} === 1 in Russian, and a "1/2/5+" plural table would be more
+     grammar than one line of source attribution is worth, so every language
+     reads as a label followed by a number instead of a counted noun phrase. */
+  quotaUnknownTokens: [
+    'Tokens unknown, requests: {n}',
+    'Токены неизвестны, запросов: {n}',
+    "Tokenlar noma'lum, so'rovlar: {n}",
+  ],
+  quotaOverridden: [
+    'Google reported a different limit for this project on this axis: {limit}',
+    'Google указал другой лимит для этого проекта по этой оси: {limit}',
+    "Google ushbu loyiha uchun shu o'lchov bo'yicha boshqa limit ko'rsatdi: {limit}",
+  ],
+  quotaSourceNote: [
+    'Limits: AI Studio, free tier, as of {date} · usage counted in this browser only — other devices, other browsers or other keys on the same project are not seen',
+    'Лимиты: AI Studio, бесплатный тариф, по состоянию на {date} · расход считается только в этом браузере — другие устройства, другие браузеры и другие ключи того же проекта не учитываются',
+    "Limitlar: AI Studio, bepul tarif, {date} holatiga ko'ra · sarf faqat shu brauzerda hisoblanadi — boshqa qurilmalar, boshqa brauzerlar va shu loyihaning boshqa kalitlari hisobga olinmaydi",
+  ],
+  /* The same attribution, short enough for a dropdown footer — the picker's
+     `Select.Content` is a portal with no room for the full sentence above. */
+  quotaSourceNoteShort: [
+    'Limits: AI Studio, free tier, as of {date}',
+    'Лимиты: AI Studio, бесплатный тариф, по состоянию на {date}',
+    "Limitlar: AI Studio, bepul tarif, {date} holatiga ko'ra",
+  ],
+  /* An axis nobody has spent from yet has no countdown to show — the window
+     "resets" the moment the first request lands, so "resets in 0s" would be
+     describing a request that has not happened. */
+  quotaFull: ['not used yet', 'ещё не использовано', 'hali sarflanmagan'],
+  quotaOptionLeft: [
+    '{axis} {remaining}/{limit} left',
+    '{axis}: осталось {remaining}/{limit}',
+    '{axis} {remaining}/{limit} qoldi',
+  ],
+  quotaOptionExhausted: [
+    'exhausted · {reset}',
+    'исчерпано · {reset}',
+    'tugadi · {reset}',
+  ],
+
   flags: ['Integration flags', 'Флаги интеграции', 'Integratsiya bayroqlari'],
   flMask: ['Mask credentials', 'Скрывать ключи', 'Kalitlarni yashirish'],
   flMaskH: [
@@ -811,6 +883,15 @@ const TUPLES = {
     'The model stopped responding part-way.',
     'Модель перестала отвечать на середине.',
     "Model javob berishni yarmida to'xtatdi.",
+  ],
+  /* A daily quota (`ModelQuotaError` with `quota.axis === 'rpd'`), distinct
+     from `aiBusy`: retrying will not help before the reset, so the sentence
+     names the reset time and the way out (a different model) instead of
+     "try again". */
+  aiDailyQuotaExhausted: [
+    "This model's daily limit is used up — it resets at {time}. You can pick another model in Settings.",
+    'Дневной лимит этой модели исчерпан — сброс в {time}. Вы можете выбрать другую модель в настройках.',
+    "Ushbu modelning kunlik limiti tugadi — {time} da yangilanadi. Sozlamalarda boshqa modelni tanlashingiz mumkin.",
   ],
   /* "Continue", not "Retry": the lookups already run are kept, and only the
      round that failed is asked again. */

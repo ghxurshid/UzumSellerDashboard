@@ -3,6 +3,7 @@ import { hydrateSettings } from '@/services/storage/settings.service';
 import { useArchiveStore } from '@/store/archive.store';
 import { restoreNotifications } from '@/store/notifications.store';
 import { restoreAlerts } from '@/store/alerts.store';
+import { initModelUsageSync, restoreModelUsage } from '@/store/modelUsage.store';
 import { restorePins } from '@/store/pins.store';
 import { restoreSyncLog } from '@/store/sync.store';
 
@@ -54,12 +55,22 @@ let started: Promise<BootstrapReport> | null = null;
 async function run(): Promise<BootstrapReport> {
   const failures: string[] = [];
 
+  /* Wired before the first `await` in this function, let alone before any
+     screen mounts — a request sent while storage is still opening must not
+     be the one request the quota meter never heard about. */
+  initModelUsageSync();
+
   const storage = await isAvailable();
 
   if (!storage) {
     /* No persistence. Settings still hydrate — into the defaults — so the rest
-       of the application sees the same shapes it always does. */
+       of the application sees the same shapes it always does. `restoreModelUsage`
+       is still called: its `readKv` will fail the same way everything else here
+       does, and its `catch` sets `loaded: true` — without this call the quota
+       panel would gate on a flag that never flips and stay a skeleton for the
+       whole session, one paint short of "unknown" rather than actually unknown. */
     await hydrateSettings();
+    await restoreModelUsage();
     return {
       storage: false,
       persisted: false,
@@ -80,12 +91,13 @@ async function run(): Promise<BootstrapReport> {
 
   await hydrateSettings();
 
-  /* These three are independent of each other and all needed before paint. */
+  /* These are independent of each other and all needed before paint. */
   await Promise.all([
     restoreSyncLog(),
     restoreNotifications(),
     restorePins(),
     restoreAlerts(),
+    restoreModelUsage(),
     useArchiveStore.getState().refresh(),
   ]);
 

@@ -1,7 +1,7 @@
 # Savdo Copilot — Texnik spetsifikatsiya
 
-**Versiya:** 2.5.0
-**Hujjat sanasi:** 2026-09-14
+**Versiya:** 2.6.0
+**Hujjat sanasi:** 2026-09-18
 **Maqsad:** [FUNCTIONAL-SPECIFICATION.md](./FUNCTIONAL-SPECIFICATION.md) dagi har bir
 talab texnik jihatdan qanday amalga oshirilganini ifodalash.
 
@@ -621,11 +621,47 @@ Ikki muallif, bitta karta tili:
 - **Streaming va native tool chaqiruvlari.** Gemini 3'ning `thoughtSignature`i
   chaqiruv bilan birga qaytariladi.
 - **Qayta urinish** (`RETRIES = 3`): `429`/`5xx`/tarmoq xatosida, `Retry-After`
-  hurmat qilinadi.
+  yoki Gemini'ning `RetryInfo.retryDelay`si hurmat qilinadi.
   - Faqat javobdan hali hech narsa ekranga chiqmagan bo'lsa takrorlanadi. Aks
     holda matn ikki marta yozilardi, shuning uchun uzilgan javob sotuvchiga
     **Davom ettirish** bilan qaytariladi.
   - Bekor qilingan so'rov va noto'g'ri kalit takrorlanmaydi.
+  - **Kunlik (RPD) `429` ham takrorlanmaydi.** `ModelQuotaError.isRetryable`
+    buni ataylab `false` qaytaradi
+    ([`ai/usage.ts`](./frontend/src/services/ai/usage.ts#L120)) — bu chegara
+    faqat Tinch okean yarim tunida ochiladi, har bir urinish esa bir xil rad
+    javobini yana bir marta hisoblatib qo'yardi. Suhbat paneli bu holatda
+    sababni va tiklanish vaqtini ko'rsatadi, **Davom ettirish** tugmasisiz
+    ([`features/chat/useCopilotAnswers.ts`](./frontend/src/features/chat/useCopilotAnswers.ts#L36)).
+- **Kvota o'lchagichi** — brauzerda, faqat Gemini uchun
+  ([`ai/usage.ts`](./frontend/src/services/ai/usage.ts)):
+  - `stream.ts` va `client.ts` javob **olgan** har bir so'rov uchun (qayta
+    urinishlar, suhbat, rail muallifi, Sozlamalardagi ulanish testi
+    qo'shilgan) bitta `ModelRequestEvent` yozadi. Javob kelmagan so'rov
+    (tarmoq xatosi, timeout, bekor qilish) va kalit rad etilishi
+    (`401`/`403`, `400 API_KEY_INVALID`) yozilmaydi — ular loyiha kvotasiga
+    umuman tegmagan.
+  - Gemini'ning `429` tanasi (`google.rpc.QuotaFailure` / `RetryInfo`) qaysi
+    o'lchov (`rpm`/`tpm`/`rpd`) tugaganini va qachon qayta so'rash
+    mumkinligini ajratib oladi (`readQuotaFailure`). **Dalil kuchsiz:** bu
+    tana shakli loyihada yozib olingan haqiqiy namuna emas — Google'ning
+    ommaviy xato formati hujjatlaridan va misollardan olingan.
+  - RPM va TPM oxirgi 60 soniyalik sirpanuvchi oynada, TPM kiruvchi
+    tokenlarda (`promptTokenCount`), RPD Tinch okean yarim tunidan (DST'ni
+    hisobga olib) hisoblanadi; Gemini'ning o'zi `429`da aytgan limit
+    katalogdagi raqamni o'zib ketadi. "Har bir natija — muvaffaqiyatli ham,
+    rad etilgan ham — so'rov sifatida sanaladi" qoidasi ham **dalili
+    kuchsiz**: bitta AI Studio kuzatuviga (3.5 Flash'da 23/20 RPD
+    ko'rsatilgani) asoslangan.
+  - Hisob [`store/modelUsage.store.ts`](./frontend/src/store/modelUsage.store.ts)da
+    IndexedDB `kv`ning `model_usage` yozuvida (26 soat, 5000 tagacha,
+    faqat katalogda `limits`i bor model — hozircha to'qqizta Gemini modeli)
+    saqlanadi va `BroadcastChannel('savdo.model-usage')` orqali oynalar
+    orasida sinxronlanadi. Ko'rsatish —
+    [`features/settings/ModelPicker.tsx`](./frontend/src/features/settings/ModelPicker.tsx)
+    (model tanlashda) va
+    [`features/settings/ModelQuotaPanel.tsx`](./frontend/src/features/settings/ModelQuotaPanel.tsx)
+    (tanlangan model uchun uchta chiziq).
 - **Narx hisobi:** kesh orqali berilgan tokenlar alohida hisoblanadi.
 - **Kalit:** ilova kalit olib kelmaydi — Sozlamalardagi kalit ishlatiladi, u
   bo'sh bo'lsa Copilot so'rov yubormaydi.
@@ -681,7 +717,9 @@ uchun. Tekshiruv modul nomida qism-satr bo'yicha, shuning uchun tartib muhim:
 | `insights/pins.test.ts` | Saqlangan kartani o'qish — eski `ref`li kartalar tashlanadi |
 | `insights/alerts.test.ts` | Qoidalar — imzo, sovish vaqti, har bir tur |
 | `ai/jsonSchema.test.ts` | Zod → JSON Schema konvertatsiyasi |
-| `ai/stream.test.ts` | Qayta urinish qarori — qaysi xato takrorlanadi, `Retry-After`, chekinish oralig'i |
+| `ai/stream.test.ts` | Qayta urinish qarori — qaysi xato takrorlanadi, `Retry-After`, chekinish oralig'i, kunlik (RPD) `429` hech qachon takrorlanmasligi |
+| `ai/usage.test.ts` | Kvota o'lchagichi — `readQuotaFailure`/`isKeyRejection`ning himoyalangan o'qishi, RPM/TPM/RPD gauge arifmetikasi, Tinch okean yarim tunining DST'dagi holati |
+| `store/modelUsage.store.test.ts` | Voqealar jurnali — restore va kelayotgan hodisa orasidagi poyga, `BroadcastChannel` orqali qo'shilish |
 | `insights/session.test.ts` | Javob sessiyasi — to'xtagan joydan davom ettirish, ochilgan hujjatlar nusxasi |
 
 > ⚠️ IndexedDB va worker qatlamlari hali qoplanmagan — ular uchun
@@ -706,7 +744,8 @@ uchun. Tekshiruv modul nomida qism-satr bo'yicha, shuning uchun tartib muhim:
 | Copilot haqiqiy ma'lumotdan javob beradi | Lookup'lar arxivdan ma'lumotning o'zini beradi (10.2); model hisoblaydi, bloklar qiymat + `format` bilan tekshirilib chiziladi (10.3); o'qilgan lookup `trace` bo'lib ko'rinadi |
 | Chuqur tahlil | `data.rows` — xom qatorlar sahifalab; hisoblovchi lookup'lar arifmetikani kodda bajaradi |
 | Model Uzum'ga yozmaydi | Yopiq amallar registri, xavf darajasi, tugma + tasdiq oynasi (10.4) |
-| Provayder band bo'lsa davom ettirish | `RETRIES`, `Retry-After`, sessiya `checkpoint` dan davom etadi (10.1, 10.7) |
+| Provayder band bo'lsa davom ettirish | `RETRIES`, `Retry-After`, sessiya `checkpoint` dan davom etadi; kunlik (RPD) limitda takrorlanmaydi (10.1, 10.7) |
+| Gemini modeli tanlanganda qolgan limitni bilish | `AI_PROVIDERS[…].limits` katalogi + so'ralgan har bir javobdan hisob (`ai/usage.ts`), model tanlash va "Qolgan limit" paneli (10.7) |
 | Javobni panelga qadash | Sana va davr bilan surat, "qayta so'rash" tugmasi (10.5) |
 
 ---
@@ -749,6 +788,24 @@ Tafsilot: [ENDPOINTS.md](./frontend/src/services/uzum/ENDPOINTS.md), 12.3-bo'lim
 ulanmagan — ularsiz `createFbsInvoice` uchun kerak bo'lgan UUID'larni olib
 bo'lmaydi.
 
-### 5. `backend/` bo'sh shablon
+### 5. Gemini kvota o'lchagichining ikkita qoidasi haqiqiy namunada tekshirilmagan
+- **Qaysi joyda:** `services/ai/usage.ts` — `readQuotaFailure` Gemini `429`
+  javobini `google.rpc.QuotaFailure` / `RetryInfo` shakli deb o'qiydi, va
+  "har bir natija — muvaffaqiyatli ham, rad etilgan ham — loyiha kvotasiga
+  so'rov sifatida sanaladi" qoidasi shu o'qishga tayanadi.
+- **Dalil qanchalik kuchli:** javob tanasi loyihada yozib olingan haqiqiy
+  Gemini `429` namunasi emas — Google'ning ommaviy xato-format hujjatlari va
+  masalalar (issue)lardagi misollardan olingan. "Har bir natija sanaladi"
+  qoidasi esa bitta AI Studio kuzatuviga (3.5 Flash modelida 23/20 RPD
+  ko'rsatilgani) asoslangan.
+- **Nima uchun darhol xavfli emas:** noto'g'ri chiqsa ham natija faqat
+  ko'rsatkich chizig'ini suradi — Copilot javobiga yoki Uzum'ga yozish
+  amaliga ta'sir qilmaydi, va Gemini'ning real `429`dagi limiti baribir
+  katalog raqamini o'zib ketadi.
+- **Keyingi qadam:** hech bo'lmasa bitta haqiqiy Gemini `429` javobini (xususan
+  bir nechta `violations`li holatni) yozib olib, `pickViolation` va
+  `axisFromQuotaId` ustidan tekshirish.
+
+### 6. `backend/` bo'sh shablon
 Agar jamoaviy ishlash yoki serverdagi zaxira kerak bo'lsa, arxitektura qarori
 qaytadan ko'rib chiqilishi kerak.

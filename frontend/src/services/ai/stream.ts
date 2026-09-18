@@ -3,6 +3,7 @@ import type { AiSettings } from '@/types/settings';
 
 import type { JsonSchema } from './jsonSchema';
 import { supportsNativeTools, type ChatMessage, type ToolCall, type ToolSchema } from './messages';
+import { isKeyRejection, ModelQuotaError, readQuotaFailure, recordModelRequest } from './usage';
 
 /**
  * The same three request shapes as `client.ts`, read as they arrive.
@@ -92,6 +93,14 @@ interface Accumulator {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  /**
+   * The prompt exactly as the provider counted it — before the cache discount
+   * `inputTokens` applies for the cost line. The quota meter needs this raw
+   * figure because Gemini's TPM ceiling is billed on it, not on the
+   * discounted number. `undefined` until a usage frame actually states it, so
+   * a provider that never reports usage reports `null` rather than a false 0.
+   */
+  rawInputTokens: number | undefined;
 }
 
 function slotOf(accumulator: Accumulator, key: string): PartialCall {
@@ -386,7 +395,11 @@ function reduceGemini(
   const cached = numberAt(event, ['usageMetadata', 'cachedContentTokenCount']);
 
   if (cached !== undefined) accumulator.cachedInputTokens = cached;
-  if (promptTokens !== undefined) accumulator.inputTokens = promptTokens - (cached ?? 0);
+  if (promptTokens !== undefined) {
+    accumulator.inputTokens = promptTokens - (cached ?? 0);
+    /* The raw count, cache included — what Gemini's TPM ceiling is billed on. */
+    accumulator.rawInputTokens = promptTokens;
+  }
   if (answer !== undefined || thoughts !== undefined) {
     accumulator.outputTokens = (answer ?? 0) + (thoughts ?? 0);
   }
@@ -446,7 +459,12 @@ function reduceAnthropic(
   /* A cache write is billed above the input rate and a read far below it. The
      write is folded into ordinary input — the cost line says "≈" — and the read
      is reported apart, because that is the number that moves. */
-  if (input !== undefined) accumulator.inputTokens = input + (created ?? 0);
+  if (input !== undefined) {
+    accumulator.inputTokens = input + (created ?? 0);
+    /* The whole prompt this request processed, cache write and cache read
+       both included — a cache hit still occupies the same request slot. */
+    accumulator.rawInputTokens = input + (created ?? 0) + (read ?? 0);
+  }
   if (read !== undefined) accumulator.cachedInputTokens = read;
   if (output !== undefined) accumulator.outputTokens = output;
 
@@ -487,7 +505,10 @@ function reduceOpenAi(
   const completion = numberAt(event, ['usage', 'completion_tokens']);
 
   if (cached !== undefined) accumulator.cachedInputTokens = cached;
-  if (prompt !== undefined) accumulator.inputTokens = prompt - (cached ?? 0);
+  if (prompt !== undefined) {
+    accumulator.inputTokens = prompt - (cached ?? 0);
+    accumulator.rawInputTokens = prompt;
+  }
   if (completion !== undefined) accumulator.outputTokens = completion;
 
   const text = textAt(event, ['choices', 0, 'delta', 'content']);
@@ -683,10 +704,15 @@ export function retryDelay(attempt: number, retryAfterMs?: number): number {
  *
  * `isRetryable` already says which failures repeating could fix — a 429, a 503,
  * a dropped connection — and which it could not: a 401 is the same 401 every
- * time. What it cannot know is whether the caller has already *seen* part of
- * the answer. Once a delta has been delivered, the words are on screen and a
- * second attempt would write them again underneath the first, so a stream that
- * died mid-sentence is handed back to the seller rather than silently doubled.
+ * time. It also already excludes a DAILY quota (`ModelQuotaError` overrides
+ * `isRetryable` to say so — see `usage.ts` — because that one does not reopen
+ * inside this session, and every retry would be one more request Google's own
+ * counter holds against the project for the same refusal), so nothing here has
+ * to special-case it again. What `isRetryable` cannot know is whether the
+ * caller has already *seen* part of the answer. Once a delta has been
+ * delivered, the words are on screen and a second attempt would write them
+ * again underneath the first, so a stream that died mid-sentence is handed
+ * back to the seller rather than silently doubled.
  */
 export function shouldRetry(
   error: unknown,
@@ -818,6 +844,11 @@ async function attemptStream(options: StreamOptions): Promise<StreamResult> {
 
   resetIdle();
 
+  /* Taken just before dispatch, so a retried attempt's event lands where it
+     actually happened rather than where the whole `streamComplete` call
+     started. */
+  const dispatchedAt = Date.now();
+
   let response: Response;
   try {
     response = await fetch(dialect.url, {
@@ -828,6 +859,8 @@ async function attemptStream(options: StreamOptions): Promise<StreamResult> {
     });
   } catch (error) {
     release();
+    /* Nothing answered — not a request this browser can say it "sent" for the
+       meter's purposes, since it never occupied a slot on the provider side. */
     if (error instanceof DOMException && error.name === 'AbortError') throw abortError();
     throw new ApiError('The model could not be reached', { kind: 'network' });
   }
@@ -840,17 +873,51 @@ async function attemptStream(options: StreamOptions): Promise<StreamResult> {
     /* A provider that says when to come back is believed — see `retryDelay`. */
     const retryAfterMs = readRetryAfter(response.headers);
 
+    if (response.status === 429) {
+      /* Gemini's quota body says which axis ran out, and for a daily one that
+         no wait inside this request will reopen it — see `readQuotaFailure`. */
+      const quota = readQuotaFailure(detail);
+
+      recordModelRequest({
+        provider: settings.provider,
+        model: settings.model,
+        at: dispatchedAt,
+        inputTokens: null,
+        outcome: 'limited',
+        ...(quota === null ? {} : { quota }),
+      });
+
+      const effectiveRetryAfterMs = retryAfterMs ?? quota?.retryAfterMs ?? undefined;
+      throw new ModelQuotaError(detail.slice(0, 300) || `The model returned ${response.status}`, {
+        quota,
+        ...(effectiveRetryAfterMs === undefined ? {} : { retryAfterMs: effectiveRetryAfterMs }),
+      });
+    }
+
+    /* A rejected key never occupied a slot in any project's quota — see
+       `isKeyRejection` and the "what counts as a request" section of
+       `usage.ts`'s header — so it is not recorded at all, rather than
+       counted as a `'failed'` request that would push every gauge toward a
+       false "exhausted". */
+    if (!isKeyRejection(response.status, detail)) {
+      recordModelRequest({
+        provider: settings.provider,
+        model: settings.model,
+        at: dispatchedAt,
+        inputTokens: null,
+        outcome: 'failed',
+      });
+    }
+
     throw new ApiError(detail.slice(0, 300) || `The model returned ${response.status}`, {
       kind:
         response.status === 401
           ? 'unauthorized'
           : response.status === 403
             ? 'forbidden'
-            : response.status === 429
-              ? 'rateLimited'
-              : response.status >= 500
-                ? 'server'
-                : 'client',
+            : response.status >= 500
+              ? 'server'
+              : 'client',
       status: response.status,
       ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
     });
@@ -866,9 +933,15 @@ async function attemptStream(options: StreamOptions): Promise<StreamResult> {
     inputTokens: 0,
     outputTokens: 0,
     cachedInputTokens: 0,
+    rawInputTokens: undefined,
   };
 
   let buffer = '';
+  /* Set only once the whole SSE stream has been read to its natural end —
+     everything else, including a cancel, leaves it `false` and the event
+     below reports the request as `'failed'`, matching Google's own counter,
+     which counts a request it answered and then lost the connection to. */
+  let completed = false;
 
   try {
     for (;;) {
@@ -915,12 +988,22 @@ async function attemptStream(options: StreamOptions): Promise<StreamResult> {
         }
       }
     }
+    completed = true;
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw abortError();
     throw new ApiError('The stream ended unexpectedly', { kind: 'network' });
   } finally {
     release();
     reader.releaseLock();
+    /* One event per request that got this far, whatever happened after —
+       the provider already spent the round trip on it. */
+    recordModelRequest({
+      provider: settings.provider,
+      model: settings.model,
+      at: dispatchedAt,
+      inputTokens: accumulator.rawInputTokens ?? null,
+      outcome: completed ? 'ok' : 'failed',
+    });
   }
 
   return {

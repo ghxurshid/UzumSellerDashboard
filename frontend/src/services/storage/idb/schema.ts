@@ -690,6 +690,8 @@ export const KV_KEYS = {
   pins: 'pins',
   /** Standing conditions the seller asked to be told about — `insights/alerts.ts`. */
   alerts: 'alerts',
+  /** Requests sent to the AI provider in about the last day, for the quota meter — `store/modelUsage.store.ts`. */
+  modelUsage: 'model_usage',
 } as const;
 
 export type KvKey = (typeof KV_KEYS)[keyof typeof KV_KEYS];

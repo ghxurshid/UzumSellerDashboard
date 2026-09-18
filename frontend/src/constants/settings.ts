@@ -107,14 +107,75 @@ export const AI_PROVIDERS = [
     id: 'gemini',
     label: 'Gemini',
     icon: 'diamond',
-    meta: '3.6 Flash · 3.5 Flash',
+    meta: '3.8 Flash · 2.5 Flash-Lite',
     status: 'operational',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     defaultModel: 'gemini-3.6-flash',
+    /**
+     * Every Gemini model that can hold a text chat through `generateContent`
+     * on the free tier with a non-zero limit on all three axes, with the
+     * limits AI Studio's rate-limit page stated as of `GEMINI_LIMITS_AS_OF`
+     * below: a seller's own project, per model, free tier. TPM counts input
+     * tokens only; RPD resets at midnight Pacific. Ids are checked against
+     * ai.google.dev/gemini-api/docs/models.
+     *
+     * Left out on purpose: models whose free-tier limit is 0 on some axis (2
+     * Flash, 2 Flash-Lite, 2.5 Pro, 3.1 Pro, and every image/video/music/Omni
+     * model), and models with a real limit that still cannot hold a text chat
+     * here — TTS, Live/Transcribe, embeddings, the Antigravity and Deep
+     * Research agents, Robotics-ER, and Gemma 4 (also missing from Google's
+     * own models page, and its 16K TPM would not survive two Copilot rounds).
+     *
+     * These are a snapshot, not a live read: if the project's tier changes, a
+     * Gemini 429 overrides the axis it names at runtime — see `summarizeUsage`
+     * in `services/ai/usage.ts`.
+     */
     models: [
-      { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
-      { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-      { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite' },
+      {
+        id: 'gemini-3.8-flash',
+        label: 'Gemini 3.8 Flash',
+        limits: { rpm: 5, tpm: 250_000, rpd: 20 },
+      },
+      {
+        id: 'gemini-3.7-flash',
+        label: 'Gemini 3.7 Flash',
+        limits: { rpm: 5, tpm: 250_000, rpd: 20 },
+      },
+      {
+        id: 'gemini-3.6-flash',
+        label: 'Gemini 3.6 Flash',
+        limits: { rpm: 5, tpm: 250_000, rpd: 20 },
+      },
+      {
+        id: 'gemini-3.5-flash',
+        label: 'Gemini 3.5 Flash',
+        limits: { rpm: 5, tpm: 250_000, rpd: 20 },
+      },
+      {
+        id: 'gemini-3.5-flash-lite',
+        label: 'Gemini 3.5 Flash-Lite',
+        limits: { rpm: 15, tpm: 250_000, rpd: 500 },
+      },
+      {
+        id: 'gemini-3.1-flash-lite',
+        label: 'Gemini 3.1 Flash-Lite',
+        limits: { rpm: 15, tpm: 250_000, rpd: 500 },
+      },
+      {
+        id: 'gemini-3-flash-preview',
+        label: 'Gemini 3 Flash (preview)',
+        limits: { rpm: 5, tpm: 250_000, rpd: 20 },
+      },
+      {
+        id: 'gemini-2.5-flash',
+        label: 'Gemini 2.5 Flash',
+        limits: { rpm: 5, tpm: 250_000, rpd: 20 },
+      },
+      {
+        id: 'gemini-2.5-flash-lite',
+        label: 'Gemini 2.5 Flash-Lite',
+        limits: { rpm: 10, tpm: 250_000, rpd: 20 },
+      },
     ],
   },
   {
@@ -184,6 +245,15 @@ export const AI_PROVIDER_IDS: readonly AiProvider[] = AI_PROVIDERS.map(
 );
 
 export const DEFAULT_AI_PROVIDER: AiProvider = 'gemini';
+
+/**
+ * The one date the Gemini `limits` below are checked against — named once so
+ * the quota panel and the model picker can say it in the seller's own
+ * language instead of it being typed into three dictionary strings that would
+ * silently go stale the next time this catalogue is updated. Update this
+ * alongside the `models` list, not instead of it.
+ */
+export const GEMINI_LIMITS_AS_OF = '2026-09-18';
 
 /** The catalogue entry for a provider; falls back to the default provider. */
 export function findProvider(id: AiProvider): AiProviderDefinition {

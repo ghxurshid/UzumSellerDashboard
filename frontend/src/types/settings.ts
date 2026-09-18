@@ -102,9 +102,30 @@ export interface SettingsEnvelope {
 
 /* ── provider catalogue ─────────────────────────────────────────────────── */
 
+/**
+ * A model's published rate limits, as the provider's console states them for the
+ * project's current tier. All three are positive integers. A model whose limit is
+ * zero on any axis cannot answer at all and is not offered in the catalogue.
+ *
+ * They are a claim about the provider's project quota, which every client of
+ * that key draws on — not about this browser alone. A meter built on them can
+ * count only the requests this browser sent, so it describes an upper bound on
+ * what is left, never the exact remainder.
+ */
+export interface ModelRateLimits {
+  /** Requests per minute. */
+  readonly rpm: number;
+  /** Input tokens per minute — Gemini counts the prompt, not the answer. */
+  readonly tpm: number;
+  /** Requests per day; the day ends at midnight Pacific time. */
+  readonly rpd: number;
+}
+
 export interface AiModelOption {
   readonly id: string;
   readonly label: string;
+  /** Published limits, where the provider publishes them per model. Absent means unknown — never "unlimited". */
+  readonly limits?: ModelRateLimits;
 }
 
 export interface AiProviderDefinition {

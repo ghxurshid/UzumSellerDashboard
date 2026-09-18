@@ -1,7 +1,7 @@
 # Savdo Copilot — Funksional spetsifikatsiya
 
-**Versiya:** 2.5.0
-**Hujjat sanasi:** 2026-09-14
+**Versiya:** 2.6.0
+**Hujjat sanasi:** 2026-09-18
 **Maqsad:** Mahsulot oddiy foydalanuvchi — Uzum Market sotuvchisi — nuqtai nazaridan
 nima qilishini ifodalash. Bu yerda texnik yechim yo'q; u
 [TECHNICAL-SPECIFICATION.md](./TECHNICAL-SPECIFICATION.md) da.
@@ -221,7 +221,7 @@ xarajatlar, sof foyda.
 | Bo'lim | Nima sozlanadi |
 |---|---|
 | **API** | Uzum tokeni, asosiy URL, ulanishni tekshirish |
-| **AI** | Sun'iy intellekt provayderi, model, kalit (ixtiyoriy) |
+| **AI** | Sun'iy intellekt provayderi, model (Gemini uchun — qolgan limit ko'rsatkichi bilan), kalit (ixtiyoriy) |
 | **Ma'lumotlar** | Yangilik oynasi, saqlangan hajm, do'kon bo'yicha qamrov, tarixni davom ettirish, o'chirish |
 | **Umumiy** | Til (o'zbek/rus/ingliz), mavzu (yorug'/qorong'i), raqam formati |
 | **Klaviatura** | Tezkor tugmalar ro'yxati |
@@ -229,6 +229,19 @@ xarajatlar, sof foyda.
 **Ma'lumotlar** bo'limi alohida ahamiyatli: u har bir do'kon uchun **qaysi
 davrlar yuklangani** ni chizma ko'rinishida ko'rsatadi. Foydalanuvchi qayerda
 teshik borligini ko'radi va uni to'ldirishni so'rashi mumkin.
+
+**AI** bo'limida Gemini provayderi tanlanganda model ro'yxatining o'zi ham
+qo'shimcha narsa aytadi: har bir model nomi ostida o'sha modelning qancha
+limiti qolgani — daqiqadagi so'rov, daqiqadagi token va kunlik so'rov
+sonidan eng tor joyi — qisqa chiziq bilan ko'rinadi. Tanlangan model uchun
+esa alohida "Qolgan limit" panelida uchala o'lchov alohida-alohida chiziq,
+son va qachon tiklanishi bilan chiqadi. Bu raqamlar faqat **shu brauzerda**
+yuborilgan so'rovlardan hisoblanadi — boshqa qurilma, boshqa brauzer yoki
+bir loyihaning boshqa kaliti ko'rinmaydi, shuning uchun ular "qolganining
+yuqori chegarasi", aniq qoldiq emas — va Google AI Studio'ning bepul tarif
+jadvalidan olingan, manba va sana panel ostida yozilgan. Boshqa provayderlar
+va Gemini'ning erkin matn bilan kiritiladigan modeli uchun bunday ko'rsatkich
+yo'q.
 
 ---
 
@@ -282,14 +295,22 @@ boshqa raqamlar kabi formatlanadi (so'm, foiz, guruhlash). Model noto'g'ri
 shakldagi blok yuborsa, u ko'rsatilmaydi va modelga sababi aytilib, bir marta
 qayta yuborish so'raladi.
 
-**Provayder javob bermasa.** AI provayder band bo'lsa (`503`), so'rov chegarasi
-oshsa yoki ulanish uzilsa, panel so'rovni o'zi uch marta takrorlaydi — har
-safar oldingisidan uzunroq kutib, provayder aytgan vaqtni hisobga olib. Shunda
-ham bo'lmasa, javob ostida sabab va **Davom ettirish** tugmasi chiqadi: bosilsa,
-javob boshidan emas, to'xtagan bosqichidan davom etadi — o'qib bo'lingan
-so'rovlar qayta o'qilmaydi va o'sha bosqichgacha yozilgan matn joyida qoladi.
-Kalit noto'g'ri bo'lsa yoki so'rov rad etilsa tugma chiqmaydi: uni qayta bosish
-hech narsani o'zgartirmaydi.
+**Provayder javob bermasa.** AI provayder band bo'lsa (`503`), daqiqalik so'rov
+chegarasi oshsa yoki ulanish uzilsa, panel so'rovni o'zi uch marta takrorlaydi —
+har safar oldingisidan uzunroq kutib, provayder aytgan vaqtni hisobga olib.
+Shunda ham bo'lmasa, javob ostida sabab va **Davom ettirish** tugmasi chiqadi:
+bosilsa, javob boshidan emas, to'xtagan bosqichidan davom etadi — o'qib
+bo'lingan so'rovlar qayta o'qilmaydi va o'sha bosqichgacha yozilgan matn joyida
+qoladi. Kalit noto'g'ri bo'lsa yoki so'rov rad etilsa tugma chiqmaydi: uni
+qayta bosish hech narsani o'zgartirmaydi.
+
+**Kunlik chegara — alohida holat.** Gemini modellarida kunlik so'rov soni
+tugasa, yuqoridagi qoida ishlamaydi: panel qayta urinmaydi, chunki bu chegara
+faqat ertasi kuni (Tinch okean vaqti bo'yicha yarim tunda) ochiladi — qayta
+so'rash faqat bir xil rad javobini yana bir marta hisoblatib qo'yardi. Buning
+o'rniga javob ostida darhol "ushbu modelning kunlik limiti tugadi — [soat]da
+yangilanadi, Sozlamalarda boshqa modelni tanlash mumkin" degan xabar chiqadi,
+**Davom ettirish** tugmasisiz.
 
 **Yozish amallari.** Model narx yoki qoldiqni o'zi o'zgartirmaydi. U tugma
 qo'yadi — tugmada qaysi route chaqirilishi va xavf darajasi yozilgan — bosishni

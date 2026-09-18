@@ -124,6 +124,23 @@ export function formatDate(value: Date, language: Language): string {
   return formatDay(value.getTime());
 }
 
+/**
+ * `2026-09-18` → `18.09.2026`.
+ *
+ * For a plain calendar date that names no instant — the day a catalogue entry
+ * was last checked against its source, say — rather than a timestamp. The
+ * `formatDay`/`formatClock`/`formatStamp` family converts through `Intl` with
+ * the viewer's configured zone because each formats a specific moment; a bare
+ * calendar date has no moment to convert (a Pacific-vs-Tashkent shift could
+ * even push it a day either way), so this only reformats the digits already
+ * agreed on.
+ */
+export function formatCalendarDate(dateIso: string): string {
+  const [year, month, day] = dateIso.split('-');
+  if (year === undefined || month === undefined || day === undefined) return dateIso;
+  return `${day}.${month}.${year}`;
+}
+
 export function trendOf(value: number): Trend {
   if (value > 0) return 'up';
   if (value < 0) return 'down';
