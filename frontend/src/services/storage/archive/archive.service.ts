@@ -144,11 +144,46 @@ export function recordBackfill(
   return commitBackfill(accountFingerprint(), shopId, ENTITY_TYPES.orderItem, progress);
 }
 
-export function stampSynced(shopId: number, at: number): Promise<SyncMetadataRecord> {
-  return patchMetadata(accountFingerprint(), shopId, ENTITY_TYPES.orderItem, (current) => ({
+/**
+ * When this pair was last read from Uzum, whatever the read brought back.
+ *
+ * `last_synced_at` is stamped by every coverage commit and — since an answer of
+ * "nothing" is still an answer — by a capture that came back empty *and is
+ * believed* (see `trustsEmptyAnswer`) and by a route that definitively refused.
+ * `captured_at` is the older, narrower claim: *a capture is held*. Falling back
+ * to it keeps records written by earlier runs readable, and keeps the two
+ * questions apart: "when did we last ask" decides whether to ask again, "is a
+ * capture held" decides what a screen may show.
+ */
+export function lastReadAt(meta: SyncMetadataRecord): number | null {
+  return meta.last_synced_at ?? meta.captured_at;
+}
+
+/**
+ * Record that this pair was read from Uzum at an instant.
+ *
+ * No rows, no window, no capture — only the instant. It is what a believed empty
+ * answer and a definitive refusal leave behind, so the next question inside the
+ * freshness window does not spend the request again to learn the same thing.
+ *
+ * On a *windowed* entity the stamp also suppresses the settlement-lag unseal for
+ * a freshness window (see `unsealFor` in `sync/lazySync.ts`), so only a run that
+ * actually read the tail may call it — which is what the archive pass does, and
+ * why the snapshot failure paths never name a windowed entity here.
+ */
+export function stampRead(
+  shopId: number,
+  entity: EntityType,
+  at: number,
+): Promise<SyncMetadataRecord> {
+  return patchMetadata(accountFingerprint(), shopId, entity, (current) => ({
     ...current,
     last_synced_at: at,
   }));
+}
+
+export function stampSynced(shopId: number, at: number): Promise<SyncMetadataRecord> {
+  return stampRead(shopId, ENTITY_TYPES.orderItem, at);
 }
 
 /* ── the generic write paths ────────────────────────────────────────────── */
@@ -245,6 +280,49 @@ export function mergeWindow(
 }
 
 /**
+ * Snapshot entities whose empty answer is only believed once a capture is held.
+ *
+ * Products and their SKUs, and nothing else. The stamp an empty answer leaves
+ * suppresses every re-read of that table for a whole freshness window — an hour
+ * by default, twelve at the widest setting the seller can choose — so what is
+ * being decided here is which collections may be trusted when they say
+ * "nothing", not how many rows came back.
+ *
+ * For most of them the trust is right and is the reason the stamp exists: "this
+ * seller has no warehouse returns", "no supply invoices", "no FBS shipments"
+ * are true, common and stable states, no screen misreports anything while they
+ * hold, and re-asking spends one request per empty collection on every single
+ * question.
+ *
+ * The catalogue is where the same reasoning fails. A shop that sells anything
+ * has products, so an empty answer there is almost never the shop's state — it
+ * is a rate limit, a route that blinked, or a response envelope `paginate` did
+ * not recognise, all three of which arrive as an empty list. Believing it would
+ * blank the products and the stock screens for the whole window with nothing
+ * trying again, which is the one failure the freshness gate must not be able to
+ * cause. So the catalogue believes an empty answer only when a capture is
+ * already held: a seller who has genuinely never listed a product pays one
+ * cheap request per read until they list one — rare, and self-correcting the
+ * moment they do — while a catalogue route that blinked is retried at once, as
+ * it was before this gate existed.
+ */
+const EMPTY_NEEDS_PRIOR_CAPTURE: readonly EntityType[] = [
+  ENTITY_TYPES.product,
+  ENTITY_TYPES.productSku,
+];
+
+/**
+ * Whether "nothing came back" is an answer this entity may be stamped on.
+ *
+ * Pure, so the policy can be read and tested without a database: `capturedAt`
+ * is the entity's `captured_at`, null when no capture has ever been held.
+ */
+export function trustsEmptyAnswer(entity: EntityType, capturedAt: number | null): boolean {
+  if (!EMPTY_NEEDS_PRIOR_CAPTURE.includes(entity)) return true;
+  return capturedAt !== null;
+}
+
+/**
  * Replace a snapshot entity's rows wholesale.
  *
  * The delete comes first and is not optional: a product that has left the
@@ -258,6 +336,15 @@ export function mergeWindow(
  * nothing is far more often rate-limited or briefly broken than it is a seller
  * who deleted every product, and wiping a good capture on that evidence is not
  * a recoverable mistake.
+ *
+ * It is usually still *stamped* as read, though. A seller with no warehouse
+ * returns, no supply invoices or no FBS shipments gets an honest empty answer
+ * from those routes on every run, and leaving the record untouched made the
+ * freshness gate find nothing, re-ask, and spend one request per empty
+ * collection on every single read. The stamp says "asked, and the answer was
+ * nothing"; the rows and `captured_at` stay exactly as they were, for the reason
+ * above. Which entities may make that claim is decided by
+ * `trustsEmptyAnswer` — see the reasoning there.
  */
 export async function commitSnapshot(
   shopId: number,
@@ -265,7 +352,11 @@ export async function commitSnapshot(
   rows: readonly StoredRecord[],
   at: number,
 ): Promise<MergeOutcome> {
-  if (rows.length === 0) return EMPTY_MERGE;
+  if (rows.length === 0) {
+    const capturedAt = (await readMeta(shopId, entity)).captured_at;
+    if (trustsEmptyAnswer(entity, capturedAt)) await stampRead(shopId, entity, at);
+    return EMPTY_MERGE;
+  }
 
   await deleteEntity(shopId, entity);
   const outcome = await write({ shopId, entity, rows, window: null, at, capturedAt: at });
@@ -286,6 +377,11 @@ function forgetCapture(shopId: number, entity: EntityType): Promise<unknown> {
     ...current,
     rows: 0,
     captured_at: null,
+    /* The read stamp goes with it. The freshness gate consults it first, so a
+       stamp surviving a replacement that emptied the table would skip the retry
+       for a whole freshness window and leave the screen empty with nothing
+       trying again — the very failure clearing `captured_at` exists to avoid. */
+    last_synced_at: null,
   }));
 }
 
@@ -764,26 +860,30 @@ export async function snapshotUsage(shopIds: readonly number[]): Promise<Snapsho
 /**
  * Drop the snapshot captures, keeping the settled ledger.
  *
- * `captured_at` is reset with the rows, and that is the load-bearing half: the
- * capture step skips an entity whose stamp is younger than the freshness
- * window, so clearing rows without clearing the stamp would leave the tables
- * empty and every re-capture skipped until the window expired.
+ * The read stamps are reset with the rows, and that is the load-bearing half:
+ * the capture step skips an entity read inside the freshness window, so
+ * clearing rows without clearing the stamps would leave the tables empty and
+ * every re-capture skipped until the window expired.
  */
 export async function clearSnapshots(shopIds: readonly number[]): Promise<void> {
   const account = accountFingerprint();
 
   for (const shopId of shopIds) {
     for (const entity of SNAPSHOT_ENTITIES) {
-      /* The stamp goes first, and the order is the whole safety of this pair.
+      /* The stamps go first, and the order is the whole safety of this pair.
          Deleting first and failing to reach the patch would leave an empty
-         table under a recent `captured_at`, which `isFresh` reads as "already
-         captured" — so nothing would refill it until the window expired. The
-         other way round the worst case is a stamp saying nothing is held while
-         rows still are, and that only costs one re-capture. */
+         table under a recent stamp, which `isFresh` reads as "already read" —
+         so nothing would refill it until the window expired. The other way
+         round the worst case is a record saying nothing is held while rows
+         still are, and that only costs one re-capture.
+
+         Both stamps are cleared, because the freshness gate consults the read
+         instant first and `captured_at` only as a fallback. */
       await patchMetadata(account, shopId, entity, (current) => ({
         ...current,
         rows: 0,
         captured_at: null,
+        last_synced_at: null,
       }));
       await deleteEntity(shopId, entity);
     }

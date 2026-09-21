@@ -108,6 +108,51 @@ export function unseal(ranges: Coverage, now: number, lagMs: number): Coverage {
   );
 }
 
+/**
+ * Treat the stretch between the newest covered instant and the present as held.
+ *
+ * A window that ends at "now" can never be covered by a record written a moment
+ * ago: coverage stops at the instant of the last read, so `[lastRead, now]` is
+ * always a hole and a question asked every minute would fetch that sliver every
+ * minute. The Copilot asks exactly that window on every question, which is how a
+ * freshness window comes to be defeated by arithmetic rather than by policy.
+ *
+ * `freshMs` is how long the newest covered instant may stand in for the present.
+ * Inside it the live edge is sealed and nothing is requested; past it the hole is
+ * planned as it always was and the read happens — which is what makes the
+ * refresh periodic rather than never.
+ *
+ * Only the newest range is extended. A hole *between* two covered stretches is a
+ * read that failed earlier and stays a hole however recent the record is, and an
+ * empty record stays empty — a period this machine has never held is still
+ * fetched on demand.
+ *
+ * ## The condition this function is safe under
+ *
+ * **`freshMs` must stay strictly below the settlement lag.** This function and
+ * `unseal` act on the same end of the record in opposite directions, and the
+ * planner applies them in that order: `unseal` drops the trailing lag, leaving
+ * the newest covered instant at `now - lagMs`, and this function would close
+ * that opening again the moment `freshMs` could reach back that far. The seal
+ * applies only while `outer.toMs >= now - freshMs`, so with `outer.toMs` at
+ * `now - lagMs` it applies exactly when `freshMs >= lagMs` — at which point the
+ * settlement lag is silently switched off and the provisional fortnight is never
+ * re-read. Every freshness window the seller can choose is far shorter than
+ * `SETTLEMENT_LAG_MS`, so the two never meet; the inequality is asserted in
+ * `sync/planning.test.ts` rather than left to review, because a future option of
+ * "one month" would break it without touching this file.
+ */
+export function sealLiveEdge(ranges: Coverage, now: number, freshMs: number): Coverage {
+  const covered = normalize(ranges);
+  if (freshMs <= 0) return covered;
+
+  const outer = bounds(covered);
+  if (outer === null) return covered;
+  if (outer.toMs < now - freshMs) return covered;
+
+  return add(covered, { fromMs: outer.toMs, toMs: now });
+}
+
 /** Milliseconds actually covered, holes excluded. */
 export function span(ranges: Coverage): number {
   return normalize(ranges).reduce((sum, range) => sum + (range.toMs - range.fromMs), 0);

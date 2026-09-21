@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { add, bounds, chunk, clip, density, missing, normalize, span, unseal } from './coverage';
+import {
+  add,
+  bounds,
+  chunk,
+  clip,
+  density,
+  missing,
+  normalize,
+  sealLiveEdge,
+  span,
+  unseal,
+} from './coverage';
 
 /**
  * The interval algebra, which is the one place a bug is unrecoverable.
@@ -138,6 +149,63 @@ describe('unseal', () => {
     expect(missing({ fromMs: d(1), toMs: d(10) }, record)).toEqual([
       { fromMs: d(8), toMs: d(10) },
     ]);
+  });
+});
+
+describe('sealLiveEdge', () => {
+  const minute = 60_000;
+  const now = d(10);
+  /** An hour, the freshness window a `sync: true` read is served from disk for. */
+  const fresh = 60 * minute;
+
+  it('closes the stretch between a recent read and the present', () => {
+    /* The case the rule exists for: coverage stops at the instant of the last
+       read, so a window ending at "now" is otherwise short by that sliver on
+       every question. */
+    const sealed = sealLiveEdge([{ fromMs: d(1), toMs: now - 5 * minute }], now, fresh);
+
+    expect(sealed).toEqual([{ fromMs: d(1), toMs: now }]);
+    expect(missing({ fromMs: d(1), toMs: now }, sealed)).toEqual([]);
+  });
+
+  it('leaves the live edge open once the record is older than the window', () => {
+    const ranges = [{ fromMs: d(1), toMs: now - 90 * minute }];
+
+    expect(sealLiveEdge(ranges, now, fresh)).toEqual(ranges);
+    expect(missing({ fromMs: d(1), toMs: now }, sealLiveEdge(ranges, now, fresh))).toEqual([
+      { fromMs: now - 90 * minute, toMs: now },
+    ]);
+  });
+
+  it('does not close a hole between two covered stretches', () => {
+    /* A hole in the middle is a read that failed earlier, not the live edge —
+       however recent the record is, it must still be planned. */
+    const sealed = sealLiveEdge(
+      [
+        { fromMs: d(1), toMs: d(4) },
+        { fromMs: d(6), toMs: now - minute },
+      ],
+      now,
+      fresh,
+    );
+
+    expect(missing({ fromMs: d(1), toMs: now }, sealed)).toEqual([{ fromMs: d(4), toMs: d(6) }]);
+  });
+
+  it('holds nothing when nothing is held', () => {
+    /* A machine that has never stored this shop must still fetch the period
+       the seller asked for, freshness window or not. */
+    expect(sealLiveEdge([], now, fresh)).toEqual([]);
+  });
+
+  it('seals nothing when the window is zero — what `force` passes', () => {
+    const ranges = [{ fromMs: d(1), toMs: now - minute }];
+    expect(sealLiveEdge(ranges, now, 0)).toEqual(ranges);
+  });
+
+  it('is unchanged by coverage that already reaches the present', () => {
+    const ranges = [{ fromMs: d(1), toMs: now }];
+    expect(sealLiveEdge(ranges, now, fresh)).toEqual(ranges);
   });
 });
 

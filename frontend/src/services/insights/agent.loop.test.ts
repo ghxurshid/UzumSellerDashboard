@@ -3,12 +3,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StreamOptions } from '@/services/ai/stream';
 import type { AiSettings } from '@/types/settings';
 
-import type { Capability } from './agent';
+import type { AgentSession, Capability } from './agent';
 import type { Block } from './blocks';
+import type * as Digest from './digest';
 import type { ToolContext } from './toolkit';
 
 const { streamComplete } = vi.hoisted(() => ({ streamComplete: vi.fn() }));
 vi.mock('@/services/ai/stream', () => ({ streamComplete }));
+
+/* The only part of the digest the loop reads for itself. Everything else in
+   that module is the real thing, because the toolkit runs on it. */
+const { freshnessNote } = vi.hoisted(() => ({ freshnessNote: vi.fn() }));
+vi.mock('./digest', async (importOriginal) => ({
+  ...(await importOriginal<typeof Digest>()),
+  freshnessNote,
+}));
 
 const { createSession, runAgent } = await import('./agent');
 
@@ -68,16 +77,20 @@ async function ask(
     readonly granted?: Set<Capability>;
     readonly budget?: { readonly rounds: number; readonly calls: number };
     readonly onRun?: () => void;
+    /** A session from an attempt that stopped — the resume path. */
+    readonly session?: AgentSession;
   } = {},
 ) {
   answers(...turns);
 
   const blocks: Block[] = [];
-  const session = createSession({
-    question: 'oxirgi 7 kunlik sotuv qanday?',
-    history: [],
-    ...(options.carried === undefined ? {} : { carried: options.carried }),
-  });
+  const session =
+    options.session ??
+    createSession({
+      question: 'oxirgi 7 kunlik sotuv qanday?',
+      history: [],
+      ...(options.carried === undefined ? {} : { carried: options.carried }),
+    });
 
   const outcome = await runAgent({
     settings: SETTINGS,
@@ -92,14 +105,21 @@ async function ask(
     budget: options.budget ?? { rounds: 1, calls: 1 },
   });
 
-  return { blocks, outcome };
+  return { blocks, outcome, session };
 }
 
 const sentMessages = (call: number): string =>
   JSON.stringify((streamComplete.mock.calls[call]?.[0] as StreamOptions).request.messages);
 
+const sentSystem = (call: number): string =>
+  (streamComplete.mock.calls[call]?.[0] as StreamOptions).request.system;
+
 beforeEach(() => {
   streamComplete.mockReset();
+  freshnessNote.mockReset();
+  /* Nothing to say about freshness unless a test says otherwise — the shape
+     every other test in this file was written against. */
+  freshnessNote.mockResolvedValue('');
 });
 
 describe('a round that lost a line', () => {
@@ -231,6 +251,68 @@ describe('documents a thread already holds', () => {
     });
 
     expect(sentMessages(1)).toContain('printed under OPENED DOCUMENTS');
+  });
+});
+
+describe('how old this machine’s data is', () => {
+  const NOTE = [
+    '[freshness] now 14:12 UTC · stored here, auto-refreshes past 60min',
+    'sales 14:08 · returns never',
+  ].join('\n');
+
+  it('ends the system prompt, behind the documents the thread holds', async () => {
+    freshnessNote.mockResolvedValue(NOTE);
+    await ask(['{"kind":"text","text":"Tayyor."}'], { carried: new Set(['widgets']) });
+
+    const system = sentSystem(0);
+    /* Last, so everything a prompt cache can serve stays in front of the one
+       part that moves between questions. */
+    expect(system.endsWith(`\n\n${NOTE}`)).toBe(true);
+    expect(system.indexOf('OPENED DOCUMENTS')).toBeLessThan(system.indexOf('[freshness]'));
+  });
+
+  it('adds nothing when there is nothing to say', async () => {
+    await ask(['{"kind":"text","text":"Tayyor."}'], { granted: new Set() });
+
+    expect(sentSystem(0)).toBe('system');
+  });
+
+  it('is read once and reused by the run that resumes', async () => {
+    freshnessNote.mockResolvedValueOnce(NOTE).mockResolvedValue('[freshness] a later sync');
+
+    const session = createSession({ question: 'sotuv qanday?', history: [] });
+    streamComplete.mockRejectedValueOnce(new Error('network'));
+    await expect(
+      runAgent({
+        settings: SETTINGS,
+        system: 'system',
+        session,
+        context: CONTEXT,
+        language: 'uz',
+        granted: new Set(['tools', 'widgets']),
+        signal: new AbortController().signal,
+        onBlocks: () => {},
+        onRun: () => {},
+        budget: { rounds: 1, calls: 1 },
+      }),
+    ).rejects.toThrow('network');
+
+    await ask(['{"kind":"text","text":"Tayyor."}'], { session });
+
+    expect(freshnessNote).toHaveBeenCalledTimes(1);
+    /* The transcript the model is continuing was written against these stamps,
+       so a sync in between must not rewrite them under it. */
+    expect(sentSystem(1)).toContain(NOTE);
+    expect(sentSystem(1)).not.toContain('a later sync');
+  });
+
+  it('answers without the block when freshness cannot be read', async () => {
+    freshnessNote.mockRejectedValue(new Error('idb closed'));
+
+    const { blocks } = await ask(['{"kind":"text","text":"Tayyor."}'], { granted: new Set() });
+
+    expect(blocks).toHaveLength(1);
+    expect(sentSystem(0)).toBe('system');
   });
 });
 

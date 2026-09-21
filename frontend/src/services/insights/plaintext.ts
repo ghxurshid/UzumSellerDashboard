@@ -39,6 +39,20 @@ export function isoMinute(at: number): string {
 }
 
 /**
+ * A freshness stamp: `14:08` UTC when `at` falls on the same UTC day as `now`,
+ * its date otherwise, and `never` when nothing has been read.
+ *
+ * Absolute rather than relative on purpose — "5 minutes ago" is a different
+ * string on every request even when nothing has synced, which is exactly the
+ * kind of change that defeats a provider's prompt cache. This stays the same
+ * text across an entire UTC day of otherwise-idle questions.
+ */
+export function freshStamp(at: number | null, now: number): string {
+  if (at === null) return 'never';
+  return isoDay(at) === isoDay(now) ? new Date(at).toISOString().slice(11, 16) : isoDay(at);
+}
+
+/**
  * A day the model named, as an instant.
  *
  * Whole days in UTC, both ends included: `to` resolves to the last millisecond

@@ -16,6 +16,7 @@ import {
   type ResolvedAction,
 } from './actions';
 import type { Block } from './blocks';
+import { freshnessNote } from './digest';
 import { formatChange, formatFigure } from './figures';
 import {
   createBlockStream,
@@ -26,7 +27,7 @@ import {
   type Harvest,
   type Rejection,
 } from './ndjson';
-import { withOpenedDocuments } from './prompt';
+import { withDataFreshness, withOpenedDocuments } from './prompt';
 import {
   describeToolkit,
   nativeToolSchemas,
@@ -56,6 +57,7 @@ import { WIDGET_GUIDE } from './widgets';
  * was not asked for.
  *
  *     base system prompt          identity, boundaries, "ask for what you need"
+ *       + data freshness          how old this machine's rows are, once per question
  *       ↳ open the toolkit        the catalogue, once per thread
  *       ↳ call a lookup           run against the archive, answered with data
  *       ↳ open the widget guide   how to draw, once per thread
@@ -230,6 +232,18 @@ export interface AgentSession {
    * resumed run must not print it a second time in the system prompt.
    */
   readonly carried: ReadonlySet<Capability>;
+  /**
+   * How old this machine's data was when the question was asked.
+   *
+   * Frozen for the question, for the reason `carried` is: the transcript the
+   * model already holds was written against these stamps. A resumed run that
+   * read them again would hand the model a block describing a sync that
+   * happened after the sentences it is being asked to continue — so "is this
+   * current" would have two answers inside one turn. Read on the first round
+   * that needs it; `null` is "not read yet", `''` is a read with nothing to
+   * say, and both mean the prompt ends where it did before.
+   */
+  freshness: string | null;
   readonly routes: Set<string>;
   /**
    * Lookups already answered during this question.
@@ -284,6 +298,7 @@ export function createSession(input: {
   return {
     messages: [...input.history, { role: 'user', content: input.question }],
     carried: new Set(input.carried ?? []),
+    freshness: null,
     routes: new Set(),
     answered: new Map(),
     round: 0,
@@ -374,6 +389,23 @@ function checkActions(
   return kept;
 }
 
+/**
+ * How old this machine's data is, or nothing.
+ *
+ * The note is read from `sync_metadata` and sends no request, but it is still a
+ * database read on the path of a question the seller is waiting for. A failure
+ * there costs one sentence about staleness; throwing would cost the answer. So
+ * it is swallowed: the model is left saying nothing about freshness, which is
+ * exactly what it did before this block existed.
+ */
+async function readFreshness(context: ToolContext): Promise<string> {
+  try {
+    return await freshnessNote(context.scope, context.now);
+  } catch {
+    return '';
+  }
+}
+
 /* ── the loop ───────────────────────────────────────────────────────────── */
 
 export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
@@ -382,17 +414,26 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
 
   const native = supportsNativeTools(options.settings.provider);
 
+  /* Read once per question and kept on the session, so the run resumed after a
+     failure continues its transcript against the stamps it started with. */
+  session.freshness ??= await readFreshness(options.context);
+
   /* Documents granted by an earlier question, printed where the model can see
      them. The order is fixed so the prefix stays byte-identical between
-     questions and a provider's prompt cache can serve it. */
-  const system = withOpenedDocuments(
-    options.system,
-    (['tools', 'widgets'] as const)
-      .filter((capability) => session.carried.has(capability))
-      .map((capability) => ({
-        name: capability === 'tools' ? 'TOOLKIT' : 'WIDGET GUIDE',
-        text: capabilityDocument(capability, options.context),
-      })),
+     questions and a provider's prompt cache can serve it — which is also why
+     the freshness block goes behind them rather than in the prompt proper: it
+     is the only part that moves, and last is where moving is cheapest. */
+  const system = withDataFreshness(
+    withOpenedDocuments(
+      options.system,
+      (['tools', 'widgets'] as const)
+        .filter((capability) => session.carried.has(capability))
+        .map((capability) => ({
+          name: capability === 'tools' ? 'TOOLKIT' : 'WIDGET GUIDE',
+          text: capabilityDocument(capability, options.context),
+        })),
+    ),
+    session.freshness,
   );
 
   /**

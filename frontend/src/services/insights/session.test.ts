@@ -51,4 +51,12 @@ describe('createSession', () => {
     expect(session.answered.size).toBe(0);
     expect(session.carried.size).toBe(0);
   });
+
+  it('holds no freshness block until a run reads one', () => {
+    const session = createSession({ question: 'nima?', history: [] });
+
+    /* Null rather than empty: the run tells the two apart, and an empty read
+       must not be re-read on every resumed attempt. */
+    expect(session.freshness).toBeNull();
+  });
 });

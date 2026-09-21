@@ -493,11 +493,11 @@ const TUPLES = {
      panel. The store is gone; the keys are kept because they are referenced by
      name across the settings screen, but every string now describes what the
      panel actually measures: the snapshot captures. */
-  freshLbl: ['Refresh live data every', 'Обновлять живые данные каждые', "Jonli ma'lumotni yangilash"],
+  freshLbl: ['Refresh from Uzum every', 'Запрашивать Uzum заново каждые', "Uzum'dan qayta so'rash oralig'i"],
   freshHint: [
-    'Catalogue, stock and invoices are served from this device until this long has passed. Settled sales and orders are never governed by it — they are held by period instead.',
-    'Каталог, остатки и накладные отдаются с этого устройства, пока не пройдёт это время. Закрытых продаж и заказов это не касается — они хранятся по периодам.',
-    "Katalog, qoldiq va nakladnoylar shu vaqt o'tguncha shu qurilmadan beriladi. Yakunlangan sotuv va buyurtmalarga bu tegishli emas — ular davrlar bo'yicha saqlanadi.",
+    'Every reading is served from this device until this long has passed, then the next one goes back to Uzum. Sales and orders already settled for a past period are never re-fetched — a closed period does not change, so this only governs how often the recent stretch and the catalogue, stock and invoice captures are refreshed.',
+    'Все данные отдаются с этого устройства, пока не пройдёт это время, — затем следующий запрос уходит в Uzum. Продажи и заказы, уже закрытые за прошедший период, не запрашиваются заново — закрытый период не меняется, поэтому это касается только того, как часто обновляются недавний отрезок и снимки каталога, остатков и накладных.',
+    "Har bir o'qish shu vaqt o'tguncha shu qurilmadan beriladi, so'ng keyingisi Uzum'ga boradi. O'tgan davr uchun yakunlangan sotuv va buyurtmalar qayta so'ralmaydi — yakunlangan davr o'zgarmaydi, shuning uchun bu faqat so'nggi oraliq hamda katalog, qoldiq va nakladnoy suratlari qanchalik tez-tez yangilanishini belgilaydi.",
   ],
   freshMin: ['{n} min', '{n} мин', '{n} daqiqa'],
   freshHour: ['{n} h', '{n} ч', '{n} soat'],

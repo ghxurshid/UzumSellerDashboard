@@ -156,3 +156,24 @@ export function withOpenedDocuments(
     ...documents.flatMap((document) => ['', `=== ${document.name} ===`, document.text]),
   ].join('\n');
 }
+
+/**
+ * The system prompt with how old this machine's data is, written last.
+ *
+ * Last is the whole of the argument. A model that cannot say whether a figure
+ * is from this hour or from a sync three days ago either guesses or spends a
+ * lookup finding out, so the stamps have to be in front of it — but they are
+ * also the one part of the prompt that moves while the seller works, and a
+ * provider's cache serves a *prefix*, not a diff. Put them above the toolkit
+ * and the widget guide and every question pays to re-read both; put them here,
+ * behind the opened documents, and the identity, the boundaries and the
+ * documents stay byte-identical from one question to the next while the only
+ * thing that changed costs no more than itself.
+ *
+ * The note explains itself — the refresh window, the stamps, and when a read
+ * may be forced to Uzum — so this function adds no words of its own and an
+ * empty note adds no line at all.
+ */
+export function withDataFreshness(system: string, note: string): string {
+  return note.trim() === '' ? system : [system, '', note].join('\n');
+}

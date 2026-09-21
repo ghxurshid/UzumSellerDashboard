@@ -1,10 +1,12 @@
+import type { Scope } from '@/services/api/queryKeys';
+import { readDataFreshness, type TableFreshness } from '@/services/data/freshness';
 import type { FinanceTotals } from '@/services/derive/finance';
 import { LOGISTICS_SOURCE } from '@/services/derive/finance';
 import { flattenSkus } from '@/services/derive/products';
 import type { InvoicesSource } from '@/services/queries/sources';
 import type { Product } from '@/types/domain';
 
-import { clip, compose, dec, num, pairs, table } from './plaintext';
+import { clip, compose, dec, freshStamp, header, num, pairs, table } from './plaintext';
 
 /**
  * A window of the account, written out as data.
@@ -20,6 +22,63 @@ import { clip, compose, dec, num, pairs, table } from './plaintext';
  * money model for one window, and the insights rail, which hands the model the
  * whole digest in one prompt because its question never changes.
  */
+
+/**
+ * One table's freshness stamp, marked when nothing is actually held behind it.
+ *
+ * `syncedAt` and `held` can come apart: an FBO-only account's `/v1/fbs/invoice`
+ * refuses on every run, the refusal is still stamped as a read, and printing
+ * the stamp alone would read as "fresh" when the truth is "asked, and nothing
+ * came back". The same happens for a snapshot table genuinely holding zero of
+ * something (no warehouse returns, no supply invoices). `empty` says which —
+ * self-evident beside a timestamp, so it costs this note one word rather than
+ * a sentence explaining it.
+ */
+export function tableStamp(entry: TableFreshness, now: number): string {
+  const stamp = freshStamp(entry.syncedAt, now);
+  return entry.syncedAt !== null && !entry.held ? `${entry.table} ${stamp} empty` : `${entry.table} ${stamp}`;
+}
+
+/**
+ * How old each table is, for the system prompt of every question.
+ *
+ * `readDataFreshness` makes no request — it is a keyed `sync_metadata` read —
+ * so calling it here costs nothing at the door this file already answers
+ * through. What it buys is the one fact the model otherwise has no way to
+ * state honestly: whether the figures it is about to read are from just now
+ * or from a sync three days ago. Without it, a model asked "is this current"
+ * either guesses or calls a lookup a second time just to find out.
+ *
+ * The stamps are absolute (`freshStamp`), not "N minutes ago", so the block's
+ * own text does not change between questions while nothing has synced. Reading
+ * them still needs a clock to read them against — `sales 14:08` says nothing
+ * on its own, and the base prompt's `Today:` line carries a date, not a time —
+ * so the header states `now` too. That costs this block's own tokens once a
+ * minute rather than once an hour, which is affordable because `copilot-engine`
+ * appends it to the very end of the system prompt, after OPENED DOCUMENTS: the
+ * toolkit and the widget guide sit ahead of it and stay byte-identical between
+ * questions regardless of what this note says, and within one question
+ * `context.now` is fixed, so every round of it sends identical bytes. The
+ * block also carries no per-shop breakdown: a table is as fresh as its
+ * stalest shop, one stamp says that, and the cost does not grow with how many
+ * shops the seller has selected.
+ */
+export async function freshnessNote(scope: Scope, now: number): Promise<string> {
+  if (scope.shopIds.length === 0) return '';
+
+  const freshness = await readDataFreshness(scope.shopIds, now);
+
+  const stamps = freshness.tables.map((entry) => tableStamp(entry, now)).join(' · ');
+
+  return compose([
+    header('freshness', [
+      `now ${new Date(now).toISOString().slice(11, 16)} UTC`,
+      `stored here, auto-refreshes past ${freshness.refreshMinutes}min`,
+      "fresh:true only if the seller explicitly wants Uzum's latest — costs budget, slower",
+    ]),
+    stamps,
+  ]);
+}
 
 /**
  * The money model for one window, as `key=value` lines.

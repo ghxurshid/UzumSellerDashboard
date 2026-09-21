@@ -226,6 +226,20 @@ const MIGRATIONS: Readonly<Record<number, SettingsMigration>> = {
     const root = asRecord(settings);
     return { ...root, data: asRecord(root['data']) };
   },
+
+  /* v3 → v4: the default freshness rose from fifteen minutes to sixty. A
+     stored fifteen is indistinguishable from a seller who never opened the
+     pane, and is exactly the value the new default replaces, so it moves
+     forward with it. Any other stored value — including a fifteen chosen on
+     purpose after this step has already run once — is a deliberate choice and
+     is left alone. */
+  3: (settings) => {
+    const root = asRecord(settings);
+    const data = asRecord(root['data']);
+    if (data['freshnessMinutes'] !== 15) return root;
+
+    return { ...root, data: { ...data, freshnessMinutes: DEFAULT_FRESHNESS_MINUTES } };
+  },
 };
 
 function migrate(payload: unknown, fromVersion: number): unknown {

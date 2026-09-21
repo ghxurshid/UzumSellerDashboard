@@ -1,7 +1,7 @@
 # Savdo Copilot — Texnik spetsifikatsiya
 
-**Versiya:** 2.6.0
-**Hujjat sanasi:** 2026-09-18
+**Versiya:** 2.7.0
+**Hujjat sanasi:** 2026-09-21
 **Maqsad:** [FUNCTIONAL-SPECIFICATION.md](./FUNCTIONAL-SPECIFICATION.md) dagi har bir
 talab texnik jihatdan qanday amalga oshirilganini ifodalash.
 
@@ -223,6 +223,12 @@ Har bir jadvalda 4 ta umumiy indeks: `store_date` (`['store_id','timestamp']`),
 
 **Xizmat**: `sync_metadata`, `kv`
 
+`sync_metadata`da ikkita vaqt bor, va ular boshqa savolga javob beradi:
+`last_synced_at` — **Uzum'dan oxirgi marta qachon so'ralgan** (bo'sh javob va
+qat'iy rad ham shu yerga yoziladi — 5.4), `captured_at` — **hozir capture
+saqlanadimi**. Yangilik darvozasi (5.1, 5.4) birinchisiga qarab "qayta so'rash
+kerakmi" deb hal qiladi; ekran nimani ko'rsata olishi — ikkinchisi.
+
 ### 4.2. `store_id` qayerdan keladi
 
 Uzum buni izchil bermaydi: `/v1/finance/orders` har qatorda `shopId` yozadi,
@@ -296,6 +302,23 @@ qolardi.
 **In-flight registri.** Bir necha ekran bir vaqtda bir xil davrni so'rashi mumkin
 — ikkinchisi birinchisini kutadi, takroriy so'rov yuborilmaydi.
 
+**Live edge.** Qoplama "hozir"gacha emas, oxirgi o'qish onigacha yetadi —
+shuning uchun "hozir" bilan tugaydigan har bir savol (Copilot'ning har savoli
+shunday) shu tirqishni doim teshik deb topib, uni **har safar** qayta so'rardi,
+hatto yangilik oynasi ichida bo'lsa ham. `sealLiveEdge()`
+([`archive/coverage.ts`](./frontend/src/services/storage/archive/coverage.ts#L145))
+shu tirqishni, qoplangan oxirgi on sozlamalardagi **yangilik oynasi**dan
+(standart — 1 soat, sotuvchi 1 daqiqadan 12 soatgacha tanlaydi) yosh bo'lgan
+davrida, "qoplangan" deb hisoblaydi — faqat rejalashtirishda, `synced_ranges`ga
+hech qachon yozilmasdan. Natijada `sync: true` o'qish jadval-do'kon juftiga
+**yangilik oynasida bir marta** tarmoqqa chiqadi, orasida — hech qachon.
+`force` (sinxronlash tugmasi) buni nolga tushiradi. Bu faqat yangilik oynasi
+settlement lag'dan qat'iy kichik bo'lganda xavfsiz — pastga qarang.
+
+So'ralgan oyna solishtirishdan oldin **hozirgi lahzaga qisqartiriladi**:
+kelajakka cho'zilgan oyna na so'rov yaratadi, na "qoplangan" deb yozib
+qo'yiladi.
+
 ### 5.2. Settlement lag
 
 **Funksional talab:** "oxirgi 14 kun qayta o'qiladi".
@@ -306,6 +329,16 @@ qolardi.
 Lekin bu har savolda qayta o'qishga olib kelmasligi kerak. Shuning uchun tail
 faqat **yozuv yangilik oynasidan eski bo'lsa** ochiladi. Sync tugmasi `force`
 uzatadi va har doim ochadi.
+
+**Yangilik oynasi settlement lag'dan qat'iy kichik bo'lishi shart.** 5.1-dagi
+live edge tailni ochilgan tomondan yopadi; ikkovi bir chetda uchrashsa
+(yangilik oynasi ≥ `SETTLEMENT_LAG_MS`), live edge settlement lag ochgan
+tirqishni zudlik bilan qayta yopib qo'yardi va band fortnight abadiy qayta
+o'qilmas edi. Sotuvchi tanlay oladigan har bir yangilik oynasi (1 daqiqadan
+12 soatgacha) bundan ancha kichik — tengsizlik
+[`sync/planning.test.ts`](./frontend/src/services/sync/planning.test.ts) da
+tasdiqlanadi, shuning uchun kelgusida kengroq variant qo'shilsa test o'zi
+buziladi, ko'rib chiqish esiga tushmasa ham.
 
 ### 5.3. Backfill
 
@@ -336,7 +369,20 @@ yo'q, ayirish yo'q. Ikki qoida:
    ustiga yoziladigan qatori yo'q; o'chirilmasa u oxirgi ma'lum narxi bilan
    abadiy turardi
 2. **Bo'sh javob — xato, o'chirish emas** — route hech narsa qaytarsa, bu
-   deyarli har doim rate limit, "sotuvchi hamma tovarini o'chirdi" emas
+   deyarli har doim rate limit, "sotuvchi hamma tovarini o'chirdi" emas. Shunga
+   qaramay bo'sh javob odatda **o'qilgan deb belgilanadi** (`last_synced_at`):
+   qaytarish, nakladnoy yoki FBS jo'natma yo'qligi barqaror haqiqiy holat,
+   shtampsiz bo'lsa har savolda qayta so'ralardi. Katalog va SKU bundan
+   mustasno — ularning bo'sh javobi faqat **avval capture bo'lgan bo'lsa**
+   ishoniladi (`trustsEmptyAnswer`), aks holda bitta blinkgan route butun
+   oynaga qoldiq va mahsulot ekranini bo'shatib qo'yardi
+
+**Yangilik endi capture emas, o'qishga qarab o'lchanadi.** `isFresh()`
+`captured_at`ni emas, oxirgi o'qish onini tekshiradi (`lastReadAt` =
+`last_synced_at ?? captured_at`). Qat'iy rad ham — 401/429 bo'lmagan 4xx —
+shu tarzda o'qilgan deb belgilanadi: FBS-only hisobning `/v1/fbs/invoice`si
+har safar 400 qaytarsa, shtampsiz bu har savolda uchta befoyda so'rov degani
+edi.
 
 ### 5.5. Truncation
 
@@ -473,6 +519,7 @@ transporti), [`features/chat/`](./frontend/src/features/chat/) va
 
 ```
 system prompt           kimligi, chegaralar, "kerakligini o'zing so'ra"
+  + ma'lumot yangiligi  bu mashina ma'lumoti qachon o'qilgani — bir savolda bir marta
   ↳ toolkit'ni ochish   qaysi so'rovlar va amallar bor — bir thread'da bir marta
   ↳ lookup chaqirish    arxivdan ma'lumot o'qiladi (10.2)
   ↳ widget qo'llanmasi  javob qanday chiziladi — bir thread'da bir marta
@@ -492,6 +539,17 @@ system prompt           kimligi, chegaralar, "kerakligini o'zing so'ra"
   ochilgan toolkit va widget qo'llanmasi yangi savolning system prompt'iga
   qo'shiladi (`withOpenedDocuments`). Aks holda model "sizda bor" deb aytilgan,
   lekin ko'rmayotgan qo'llanma bo'yicha shakllarni taxmin qilardi.
+- **Ma'lumot yangiligi — savol boshida bir marta, oxirida qo'shiladi.**
+  [`services/data/freshness.ts`](./frontend/src/services/data/freshness.ts)
+  tarmoqqa chiqmasdan har bir jadval oxirgi marta qachon o'qilganini
+  `sync_metadata`dan o'qiydi. Blok savolning birinchi raundida bir marta
+  hisoblanadi va sessiyada muzlatiladi (`session.freshness`) — **Davom
+  ettirish** bosilsa ham xuddi shu shtamplar bilan davom etadi, aks holda
+  modelga o'zi allaqachon yozgan gapidan keyin sodir bo'lgan sinxronlash haqida
+  ma'lumot berilardi. System prompt'ning **oxiriga**, ochilgan hujjatlardan
+  keyin qo'shiladi (`withDataFreshness`): identitet, chegaralar va hujjatlar
+  savoldan savolga o'zgarmay qoladi va provayder keshi ularni prefiks sifatida
+  qayta ishlata oladi — o'zgaradigan yagona qism eng oxirda turadi.
 - **Davom ettirish.** Raund o'rtasida uzilsa (`503`, tarmoq), sessiya saqlanadi:
   **Davom ettirish** o'sha raunddan boshlaydi, o'qilgan lookup'lar keshdan
   keladi va ekranga chiqqan matn takrorlanmaydi (`checkpoint`).
@@ -526,6 +584,19 @@ qaytarish sabablari.
 **Token tejash.** Mahsulot nomi sahifada bir marta lug'at sifatida, yil
 sarlavhada bir marta, ajratgich atrofida bo'shliq yo'q, 400 dan ortiq bucket
 so'ralsa granularlik yiriklashtiriladi.
+
+**`fresh:true` — savolda bir marta, kolleksiya va oyna bo'yicha.** Model
+`fresh:true` bersa, lookup yangilik oynasini chetlab o'tib Uzum'ga chiqadi —
+lekin faqat shu savolda o'sha kolleksiya (`finance`, `expenses`, `orders`,
+`invoices`) uchun **shu oynani qamrab olgan** birinchi so'rovda. Keyingi
+`fresh:true` so'ralgan oyna allaqachon majburlangan oyna ichiga to'liq
+sig'sa — o'sha yangi o'qishdan xizmat qiladi, qayta so'ramaydi; kengroq,
+oldinroq yoki kesishmaydigan oyna esa yana majburlaydi. Har bir natijaning
+sarlavhasida ikkisidan qaysi biri bo'lgani aytiladi: "Uzum'dan qayta olindi"
+yoki "bu savolda allaqachon majburlangan — o'sha yangilanishdan xizmat
+qildi". `period.compare` bundan bitta istisno bilan foydalanadi: `fresh:true`
+faqat **joriy** oynani majburlaydi, oldingi oynani hech qachon — oldingi oyna
+barqaror tarix, uni yangilash hech narsani o'zgartirmaydi.
 
 ### 10.3. Javob — bloklar
 

@@ -1,6 +1,14 @@
 import type { DateWindow } from '@/services/uzum/endpoints';
 
-import { add, clip, missing, normalize, type Coverage } from '../archive/coverage';
+import {
+  add,
+  clip,
+  missing,
+  normalize,
+  sealLiveEdge,
+  unseal,
+  type Coverage,
+} from '../archive/coverage';
 import { deleteWhere, request, walk, withStore } from './db';
 import {
   ALL_ENTITY_TYPES,
@@ -213,30 +221,48 @@ export interface CoverageGap {
  * and becomes `TO_WITHDRAW` or `CANCELED` days later — so coverage younger than
  * the settlement lag is deliberately forgotten and re-read. Everything older is
  * settled history that no future request will ever ask about again.
+ *
+ * `liveEdgeMs` closes the opposite end of the same problem. Coverage stops at
+ * the instant of the last read, so a window that ends at "now" always leaves the
+ * sliver since then uncovered — and a caller that asks about "now" on every
+ * question would fetch that sliver on every question, inside the freshness
+ * window, for rows a read a minute ago already saw. While the newest covered
+ * instant is younger than `liveEdgeMs` the stretch after it counts as held; once
+ * it is older the gap is planned as usual and the read happens.
+ *
+ * Both are policies the caller decides and passes in, and they meet at the same
+ * end of the record: the unseal opens the tail, the live edge closes it, and the
+ * unseal is applied first precisely so the seal can only ever re-cover ground it
+ * did not open. That holds while `liveEdgeMs` stays below `unsealMs`, which is
+ * the condition named in `sealLiveEdge` and asserted in `sync/planning.test.ts`.
+ *
+ * Nothing here reads the clock unless asked to, and nothing here reads Settings.
  */
 export function missingRanges(
   metadata: SyncMetadataRecord,
   window: DateWindow,
-  options: { readonly now?: number; readonly unsealMs?: number } = {},
+  options: {
+    readonly now?: number;
+    readonly unsealMs?: number;
+    /** How recent the newest covered instant has to be to stand in for now. */
+    readonly liveEdgeMs?: number;
+  } = {},
 ): readonly CoverageGap[] {
-  const covered = toCoverage(metadata.synced_ranges);
+  const now = options.now ?? Date.now();
   const unsealMs = options.unsealMs ?? 0;
 
-  if (unsealMs <= 0) {
-    return missing(window, covered).map((gap) => ({ fromMs: gap.fromMs, toMs: gap.toMs }));
-  }
+  const held = toCoverage(metadata.synced_ranges);
+  const sealed = unsealMs > 0 ? unseal(held, now, unsealMs) : normalize(held);
+  const covered = sealLiveEdge(sealed, now, options.liveEdgeMs ?? 0);
 
-  const boundary = (options.now ?? Date.now()) - unsealMs;
-  const sealed = covered.flatMap((range) => {
-    if (range.toMs <= boundary) return [range];
-    if (range.fromMs >= boundary) return [];
-    return [{ fromMs: range.fromMs, toMs: boundary }];
-  });
+  /* The window is clamped to the present before the comparison, for two
+     reasons that are really one: the API cannot answer for the future, so a
+     window lying wholly after `now` must produce no request at all, and a gap
+     running past `now` must not be requested — and therefore recorded as
+     covered — up to an end-of-day bound nothing has happened in yet. */
+  const asked: DateWindow = { fromMs: window.fromMs, toMs: Math.min(window.toMs, now) };
 
-  return missing(window, normalize(sealed)).map((gap) => ({
-    fromMs: gap.fromMs,
-    toMs: gap.toMs,
-  }));
+  return missing(asked, covered).map((gap) => ({ fromMs: gap.fromMs, toMs: gap.toMs }));
 }
 
 /** Whether a window is held in full — the "serve locally" test. */

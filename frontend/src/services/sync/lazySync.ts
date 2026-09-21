@@ -71,6 +71,21 @@ import { LEDGER_CHUNK_MS, SETTLEMENT_LAG_MS } from './archivePlan';
  * pressing sync means. The planned archive pass in `archivePlan.ts` is
  * unaffected — it plans from the coverage record directly and always unseals.
  *
+ * ## The live edge, and why the lag alone was not enough
+ *
+ * The lag decides how much of the *record* to re-open. It says nothing about the
+ * stretch that was never covered in the first place: coverage ends at the
+ * instant of the last read, so a window ending at "now" — which is every window
+ * the Copilot asks about — leaves `[last read, now]` uncovered and plans a
+ * request for it on every single question. The freshness window above was
+ * therefore defeated by arithmetic, not by policy.
+ *
+ * So the planner seals that live edge while the newest covered instant is
+ * younger than the freshness window, and stops sealing it once it is older — at
+ * which point the tail is unsealed too and one read brings both up to date.
+ * Together they make a `sync: true` read cost one request per freshness window
+ * per shop, and nothing in between.
+ *
  * ## Why the in-flight registry
  *
  * Several screens can want overlapping periods at the same instant — the finance
@@ -170,11 +185,26 @@ function unsealFor(metadata: SyncMetadataRecord, now: number, force: boolean): n
 }
 
 /**
+ * How recent the newest covered instant has to be to stand in for the present.
+ *
+ * The freshness window, and zero under `force`: pressing sync means "go and look
+ * now", and the stretch between the last read and this instant is precisely what
+ * that asks for. Note it is judged on the coverage record's own newest end
+ * rather than on `last_synced_at` — a backfill stamps the record while reading
+ * nothing near the present, and only the coverage says how far the reading
+ * actually got.
+ */
+function liveEdgeMs(force: boolean): number {
+  return force ? 0 : freshnessMs();
+}
+
+/**
  * What a window still needs, without fetching anything.
  *
  * Exported so the interface can answer "will changing the range cost a request?"
  * *before* the change is made. The snapshot collections answer the same
- * question from `captured_at` instead, since they have no window to plan.
+ * question from their read stamp instead, since they have no window to plan —
+ * see `data/freshness.ts`, which asks it of every table at once.
  */
 export async function planWindow(
   shopId: number,
@@ -183,11 +213,13 @@ export async function planWindow(
   options: PlanOptions = {},
 ): Promise<PlannedGaps> {
   const now = options.now ?? Date.now();
+  const force = options.force === true;
   const metadata = await readMetadata(accountFingerprint(), shopId, entity);
 
   const holes = missingRanges(metadata, window, {
     now,
-    unsealMs: unsealFor(metadata, now, options.force === true),
+    unsealMs: unsealFor(metadata, now, force),
+    liveEdgeMs: liveEdgeMs(force),
   });
   const gaps = holes.flatMap((hole) =>
     chunk({ fromMs: hole.fromMs, toMs: hole.toMs }, LEDGER_CHUNK_MS),
@@ -228,9 +260,15 @@ async function planSettledWindow(
   );
 
   /* Each entity's tail is judged on its own record: they are written by the
-     same request but a failed one leaves it older than the others. */
+     same request but a failed one leaves it older than the others. The live
+     edge is judged per record for the same reason — one entity's write failing
+     must leave its own sliver of the present planned, not the others'. */
   const holes = records.flatMap((record) =>
-    missingRanges(record, window, { now, unsealMs: unsealFor(record, now, force) }),
+    missingRanges(record, window, {
+      now,
+      unsealMs: unsealFor(record, now, force),
+      liveEdgeMs: liveEdgeMs(force),
+    }),
   );
 
   /* Normalised so overlapping holes — one from each entity — become one request

@@ -6,8 +6,10 @@ import {
   commitStocks,
   commitSupplyInvoiceItems,
   commitSupplyInvoices,
+  lastReadAt,
   readMeta,
   readProductSkus,
+  stampRead,
 } from '@/services/storage/archive/archive.service';
 import type { ChangeEvent } from '@/services/storage/archive/codec';
 import { ENTITY_TYPES, SNAPSHOT_ENTITIES, type EntityType } from '@/services/storage/idb/schema';
@@ -39,10 +41,22 @@ import type { InvoiceProduct, SkuAmount, SupplyInvoice } from '@/services/uzum/t
  *
  * ## Freshness instead of coverage
  *
- * A snapshot is skipped when the last capture is younger than the caller's
+ * A snapshot is skipped when the table was last *read* inside the caller's
  * freshness window. That is the only economy available: without a date filter
  * the alternative to re-reading everything is re-reading nothing. `force`
  * bypasses it, because that is what pressing sync means.
+ *
+ * Read, not captured — the distinction is the whole of what makes the gate hold
+ * for a seller whose collections are empty. A route that answers with nothing,
+ * and a route that refuses definitively, both answered; neither leaves a
+ * capture. Judging freshness by `captured_at` alone therefore re-asked them on
+ * every single read, which on an FBO-only account is three wasted requests per
+ * question. See `isFresh` and `isDefinitiveRefusal` below.
+ *
+ * The catalogue is exempt from believing an empty answer, and stock inherits
+ * that: an empty catalogue attributes none of the account-wide amounts, so the
+ * stock step declines to run rather than stamp a table it learnt nothing about.
+ * See `trustsEmptyAnswer` in `archive.service.ts` and `ownedSkus` below.
  */
 
 export interface SnapshotOptions {
@@ -171,12 +185,20 @@ async function requested(
  * attempt at it failed — and the caller must then decline to store anything,
  * because storing every account's amounts under this shop would make `store_id`
  * a lie on the one entity the API never stamps.
+ *
+ * An *empty* capture set is treated as no answer at all, for the same reason the
+ * archive does not believe an empty catalogue (see `trustsEmptyAnswer` in
+ * `archive.service.ts`). The amounts would then be filtered by a set that knows
+ * nothing, which stores no rows and — worse — would stamp `fbs_stock` as read
+ * on the strength of a catalogue that failed, blanking the stock screen for a
+ * whole freshness window. So it falls through to the stored catalogue, and to
+ * `null` when there is none either.
  */
 async function ownedSkus(
   shopId: number,
   fromCapture: ReadonlySet<number> | null,
 ): Promise<ReadonlySet<number> | null> {
-  if (fromCapture !== null) return fromCapture;
+  if (fromCapture !== null && fromCapture.size > 0) return fromCapture;
 
   const stored = await readProductSkus(shopId);
   if (stored.rows.length === 0) return null;
@@ -184,7 +206,17 @@ async function ownedSkus(
   return new Set(stored.rows.map((row) => row.sku_id));
 }
 
-/** Whether a capture is recent enough to leave alone. */
+/**
+ * Whether this table was read recently enough to leave alone.
+ *
+ * The question is "when did we last ask Uzum", not "is a capture held" — and
+ * those differ exactly where the requests were being wasted. A seller with no
+ * warehouse returns gets an honest empty answer, which stores no capture; a
+ * seller with no FBS gets 400 from `/v1/fbs/invoice`, which stores nothing at
+ * all. Both are answers, both stamp `last_synced_at`, and both therefore skip
+ * here until the window passes. `captured_at` remains the fallback for records
+ * written before that stamp meant anything.
+ */
 async function isFresh(
   shopId: number,
   entity: EntityType,
@@ -193,10 +225,32 @@ async function isFresh(
 ): Promise<boolean> {
   if (maxAgeMs <= 0) return false;
 
-  const meta = await readMeta(shopId, entity);
-  if (meta.captured_at === null) return false;
+  const read = lastReadAt(await readMeta(shopId, entity));
+  if (read === null) return false;
 
-  return now - meta.captured_at < maxAgeMs;
+  return now - read < maxAgeMs;
+}
+
+/**
+ * Whether a failure says the route itself will keep refusing.
+ *
+ * A 4xx that is not 401 and not 429 is the API answering the question: this
+ * account cannot have these rows. An FBO-only seller's `/v1/fbs/invoice` is the
+ * case that matters — it answers 400 on every run for ever, so asking again on
+ * the next question spends a request to learn what is already known.
+ *
+ * Everything else is left unstamped and retried, because it says nothing about
+ * the route: a 401 is a token that has expired, a 429 is the budget, a 5xx is
+ * Uzum, a timeout or an abort is the trip there. Classified through the taxonomy
+ * in `api/client.ts` rather than by reading messages, which are localised prose
+ * from a gateway that is free to change them.
+ */
+export function isDefinitiveRefusal(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  if (error.kind === 'unauthorized' || error.kind === 'rateLimited') return false;
+
+  const status = error.status;
+  return status !== undefined && status >= 400 && status < 500;
 }
 
 /**
@@ -254,6 +308,13 @@ export async function captureSnapshots(options: SnapshotOptions): Promise<Snapsh
          leave a red row in the sync log for work the user simply walked away
          from. */
       if (aborted(signal)) return;
+
+      /* A definitive refusal is an answer, so it is stamped as one — nothing
+         captured, nothing stored, only "this table was checked". Without it an
+         FBO-only account re-asks `/v1/fbs/invoice` on every question and is told
+         400 every time. A retryable failure leaves no stamp and is asked again. */
+      if (isDefinitiveRefusal(error)) await stampRead(shopId, entity, now);
+
       failures.push(`${entity}: ${describe(error)}`);
     }
   };
@@ -276,6 +337,23 @@ export async function captureSnapshots(options: SnapshotOptions): Promise<Snapsh
   );
 
   await step(ENTITY_TYPES.fbsStock, async () => {
+    /* `/v3/fbs/sku/stocks` is account-wide and names no shop. Only the amounts
+       whose SKU is in this shop's catalogue are stored under it, so the same
+       account-wide read can serve several shops without any of them claiming
+       another's rows — and the question is asked *before* the amounts are
+       fetched, because without a SKU set there is nothing this run could store
+       and the request would be spent only to be thrown away. */
+    const skus = await ownedSkus(shopId, products);
+    if (skus === null) {
+      /* Nothing says which of these amounts are this shop's. Filing them all
+         here would double every SKU on a two-shop account and put another
+         seller's warehouse in this one's inventory. Storing none is only half
+         of it: throwing also leaves no stamp — an empty or failed catalogue
+         must never be able to mark stock as read — so the next read, with a
+         catalogue behind it, tries again. */
+      throw new Error('no catalogue for this shop, cannot attribute account-wide amounts');
+    }
+
     let stocks = options.stocks;
     if (stocks === undefined) {
       const page = await fetchSkuStocks({ signal });
@@ -285,20 +363,6 @@ export async function captureSnapshots(options: SnapshotOptions): Promise<Snapsh
       /* Only when the sharer said. An absent flag means the caller did not
          measure it, which is not the same claim as "the walk was complete". */
       clipped(ENTITY_TYPES.fbsStock, options.stocksTruncated);
-    }
-
-    /* `/v3/fbs/sku/stocks` is account-wide and names no shop. Only the amounts
-       whose SKU is in this shop's catalogue are stored under it, so the same
-       account-wide read can serve several shops without any of them claiming
-       another's rows. */
-    const skus = await ownedSkus(shopId, products);
-    if (skus === null) {
-      /* Nothing says which of these amounts are this shop's. Filing them all
-         here would double every SKU on a two-shop account and put another
-         seller's warehouse in this one's inventory. Better to store none and
-         leave no stamp, so the next read — with a catalogue behind it — tries
-         again. */
-      throw new Error('catalogue unknown, cannot attribute account-wide amounts');
     }
 
     const owned = stocks.filter((stock) => skus.has(stock.skuId));
@@ -417,6 +481,13 @@ async function captureSupplyInvoices(
  * A failure to read it is deliberately not fatal and not recorded here: the
  * option is simply left off, each shop's own step tries again, and the failure
  * lands in that shop's report where the sync log can show it.
+ *
+ * It is read *after* the freshness question, not before it. The sharing is the
+ * point of this function, but it was being paid for outside every per-shop gate:
+ * a two-shop seller re-read the whole account's amounts on every stock-bearing
+ * read even when both shops would have skipped, which is one wasted request per
+ * question. Asked only when at least one shop in the run would go to the
+ * network for it.
  */
 export async function captureSnapshotsAcross(
   shopIds: readonly number[],
@@ -427,7 +498,7 @@ export async function captureSnapshotsAcross(
   const needsStocks =
     options.only === undefined || options.only.includes(ENTITY_TYPES.fbsStock);
 
-  if (shopIds.length > 1 && needsStocks) {
+  if (shopIds.length > 1 && needsStocks && (await anyShopNeeds(shopIds, options))) {
     try {
       const page = await fetchSkuStocks({ signal: options.signal });
       shared = { items: page.items, truncated: page.truncated };
@@ -451,4 +522,27 @@ export async function captureSnapshotsAcross(
   }
 
   return reports;
+}
+
+/**
+ * Whether any shop in the run would actually fetch the account-wide amounts.
+ *
+ * The same gate each shop's own step applies, asked once before paying for the
+ * shared read. `force` — and a caller that set no freshness window at all —
+ * makes it true immediately, which is what pressing sync means.
+ */
+async function anyShopNeeds(
+  shopIds: readonly number[],
+  options: Omit<SnapshotOptions, 'shopId' | 'stocks' | 'stocksTruncated'>,
+): Promise<boolean> {
+  const maxAge = options.force === true ? 0 : (options.maxAgeMs ?? 0);
+  if (maxAge <= 0) return true;
+
+  const now = options.now ?? Date.now();
+
+  for (const shopId of shopIds) {
+    if (!(await isFresh(shopId, ENTITY_TYPES.fbsStock, now, maxAge))) return true;
+  }
+
+  return false;
 }

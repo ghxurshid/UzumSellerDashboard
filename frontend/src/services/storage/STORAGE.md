@@ -132,7 +132,38 @@ Natija:                                [fevral ── mart] ← faqat shu so'ral
 **Settlement lag (14 kun).** Yaqin o'tmish qoplamasi ataylab "ochib" qo'yiladi:
 buyurtma `PROCESSING` bo'lib yoziladi, kunlar o'tib `TO_WITHDRAW` yoki `CANCELED`
 bo'ladi. FBS buyurtma statusi ham shunday harakatlanadi. Undan eskisi — qayta
-so'ralmaydigan barqaror tarix.
+so'ralmaydigan barqaror tarix. Tail faqat yozuv **yangilik oynasidan** (pastga
+qarang) eski bo'lsa ochiladi — aks holda har savol shu 14 kunni qayta o'qirdi.
+
+**Yangilik oynasi va live edge.** Sozlamalardagi **yangilik oynasi** (standart
+1 soat, sotuvchi 1 daqiqadan 12 soatgacha tanlaydi, `FRESHNESS_OPTIONS`) —
+`sync: true` o'qish shu muddat ichida yozuvni qayta so'ramaydi degan va'da.
+Lekin qoplama "hozir"gacha emas, faqat oxirgi o'qish onigacha yetadi: demak
+"hozir" bilan tugaydigan har bir so'rov (Copilot'ning har savoli shunday) shu
+oni bilan hozir orasidagi tirqishni doim teshik deb topib, uni **har safar**
+qayta so'rardi — yangilik oynasi ichida bo'lsa ham, va'da shu arifmetika bilan
+buzilardi.
+
+`sealLiveEdge()` ([`archive/coverage.ts`](./archive/coverage.ts#L145)) buni
+tuzatadi: qoplangan oxirgi on yangilik oynasidan yosh bo'lgan davrida, shu
+tirqish "qoplangan" deb hisoblanadi — faqat rejalashtirishda, `synced_ranges`ga
+hech qachon yozilmasdan. Oynadan o'tsa, tirqish odatdagidek rejalashtiriladi va
+o'qish sodir bo'ladi — shu aylanish yangilanishni davriy qiladi, hech-qachon
+emas. Natija: `sync: true` o'qish jadval-do'kon juftiga **yangilik oynasida bir
+marta** tarmoqqa chiqadi, orasida — hech qachon. Sync tugmasi (`force`)
+ikkalasini — tail ochilishini ham, live edge yopilishini ham — nolga
+tushiradi.
+
+Bu faqat **yangilik oynasi settlement lag'dan qat'iy kichik** bo'lganda
+xavfsiz: ikkovi bir uchda uchrashsa, live edge settlement lag ochgan tirqishni
+zudlik bilan qayta yopib qo'yardi va band fortnight abadiy qayta o'qilmas edi.
+Sotuvchi tanlay oladigan har bir yangilik oynasi bundan ancha kichik —
+tengsizlik [`sync/planning.test.ts`](../sync/planning.test.ts) da
+tasdiqlanadi.
+
+So'ralgan oyna solishtirishdan oldin **hozirgi lahzaga qisqartiriladi**:
+kelajakka cho'zilgan oyna na so'rov yaratadi, na "qoplangan" deb yozib
+qo'yiladi.
 
 ### Snapshot: capture ([`sync/snapshotSync.ts`](../sync/snapshotSync.ts))
 
@@ -145,8 +176,20 @@ Reja yo'q, ayirish yo'q. Bor-yo'g'i ikkita qoida:
    har doim rate limit yoki vaqtinchalik nosozlik, "sotuvchi hamma tovarini
    o'chirdi" emas. Shuning uchun bo'sh natija oldingi capture'ga tegmaydi
 
-Tejash faqat bitta: capture yetarlicha yangi bo'lsa, o'tkazib yuboriladi
-(`maxAgeMs`). Sana filtri bo'lmagach, boshqa tejash imkoni yo'q.
+Tejash: capture yetarlicha yangi bo'lsa, o'tkazib yuboriladi (`maxAgeMs`). Sana
+filtri bo'lmagach, boshqa tejash imkoni yo'q — lekin "yetarlicha yangi" endi
+**capture emas, o'qish** bo'yicha o'lchanadi (`isFresh()`, `lastReadAt` =
+`last_synced_at ?? captured_at`). Farq bo'sh javobda chiqadi: route hech narsa
+qaytarganda ham (ombor qaytarishi yo'q, nakladnoy yo'q, FBS jo'natma yo'q)
+`last_synced_at` odatda baribir yoziladi — javob "hech narsa" bo'lsa ham javob
+bergan hisoblanadi, shu shtampsiz bo'sh jadval har savolda qayta so'ralardi.
+Katalog va SKU bundan mustasno: ularning bo'sh javobi faqat **avval capture
+bo'lgan bo'lsa** ishoniladi (`trustsEmptyAnswer`) — aks holda bitta blinkgan
+route (rate limit yoki `paginate` tanimagan envelope) butun oynaga mahsulot va
+qoldiq ekranini bo'shatib qo'yardi. Qat'iy rad ham (401/429 bo'lmagan 4xx)
+o'qilgan deb belgilanadi: FBS-only hisobning `/v1/fbs/invoice`si har safar 400
+qaytarsa, shtampsiz bu har savolda befoyda so'rov degani edi
+(`isDefinitiveRefusal`).
 
 ---
 
@@ -163,6 +206,14 @@ so'raladi. Katalog na shu yugurishda, na saqlangan holda topilmasa, qoldiq
 **umuman yozilmaydi** va capture shtampi qo'yilmaydi — keyingi o'qish qayta
 urinadi. Hammasini bitta do'kon ostiga yozish muqobili emas edi: u ikki do'konli
 account'da har bir SKU'ni ikki marta sanardi.
+
+Bir necha do'kon bitta yugurishda so'ralsa, `/v3/fbs/sku/stocks` **bitta marta**
+o'qilib har bir do'konga bo'linadi (`captureSnapshotsAcross`). Bu o'qish endi
+har bir do'konning o'z yangilik darvozasi **ortida**: faqat kamida bitta do'kon
+haqiqatan tarmoqqa chiqishi kerak bo'lganda so'raladi (`anyShopNeeds`).
+Avvalroq bu tekshiruv yo'q edi — ikki do'konli hisob har bir qoldiq o'qishida
+account bo'yicha butun ro'yxatni qayta olardi, hatto ikkala do'kon ham allaqachon
+yangi bo'lsa ham.
 
 **`/v1/invoice` ham account bo'yicha**, lekin u har qatorda `shopId` yozadi —
 shuning uchun bu yerda ajratish oddiy filtr.

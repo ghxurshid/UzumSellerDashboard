@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import { cell, compose, dec, header, isoDay, isoMinute, num, pairs, parseDay, table, windowLabel } from './plaintext';
+import {
+  cell,
+  compose,
+  dec,
+  freshStamp,
+  header,
+  isoDay,
+  isoMinute,
+  num,
+  pairs,
+  parseDay,
+  table,
+  windowLabel,
+} from './plaintext';
 
 /**
  * The envelope every tool result travels in.
@@ -60,6 +73,22 @@ describe('formatting', () => {
     expect(windowLabel(Date.UTC(2026, 7, 1), Date.UTC(2026, 7, 31))).toBe(
       '2026-08-01..2026-08-31',
     );
+  });
+});
+
+describe('freshStamp', () => {
+  it('says never for a table that has not been read', () => {
+    expect(freshStamp(null, Date.UTC(2026, 7, 1, 14, 8))).toBe('never');
+  });
+
+  it('gives the time of day when the read falls on the same UTC day as now', () => {
+    const now = Date.UTC(2026, 7, 1, 20, 0);
+    expect(freshStamp(Date.UTC(2026, 7, 1, 14, 8), now)).toBe('14:08');
+  });
+
+  it('gives the date, not the time, once the read is not from today', () => {
+    const now = Date.UTC(2026, 7, 2, 0, 5);
+    expect(freshStamp(Date.UTC(2026, 7, 1, 23, 59), now)).toBe('2026-08-01');
   });
 });
 

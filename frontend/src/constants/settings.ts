@@ -21,10 +21,11 @@ export const SETTINGS_STORAGE_KEY = 'savdo.settings';
  * v2 renamed two provider keys to the design's (`google` → `gemini`,
  * `anthropic` → `claude`), folded `modelTier` away and moved the request
  * timeout from the Uzum section to the provider section. v3 added the `data`
- * section, which governs the local buffer. See `MIGRATIONS` in
- * `services/storage/settingsSchema.ts`.
+ * section, which governs the local buffer. v4 raised the default freshness
+ * from fifteen minutes to sixty and migrates a stored fifteen forward. See
+ * `MIGRATIONS` in `services/storage/settingsSchema.ts`.
  */
-export const SETTINGS_SCHEMA_VERSION = 3;
+export const SETTINGS_SCHEMA_VERSION = 4;
 
 /* ── Uzum seller API ────────────────────────────────────────────────────── */
 
@@ -49,13 +50,15 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
  * The choices are a spread rather than a free-text field, because the useful
  * range is narrow and bounded at both ends: below a minute the stored copy
  * stops being worth keeping and every screen change is a request, and above a
- * few hours a stock level is old enough to act on wrongly. Fifteen minutes is the default —
- * long enough that moving between screens and ranges costs nothing, short
- * enough that a restock made in the seller cabinet shows up in one coffee.
+ * few hours a stock level is old enough to act on wrongly. An hour is the
+ * default — a `sync: true` read that re-hit Uzum on every screen visit or every
+ * Copilot question, as fifteen minutes did, spent the seller's hourly request
+ * budget on rows that had not changed. The list still runs 1…720 for a seller
+ * who wants it tighter or looser than that.
  */
 export const FRESHNESS_OPTIONS = [1, 5, 15, 30, 60, 180, 720] as const;
 
-export const DEFAULT_FRESHNESS_MINUTES = 15;
+export const DEFAULT_FRESHNESS_MINUTES = 60;
 
 /* ── AI provider ────────────────────────────────────────────────────────── */
 

@@ -10,6 +10,7 @@ import {
   readInvoices,
   readOrders,
 } from '@/services/data/collections';
+import { readDataFreshness, type FreshnessTable } from '@/services/data/freshness';
 import { summariseFinance } from '@/services/derive/finance';
 import { derivePriceImpact } from '@/services/derive/priceImpact';
 import { flattenSkus } from '@/services/derive/products';
@@ -44,7 +45,7 @@ import {
   spansOneYear,
   type TimelineMeasure,
 } from './datasets';
-import { ledgerTable, moneyLines } from './digest';
+import { ledgerTable, moneyLines, tableStamp } from './digest';
 import {
   clip,
   compose,
@@ -147,6 +148,105 @@ const ids = (value: unknown): readonly number[] =>
     ? [...new Set(value.filter((entry): entry is number => typeof entry === 'number' && entry > 0))]
     : [];
 
+/* ── one forced refresh per collection, per question ────────────────────── */
+
+/** A collection `fresh:true` can force past its freshness window — see `services/data/collections`. */
+type ForceableCollection = 'finance' | 'expenses' | 'orders' | 'invoices';
+
+/** The span a forced read covered — just enough to tell whether a later force is redundant. */
+interface ForcedWindow {
+  readonly fromMs: number;
+  readonly toMs: number;
+}
+
+/** `supply.invoices` takes no window argument — every call names the same span, so the collection name is the whole key for it. */
+const NO_WINDOW: ForcedWindow = { fromMs: 0, toMs: 0 };
+
+/**
+ * Windows a question has already forced, per collection, keyed on the
+ * `ToolContext` the caller builds once per question (see
+ * `useCopilotAnswers.launch`).
+ *
+ * `force` bypasses the freshness window and goes to Uzum whatever the
+ * record's age. That is right the first time a question asks for a span and
+ * wasteful the second *for a span already covered*: `window.totals
+ * {fresh:true}` followed by `sales.timeline {fresh:true}` over the same days
+ * both want the order ledger, and forcing it twice inside one question
+ * re-reads what the first force just wrote. But a later call can name a
+ * wider or a disjoint span — the seller's "get me the very latest" answered
+ * for today by `orders.pipeline {fresh:true}`, then `data.rows
+ * {dataset:"orders", fresh:true}` for the last seven days, which the first
+ * force never touched — and downgrading that second call would leave a
+ * settlement tail unread while the model believes it just asked for the
+ * latest. So what is remembered is the window each force actually covered,
+ * not just the collection's name, and a later `fresh:true` is downgraded
+ * only when its window sits inside one already forced for that collection
+ * this question; anything wider, earlier or disjoint forces again. A
+ * `WeakMap` needs no lifecycle of its own — a new question gets a new
+ * context object, and the entry for the old one goes with it.
+ */
+const forcedThisQuestion = new WeakMap<ToolContext, Map<ForceableCollection, ForcedWindow[]>>();
+
+/** Whether every millisecond of `inner` already falls inside `outer`. */
+function windowContains(outer: ForcedWindow, inner: ForcedWindow): boolean {
+  return outer.fromMs <= inner.fromMs && outer.toMs >= inner.toMs;
+}
+
+/**
+ * Whether this call should force `collection` past the freshness window.
+ *
+ * True the first time this question asks for a span via `fresh:true`, and
+ * every later ask whose span already sits inside one this question already
+ * forced for the same collection — the freshness window then serves from
+ * what that force just wrote, still current, without a second request. A
+ * wider, earlier or disjoint span forces again, because it names rows the
+ * first force never re-read. Omit `window` for a collection with no window
+ * argument (`supply.invoices`); it then behaves as before — forced once per
+ * question, whatever is asked next.
+ */
+function forceOnce(
+  context: ToolContext,
+  collection: ForceableCollection,
+  args: Record<string, unknown>,
+  window: ForcedWindow = NO_WINDOW,
+): boolean {
+  if (!flag(args['fresh'])) return false;
+
+  let byCollection = forcedThisQuestion.get(context);
+  if (byCollection === undefined) {
+    byCollection = new Map();
+    forcedThisQuestion.set(context, byCollection);
+  }
+
+  const forced = byCollection.get(collection) ?? [];
+  if (forced.some((span) => windowContains(span, window))) return false;
+
+  byCollection.set(collection, [...forced, window]);
+  return true;
+}
+
+/**
+ * What a `fresh:true` request actually did to one collection, for the header.
+ *
+ * Silent unless the seller's `fresh:true` reached this call — the ordinary
+ * case, and stating "from the store" on every ordinary read would tax the
+ * token budget for a fact nobody asked about. Once asked, this says which is
+ * true: the collection went to Uzum just now, or this question already
+ * forced a window that covers it and this read was served from that refresh
+ * rather than from this instant — never both, and never silent about it,
+ * which is the bug this replaces.
+ */
+function freshNote(
+  collection: ForceableCollection,
+  requestedFresh: boolean,
+  forced: boolean,
+): string | null {
+  if (!requestedFresh) return null;
+  return forced
+    ? `${collection} refetched from Uzum`
+    : `${collection} already forced this question — served from that refresh`;
+}
+
 /* ── windows ────────────────────────────────────────────────────────────── */
 
 /** A read may not walk further back than this in one call. */
@@ -223,6 +323,15 @@ const granularitySchema = z.enum(['hour', 'day', 'week', 'month']);
 /** How many buckets a timeline may return before it is coarsened. */
 const MAX_BUCKETS = 400;
 
+/** The snapshot tables `archive.coverage`'s per-shop rows do not cover — read from `readDataFreshness` instead. */
+const SNAPSHOT_FRESHNESS_TABLES: readonly FreshnessTable[] = [
+  'catalogue',
+  'stock',
+  'supplyInvoices',
+  'returns',
+  'fbsInvoices',
+];
+
 /** The catalogue's name for a product, or what the rows called it. */
 function nameOf(context: ToolContext, productId: number, fallback?: string): string {
   const product = context.products.find((entry) => entry.productId === productId);
@@ -234,12 +343,14 @@ async function financeFor(
   args: Record<string, unknown>,
   context: ToolContext,
   window: Window,
-) {
-  return readFinance(scopeFor(context, window), {
+): Promise<Awaited<ReturnType<typeof readFinance>> & { readonly forced: boolean }> {
+  const forced = forceOnce(context, 'finance', args, window);
+  const source = await readFinance(scopeFor(context, window), {
     sync: true,
-    force: flag(args['fresh']),
+    force: forced,
     signal: context.signal,
   });
+  return { ...source, forced };
 }
 
 /* ── the read registry ──────────────────────────────────────────────────── */
@@ -257,10 +368,12 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
     run: async (args, context) => {
       const window = windowOf(args, context);
       const scope = scopeFor(context, window);
-      const fresh = flag(args['fresh']);
+      const askedFresh = flag(args['fresh']);
+      const forceFinance = forceOnce(context, 'finance', args, window);
+      const forceExpenses = forceOnce(context, 'expenses', args, window);
 
-      const finance = await readFinance(scope, { sync: true, force: fresh, signal: context.signal });
-      const expenses = await readExpenses(scope, { sync: true, force: fresh, signal: context.signal });
+      const finance = await readFinance(scope, { sync: true, force: forceFinance, signal: context.signal });
+      const expenses = await readExpenses(scope, { sync: true, force: forceExpenses, signal: context.signal });
 
       const totals = summariseFinance(finance.items, expenses.payments, {
         cancelledTotal: finance.cancelledTotal,
@@ -278,7 +391,8 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
             `${expenses.payments.length} ledger rows`,
             finance.truncated ? 'TRUNCATED: retention has cut into this window' : null,
             window.note,
-            fresh ? 'refetched from Uzum' : null,
+            freshNote('finance', askedFresh, forceFinance),
+            freshNote('expenses', askedFresh, forceExpenses),
           ]),
           ...moneyLines(totals),
           ledgerTable(totals),
@@ -315,18 +429,27 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
               note: null,
             };
 
-      const read = async (window: Window) => {
+      const read = async (window: Window, force: { readonly finance: boolean; readonly expenses: boolean }) => {
         const scope = scopeFor(context, window);
-        const finance = await readFinance(scope, { sync: true, signal: context.signal });
-        const expenses = await readExpenses(scope, { sync: true, signal: context.signal });
+        const finance = await readFinance(scope, { sync: true, force: force.finance, signal: context.signal });
+        const expenses = await readExpenses(scope, { sync: true, force: force.expenses, signal: context.signal });
         return summariseFinance(finance.items, expenses.payments, {
           cancelledTotal: finance.cancelledTotal,
           reportedTotal: finance.total,
         });
       };
 
-      const now = await read(current);
-      const before = await read(previous);
+      /* Only the current window is worth forcing: `previous` is settled history
+         a refresh cannot change, and forcing it would spend a request on rows
+         that are already final. Finance and expenses are still tracked as the
+         separate collections they are — a later lookup this question may have
+         already forced one of them for a window that covers this one. */
+      const askedFresh = flag(args['fresh']);
+      const forceFinance = forceOnce(context, 'finance', args, current);
+      const forceExpenses = forceOnce(context, 'expenses', args, current);
+
+      const now = await read(current, { finance: forceFinance, expenses: forceExpenses });
+      const before = await read(previous, { finance: false, expenses: false });
 
       const measures: ReadonlyArray<readonly [string, number, number, boolean]> = [
         ['sellPrice', now.sellPrice, before.sellPrice, false],
@@ -367,6 +490,9 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
             `previous ${windowLabel(previous.fromMs, previous.toMs)}`,
             shopsLine(context),
             current.note,
+            freshNote('finance', askedFresh, forceFinance),
+            freshNote('expenses', askedFresh, forceExpenses),
+            askedFresh ? 'previous is settled history — never forced' : null,
           ]),
           MONEY_LINE,
           'change = current - previous; changePct = change / |previous| × 100, empty when previous is 0.',
@@ -407,6 +533,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
       }
 
       const finance = await financeFor(args, context, window);
+      const askedFresh = flag(args['fresh']);
       const productIds = ids(args['productIds']);
       const clock =
         granularity === 'hour'
@@ -433,6 +560,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
               `${result.starts.length} ${granularity} buckets`,
               window.note,
               coarsened,
+              freshNote('finance', askedFresh, finance.forced),
             ]),
             measure === 'revenue' || measure === 'sellerProfit' ? MONEY_LINE : null,
             `${clock} · revenue = sellPrice × amount · cancelled lines add nothing`,
@@ -475,6 +603,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
             finance.truncated ? 'TRUNCATED: retention has cut into this window' : null,
             window.note,
             coarsened,
+            freshNote('finance', askedFresh, finance.forced),
           ]),
           MONEY_LINE,
           `${clock} · revenue = sellPrice × amount · orders are distinct order ids · cancelled lines are only counted in cancelled`,
@@ -543,6 +672,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
             `by ${by}`,
             `zone ${readGeneralPreferences().timezone}`,
             window.note,
+            freshNote('finance', flag(args['fresh']), finance.forced),
           ]),
           MONEY_LINE,
           'orders are distinct order ids · revenue = sellPrice × amount · cancelled lines excluded',
@@ -585,7 +715,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
       const by = (str(args['by']) ?? 'revenue') as 'revenue' | 'profit' | 'units' | 'netActual' | 'returns';
       const ascending = str(args['order']) === 'asc';
 
-      await financeFor(args, context, window);
+      const finance = await financeFor(args, context, window);
 
       /**
        * Every product in the window, ranked here rather than by the worker.
@@ -661,6 +791,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
             `${totals.length} products sold in the window`,
             `showing ${rows.length}`,
             window.note,
+            freshNote('finance', flag(args['fresh']), finance.forced),
           ]),
           MONEY_LINE,
           `window, every product: ${pairs([
@@ -722,7 +853,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
         };
       }
 
-      await financeFor(args, context, window);
+      const finance = await financeFor(args, context, window);
       const totals = await loadProductTotals(context.scope.shopIds, window.fromMs, window.toMs, {
         ...(context.signal !== undefined ? { signal: context.signal } : {}),
       });
@@ -738,6 +869,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
             `shopId ${product.shopId}`,
             product.statusTitle === '' ? product.status : `${product.status} (${product.statusTitle})`,
             matches.length > 1 ? `${matches.length - 1} other products also matched` : null,
+            freshNote('finance', flag(args['fresh']), finance.forced),
           ]),
           MONEY_LINE,
           `catalogue now: ${pairs([
@@ -813,10 +945,11 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
     schema: z.object(windowArgs),
     run: async (args, context) => {
       const window = windowOf(args, context);
+      const forceExpenses = forceOnce(context, 'expenses', args, window);
 
       await readExpenses(scopeFor(context, window), {
         sync: true,
-        force: flag(args['fresh']),
+        force: forceExpenses,
         signal: context.signal,
       });
 
@@ -833,6 +966,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
             shopsLine(context),
             `${totals.rows} rows`,
             window.note,
+            freshNote('expenses', flag(args['fresh']), forceExpenses),
           ]),
           MONEY_LINE,
           pairs([
@@ -939,7 +1073,8 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
     summary: [
       'FBS and DBS orders in the window with their deadlines, counted by status. dateAcceptUntil',
       'is the one that costs money: an order not confirmed before it passes is cancelled by the',
-      'marketplace. Use fresh:true when the seller is asking what to do right now.',
+      'marketplace. Deadlines come from the stored orders, which refresh themselves on their own —',
+      'fresh:true is for when the seller explicitly asks for the very latest from Uzum, not by habit.',
     ],
     schema: z.object({
       ...windowArgs,
@@ -953,9 +1088,10 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
       const status = str(args['status']);
       const limit = int(args['limit'], 20);
 
+      const forceOrders = forceOnce(context, 'orders', args, window);
       const source = await readOrders(scopeFor(context, window), {
         sync: true,
-        force: flag(args['fresh']),
+        force: forceOrders,
         signal: context.signal,
       });
 
@@ -977,6 +1113,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
             status === undefined ? 'all statuses' : `status ${status}`,
             `${source.total} orders read`,
             window.note,
+            freshNote('orders', flag(args['fresh']), forceOrders),
           ]),
           `now is ${isoMinute(context.now)} UTC — compare deadlines against it · money so'm`,
           counts.length === 0 ? 'no orders in this window' : `by status: ${pairs(counts)}`,
@@ -1016,9 +1153,10 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
     run: async (args, context) => {
       const limit = int(args['limit'], 15);
 
+      const forceInvoices = forceOnce(context, 'invoices', args);
       const source = await readInvoices(context.scope, {
         sync: true,
-        force: flag(args['fresh']),
+        force: forceInvoices,
         signal: context.signal,
       });
 
@@ -1036,6 +1174,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
             `${source.returns.length} returns`,
             `${source.fbs.length} FBS shipment invoices`,
             source.fbsUnavailable ? 'FBS shipment invoices unavailable for this account' : null,
+            freshNote('invoices', flag(args['fresh']), forceInvoices),
           ]),
           pairs([
             ['shortInvoices', short.length],
@@ -1166,9 +1305,10 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
 
       switch (dataset) {
         case 'expenses': {
+          const forceExpenses = forceOnce(context, 'expenses', args, window);
           const source = await readExpenses(scopeFor(context, window), {
             sync: true,
-            force: flag(args['fresh']),
+            force: forceExpenses,
             signal: context.signal,
           });
           const rows = source.payments.filter(
@@ -1180,7 +1320,13 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
             routes: ['/v1/finance/expenses'],
             trace: `expenses · ${page.rows.length} of ${page.total}`,
             text: compose([
-              header('data.rows', ['expenses', windowLabel(window.fromMs, window.toMs), shopsLine(context), window.note]),
+              header('data.rows', [
+                'expenses',
+                windowLabel(window.fromMs, window.toMs),
+                shopsLine(context),
+                window.note,
+                freshNote('expenses', flag(args['fresh']), forceExpenses),
+              ]),
               paging(page.total, page.rows.length, page.next),
               `money so'm · date is UTC${sameYear ? `, year ${new Date(window.fromMs).getUTCFullYear()}` : ''} · type INCOME is money back, OUTCOME is a charge`,
               table(
@@ -1201,9 +1347,10 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
         }
 
         case 'orders': {
+          const forceOrders = forceOnce(context, 'orders', args, window);
           const source = await readOrders(scopeFor(context, window), {
             sync: true,
-            force: flag(args['fresh']),
+            force: forceOrders,
             signal: context.signal,
           });
           const rows = source.orders
@@ -1215,7 +1362,13 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
             routes: ['/v2/fbs/orders'],
             trace: `orders · ${page.rows.length} of ${page.total}`,
             text: compose([
-              header('data.rows', ['orders', windowLabel(window.fromMs, window.toMs), shopsLine(context), window.note]),
+              header('data.rows', [
+                'orders',
+                windowLabel(window.fromMs, window.toMs),
+                shopsLine(context),
+                window.note,
+                freshNote('orders', flag(args['fresh']), forceOrders),
+              ]),
               paging(page.total, page.rows.length, page.next),
               `money so'm · times UTC${sameYear ? `, year ${new Date(window.fromMs).getUTCFullYear()}` : ''} · lines = skuId×amount@price;…`,
               table(
@@ -1308,6 +1461,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
                 shopsLine(context),
                 finance.truncated ? 'TRUNCATED: retention has cut into this window' : null,
                 window.note,
+                freshNote('finance', flag(args['fresh']), finance.forced),
               ]),
               paging(page.total, page.rows.length, page.next),
               `money so'm · date is UTC${sameYear ? `, year ${new Date(window.fromMs).getUTCFullYear()}` : ''} · one row per order line, oldest first`,
@@ -1354,8 +1508,9 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
     args: '{}',
     summary: [
       'What this machine actually holds: the period covered per shop, how many rows, when it was',
-      'last read, and whether the backwards walk has reached the start of the history. Ask before',
-      'answering anything about a period the seller has not looked at, and say so if it is thin.',
+      'last read, and whether the backwards walk has reached the start of the history — for sales,',
+      'expenses and orders — plus a last-read stamp for the snapshot tables (catalogue, stock,',
+      'supply invoices, returns, FBS invoices). Ask before answering about a period not looked at yet.',
     ],
     schema: z.object({}),
     run: async (_args, context) => {
@@ -1379,6 +1534,12 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
         }
       }
 
+      const freshness = await readDataFreshness(context.scope.shopIds, context.now);
+      const snapshotStamps = freshness.tables
+        .filter((entry) => SNAPSHOT_FRESHNESS_TABLES.includes(entry.table))
+        .map((entry) => tableStamp(entry, context.now))
+        .join(' · ');
+
       return {
         routes: ['sync_metadata'],
         trace: `${rows.length} records`,
@@ -1394,6 +1555,7 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
           rows.length === 0
             ? 'this machine holds nothing for the shops in scope'
             : table(['shopId', 'entity', 'rows', 'covered', 'lastRead', 'backfill'], rows),
+          `snapshot tables (account-wide, current as of last capture) last read: ${snapshotStamps}`,
         ]),
       };
     },
@@ -1656,8 +1818,10 @@ export function describeToolkit(context: ToolContext): string {
     `  from/to   whole UTC days, "YYYY-MM-DD", both ends included. Omit them and I use the`,
     `            period the seller has selected: ${windowLabel(context.scope.fromMs, context.scope.toMs)}.`,
     `            "the last 7 days" ending today is from ${isoDay(context.now - 6 * DAY_MS)} to ${isoDay(context.now)}.`,
-    '  fresh     true re-reads the period from Uzum even if it is already stored. Slow and',
-    '            rate-limited: use it when the seller asks for the very latest, not by habit.',
+    '  fresh     true forces a re-read from Uzum whatever the age of what is stored — slow, and it',
+    '            spends the seller\'s hourly request budget. Ask for it only on the seller\'s own',
+    '            explicit request for the very latest from Uzum, never by habit or because a',
+    '            figure feels important; the stored copy answers otherwise and refreshes itself.',
     "  money     so'm, whole numbers, no grouping. Pct columns are percentages (23.5 means 23.5%).",
     '  paging    data.rows returns one page; its header says "next page: offset N" when there is more.',
     '',
@@ -1669,10 +1833,13 @@ export function describeToolkit(context: ToolContext): string {
     '  compute from it, keep the arithmetic small and say what you counted.',
     '',
     'WHERE THE DATA COMES FROM',
-    '  A lookup answers from this machine\'s archive. If the period is not held, I fetch exactly',
-    '  the missing part from the Uzum seller API, store it, and then answer — so a period read',
-    '  before costs nothing and an unseen one costs one fetch. Recent days are re-read on their',
-    '  own because an order settles days after it is placed. You do not manage any of this.',
+    '  A lookup answers from this machine\'s archive. A period already held is answered with no',
+    '  request at all; if part of it is missing, I fetch exactly that part from the Uzum seller',
+    '  API, store it, and then answer — so a period read before costs nothing and an unseen one',
+    '  costs one fetch. Beyond that, the store refreshes itself from Uzum on its own schedule once',
+    '  a table has gone past its freshness window — not because you asked, and not on every',
+    '  question. You do not manage any of this and should not try to; fresh above is the one lever,',
+    '  and only for the seller\'s own explicit ask.',
     '',
     'LOOKUPS',
     ...reads,
