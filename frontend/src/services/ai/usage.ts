@@ -352,15 +352,19 @@ export function readQuotaFailure(body: unknown): QuotaSignal | null {
 
 /**
  * Whether a failed request never occupied a slot in any project's quota
- * because Google rejected the key itself, rather than a request the project
- * received and then refused.
+ * because the provider rejected the key itself, rather than a request the
+ * project received and then refused.
  *
  * Gemini answers a bad key with `401`/`403`, or with a `400 INVALID_ARGUMENT`
  * whose body names the reason `API_KEY_INVALID` — as an `ErrorInfo` detail's
- * `reason` field, and again in the plain-English `message`. None of those
- * three was ever charged to a project, so counting one toward this meter
- * would show a seller "exhausted" from a key that was never accepted in the
- * first place — see the module header, "what counts as a request".
+ * `reason` field, and again in the plain-English `message`. xAI answers a bad
+ * key with a bare `400`, in a shape none of the other eight providers use:
+ * `{"code":"invalid-argument","error":"Incorrect API key provided. ..."}` — a
+ * plain string under `error`, not the `{error:{message}}` envelope everyone
+ * else sends. None of those was ever charged to a project, so counting one
+ * toward this meter would show a seller "exhausted" from a key that was never
+ * accepted in the first place — see the module header, "what counts as a
+ * request".
  *
  * Every other 400 (an unknown model id, a malformed body, a schema the
  * provider rejected) did reach a project and stays recorded as `'failed'`
@@ -380,9 +384,16 @@ export function isKeyRejection(status: number, body: unknown): boolean {
   if (message !== null && message.includes('API_KEY_INVALID')) return true;
 
   const details = detailsOf(parsed);
-  if (details === null) return false;
+  if (details !== null && details.some((detail) => textAt(detail, ['reason']) === 'API_KEY_INVALID')) {
+    return true;
+  }
 
-  return details.some((detail) => textAt(detail, ['reason']) === 'API_KEY_INVALID');
+  /* xAI's flat shape: `error` is a string, not an object with `message`. */
+  const code = textAt(parsed, ['code']);
+  const flatError = textAt(parsed, ['error']);
+  if (code === 'invalid-argument' && flatError !== null && /api key/i.test(flatError)) return true;
+
+  return false;
 }
 
 /* ── validating a restored event ────────────────────────────────────────── */

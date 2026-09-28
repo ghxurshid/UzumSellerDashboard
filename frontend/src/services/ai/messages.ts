@@ -18,6 +18,20 @@ import type { JsonSchema } from './jsonSchema';
  * provider exists.
  */
 
+/**
+ * One block of Anthropic's own thinking, exactly as the wire sent it.
+ *
+ * A `thinking` block carries the reasoning text (kept even when it streamed
+ * empty — Anthropic's `display: "omitted"` default withholds the content but
+ * still sends the block, and `signature` is what has to come back regardless)
+ * and the signature that proves it was not tampered with. A `redacted_thinking`
+ * block is opaque end to end: `data` is encrypted server-side state this
+ * application cannot and does not need to read.
+ */
+export type AnthropicReasoningBlock =
+  | { readonly type: 'thinking'; readonly thinking: string; readonly signature: string }
+  | { readonly type: 'redacted_thinking'; readonly data: string };
+
 /** A lookup the model asked for, as it came off the wire. */
 export interface ToolCall {
   /** The provider's own id for the call — quoted back with the result. */
@@ -39,6 +53,23 @@ export interface ToolCall {
    * dialect emits it.
    */
   readonly signature?: string;
+  /**
+   * Anthropic's thinking blocks for the whole turn this call belongs to,
+   * attached to the first call of that turn only.
+   *
+   * Claude's thinking is a property of the *turn*, not of one call — a turn
+   * can carry several thinking blocks ahead of several tool_use blocks — and
+   * `ToolCall` is the only part of `ChatMessage` that survives untouched from
+   * `StreamResult` into the transcript (`agent.ts` pushes `completion.calls`
+   * back verbatim). Anthropic's own multi-turn rule is explicit: "pass each
+   * thinking block back exactly as received — including blocks whose
+   * `thinking` text is empty ... dropping or editing them breaks the turn."
+   * The Anthropic dialect in `stream.ts` reads this off the first call and
+   * replays it ahead of that turn's text and tool_use blocks — exactly once,
+   * exactly where Anthropic requires it. No other provider looks at this
+   * field.
+   */
+  readonly reasoning?: readonly AnthropicReasoningBlock[];
 }
 
 /** What the application answered with. */
@@ -67,19 +98,26 @@ export interface ToolSchema {
 /**
  * Whether this provider can be given tools rather than told about them.
  *
- * A deliberately short list. "OpenAI-compatible" is a claim about the response
- * shape, not a promise that `tools` is accepted — a gateway that ignores the
- * field silently produces a model with no way to ask for anything, and one that
- * rejects it produces a 400 on every question. Both are worse than the text
- * protocol, which works everywhere because it is only text.
+ * A deliberately short list, and OpenAI is deliberately off it. "OpenAI-
+ * compatible" is a claim about the response shape, not a promise that `tools`
+ * is accepted — a gateway that ignores the field silently produces a model
+ * with no way to ask for anything, and one that rejects it produces a 400 on
+ * every question. Both are worse than the text protocol, which works
+ * everywhere because it is only text.
  *
- * So the three first-party APIs get native tools and everything else keeps the
- * protocol that cannot break. The agent runs the same conversation either way;
- * what changes is whether a call arrives as a parsed structure or as a line of
- * JSON the application reads itself.
+ * OpenAI itself is a sharper case than "unproven": its own reasoning guide
+ * states plainly that Chat Completions does not support function calling with
+ * GPT-6 Astra — the model OpenAI's own docs say to start with. Declaring
+ * `tools` on that request would not silently degrade; it would make the
+ * provider the seller is most likely to have configured unable to look
+ * anything up. So only the two first-party APIs whose tool support is
+ * verified — Anthropic and Gemini — get native tools; everything else,
+ * OpenAI included, keeps the protocol that cannot break. The agent runs the
+ * same conversation either way; what changes is whether a call arrives as a
+ * parsed structure or as a line of JSON the application reads itself.
  */
 export function supportsNativeTools(provider: AiProvider): boolean {
-  return provider === 'claude' || provider === 'openai' || provider === 'gemini';
+  return provider === 'claude' || provider === 'gemini';
 }
 
 /* ── names ──────────────────────────────────────────────────────────────── */

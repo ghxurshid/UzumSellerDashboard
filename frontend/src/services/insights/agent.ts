@@ -68,8 +68,10 @@ import { WIDGET_GUIDE } from './widgets';
  * Where the provider has a real tool API the calls come back parsed, and
  * progressive disclosure survives it: the first request declares exactly one
  * tool, `open_toolkit`, and the rest are declared only after it has been
- * called. Everywhere else — a self-hosted Ollama, a custom gateway — the same
- * conversation runs over lines of JSON the application reads itself. Both paths
+ * called. Everywhere else — OpenAI itself included, whose Chat Completions does
+ * not take tools from its own recommended model, and every self-hosted runtime
+ * or custom gateway — the same conversation runs over lines of JSON the
+ * application reads itself. `supportsNativeTools` decides which; both paths
  * meet here, and the rest of the loop cannot tell them apart.
  *
  * ## Bounds
@@ -564,7 +566,9 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
        * The assistant turn goes back without its tool calls. There are none on
        * this path unless the budget cut the round short, and a call left
        * unanswered in the transcript is a 400 from every provider that parses
-       * one.
+       * one. Claude's thinking blocks ride on those calls (`ToolCall.reasoning`)
+       * and leave with them, which Anthropic accepts only because the turn
+       * replayed here carries no tool_use — keep the two together.
        */
       const mine = session.rejected.slice(session.rejectedAt);
 
@@ -648,6 +652,10 @@ export async function runAgent(options: AgentOptions): Promise<AgentOutcome> {
       }
     }
 
+    /* The calls go back as the objects the stream produced, never rebuilt from
+       `requests`: each can carry sealed provider state — Gemini's
+       `signature`, Claude's `reasoning` — that the next request must present
+       exactly as received, or the provider refuses the whole conversation. */
     messages.push({
       role: 'assistant',
       content: completion.text.slice(0, ECHO_LIMIT),

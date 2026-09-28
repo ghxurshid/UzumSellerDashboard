@@ -10,8 +10,12 @@ import type {
  *
  * Storage key, schema version, value bounds and the provider registry live
  * here so that no component invents its own default and no two modules
- * disagree about what "valid" means. The registry mirrors the design's
- * `provDefs` — nine adapters, each with the card metadata it draws.
+ * disagree about what "valid" means. The registry is a catalogue of nine
+ * adapters this app knows how to reach — a set of suggestions the settings
+ * form builds its layout and its model list from, not a constraint on what a
+ * seller may configure: every entry's `models` is a starting point, and the
+ * form also loads the key's own list from the provider and accepts a typed
+ * id.
  */
 
 /** The single namespaced key the whole settings service reads and writes. */
@@ -75,44 +79,79 @@ export const MAX_TOKENS_STEP = 256;
 export const TEXT_LIMITS = { url: 512, secret: 1_024, identifier: 256 } as const;
 
 /**
- * Provider registry — the design's nine adapters.
+ * Provider registry.
  *
- * `models` is populated only where the catalogue is known; an empty list means
- * the adapter takes a free-text model id, which is how the design treats
- * self-hosted and OpenAI-compatible endpoints.
+ * No provider here is a guess at what might work: every cloud endpoint below
+ * was probed on 2026-09-27 with a CORS preflight from an https origin, and all
+ * seven allow a browser to call them directly with the seller's own key;
+ * `ollama` is a local OpenAI-compatible runtime, and `custom` covers any other
+ * OpenAI-compatible gateway the seller points at.
+ *
+ * `models` is a suggested, ordered starting list, not a closed set — the
+ * settings form also loads the key's own model list from the provider and
+ * accepts a typed id, so an entry going stale never blocks a seller who knows
+ * the current one. Whether a key is required at all is not decided here: that
+ * is `requiresApiKey()` in `services/ai`.
+ *
+ * Evidence behind the suggested lists, so a stale entry can be told apart from
+ * a wrong one — all checked 2026-09-27 unless stated otherwise:
+ * - Claude ids: Anthropic's own API reference (model table cached 2026-06-24),
+ *   and also listed in OpenRouter's public catalogue.
+ * - OpenAI's gpt-6 ids: OpenAI's models page, which names `gpt-6-astra` as its
+ *   own suggested starting model; also listed in OpenRouter's catalogue.
+ * - `grok-4.7` / `grok-4.3`: xAI's own docs, also listed in OpenRouter's
+ *   catalogue.
+ * - `deepseek-v4-pro`: DeepSeek's API reference and OpenRouter's catalogue;
+ *   `deepseek-flash`: DeepSeek's API reference only, not yet seen elsewhere.
+ * - Mistral's `-latest` aliases are long-standing but were NOT reconfirmed
+ *   today — carried forward, not freshly checked.
+ * - `openrouter/auto`: OpenRouter's public `/models` listing, checked today.
+ *
+ * The three previous defaults this catalogue replaced — `gpt-5.1`,
+ * `deepseek-chat`, `grok-4` — are no longer listed by their vendors.
  */
 export const AI_PROVIDERS = [
   {
     id: 'openai',
     label: 'OpenAI',
     icon: 'orbit',
-    meta: 'GPT-5.1 · GPT-4.1 mini',
-    status: 'operational',
     baseUrl: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-5.1',
-    models: [],
+    endpoint: 'fixed',
+    keyPlaceholder: 'sk-…',
+    keyUrl: 'https://platform.openai.com/api-keys',
+    orgId: true,
+    models: [
+      { id: 'gpt-6-astra', label: 'GPT-6 Astra' },
+      { id: 'gpt-6-sol', label: 'GPT-6 Sol' },
+      { id: 'gpt-6-luna', label: 'GPT-6 Luna' },
+    ],
+    defaultModel: 'gpt-6-astra',
   },
   {
     id: 'claude',
     label: 'Claude',
     icon: 'asterisk',
-    meta: 'Opus 5 · Sonnet 5',
-    status: 'operational',
     baseUrl: 'https://api.anthropic.com/v1',
-    defaultModel: 'claude-opus-5',
+    endpoint: 'fixed',
+    keyPlaceholder: 'sk-ant-…',
+    keyUrl: 'https://platform.claude.com/settings/keys',
+    orgId: false,
     models: [
       { id: 'claude-opus-5', label: 'Claude Opus 5' },
       { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
       { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
     ],
+    defaultModel: 'claude-opus-5',
   },
   {
     id: 'gemini',
     label: 'Gemini',
     icon: 'diamond',
-    meta: '3.8 Flash · 2.5 Flash-Lite',
-    status: 'operational',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    endpoint: 'fixed',
+    keyPlaceholder: 'AIza…',
+    keyUrl: 'https://aistudio.google.com/apikey',
+    orgId: false,
     defaultModel: 'gemini-3.6-flash',
     /**
      * Every Gemini model that can hold a text chat through `generateContent`
@@ -185,61 +224,86 @@ export const AI_PROVIDERS = [
     id: 'openrouter',
     label: 'OpenRouter',
     icon: 'shuffle',
-    meta: '280+ models, one key',
-    status: 'operational',
     baseUrl: 'https://openrouter.ai/api/v1',
-    defaultModel: '',
-    models: [],
+    endpoint: 'fixed',
+    keyPlaceholder: 'sk-or-…',
+    keyUrl: 'https://openrouter.ai/keys',
+    orgId: false,
+    models: [{ id: 'openrouter/auto', label: 'Auto (OpenRouter picks)' }],
+    defaultModel: 'openrouter/auto',
   },
   {
     id: 'deepseek',
     label: 'DeepSeek',
     icon: 'waves',
-    meta: 'V3 · R1 reasoning',
-    status: 'operational',
     baseUrl: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat',
-    models: [],
+    endpoint: 'fixed',
+    keyPlaceholder: 'sk-…',
+    keyUrl: 'https://platform.deepseek.com/api_keys',
+    orgId: false,
+    models: [
+      { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+      { id: 'deepseek-flash', label: 'DeepSeek Flash' },
+    ],
+    defaultModel: 'deepseek-v4-pro',
   },
   {
     id: 'mistral',
     label: 'Mistral',
     icon: 'wind',
-    meta: 'Large · Codestral',
-    status: 'operational',
     baseUrl: 'https://api.mistral.ai/v1',
+    endpoint: 'fixed',
+    /* Mistral keys carry no vendor prefix, unlike every other adapter here. */
+    keyPlaceholder: '',
+    keyUrl: 'https://console.mistral.ai/api-keys',
+    orgId: false,
+    models: [
+      { id: 'mistral-large-latest', label: 'Mistral Large' },
+      { id: 'mistral-medium-latest', label: 'Mistral Medium' },
+      { id: 'mistral-small-latest', label: 'Mistral Small' },
+    ],
     defaultModel: 'mistral-large-latest',
-    models: [],
   },
   {
     id: 'grok',
-    label: 'Grok',
+    label: 'Grok (xAI)',
     icon: 'square-x',
-    meta: 'Grok 4 · fast',
-    status: 'degraded',
     baseUrl: 'https://api.x.ai/v1',
-    defaultModel: 'grok-4',
-    models: [],
+    endpoint: 'fixed',
+    keyPlaceholder: 'xai-…',
+    keyUrl: 'https://console.x.ai',
+    orgId: false,
+    models: [
+      { id: 'grok-4.7', label: 'Grok 4.7' },
+      { id: 'grok-4.3', label: 'Grok 4.3' },
+    ],
+    defaultModel: 'grok-4.7',
   },
   {
     id: 'ollama',
     label: 'Ollama',
     icon: 'hard-drive',
-    meta: 'Local · no data leaves',
-    status: 'not running',
+    /* No vendor URL to fix on — the seller's own machine, adjusted here. */
     baseUrl: 'http://localhost:11434/v1',
-    defaultModel: '',
+    endpoint: 'editable',
+    keyPlaceholder: '',
+    keyUrl: null,
+    orgId: false,
     models: [],
+    defaultModel: '',
   },
   {
     id: 'custom',
     label: 'Custom',
     icon: 'code',
-    meta: 'Any OpenAI-compatible API',
-    status: 'configure',
+    /* No vendor to default to — the seller supplies their own gateway. */
     baseUrl: '',
-    defaultModel: '',
+    endpoint: 'required',
+    keyPlaceholder: '',
+    keyUrl: null,
+    orgId: false,
     models: [],
+    defaultModel: '',
   },
 ] as const satisfies readonly AiProviderDefinition[];
 
@@ -258,9 +322,21 @@ export const DEFAULT_AI_PROVIDER: AiProvider = 'gemini';
  */
 export const GEMINI_LIMITS_AS_OF = '2026-09-18';
 
-/** The catalogue entry for a provider; falls back to the default provider. */
+/**
+ * The catalogue entry for a provider; falls back to the default provider
+ * (`DEFAULT_AI_PROVIDER`), looked up by id rather than assumed to sit at a
+ * fixed position — the catalogue is edited often enough that an index would
+ * silently point at the wrong entry the next time it is reordered.
+ */
 export function findProvider(id: AiProvider): AiProviderDefinition {
-  return AI_PROVIDERS.find((provider) => provider.id === id) ?? AI_PROVIDERS[2];
+  return (
+    AI_PROVIDERS.find((provider) => provider.id === id) ??
+    AI_PROVIDERS.find((provider) => provider.id === DEFAULT_AI_PROVIDER) ??
+    // Unreachable: DEFAULT_AI_PROVIDER always names an entry above. Kept so
+    // the return type stays AiProviderDefinition, not AiProviderDefinition |
+    // undefined, without a non-null assertion.
+    AI_PROVIDERS[0]
+  );
 }
 
 /**
@@ -298,6 +374,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
     temperature: 0.2,
     maxTokens: 4_096,
+    // No inactive provider has been configured yet on a fresh install.
+    saved: {},
   },
   features: {
     maskSecrets: true,

@@ -14,7 +14,9 @@ import {
   findProvider,
 } from '@/constants/settings';
 import type {
+  AiConnection,
   AiProvider,
+  AiProviderDefinition,
   AiSettings,
   AppSettings,
   DataSettings,
@@ -99,6 +101,44 @@ function sanitizeApi(value: unknown): UzumApiSettings {
   };
 }
 
+/** One provider's saved connection — the same limits the active fields use. */
+function sanitizeConnection(value: unknown, definition: AiProviderDefinition): AiConnection {
+  const raw = asRecord(value);
+
+  return {
+    /* Blank falls back to the catalogue's own endpoint, which is legitimately
+       '' for `custom` — there is nothing else to fall back to. */
+    baseUrl: requiredText(raw['baseUrl'], definition.baseUrl, TEXT_LIMITS.url),
+    apiKey: text(raw['apiKey'], '', TEXT_LIMITS.secret),
+    orgId: text(raw['orgId'], '', TEXT_LIMITS.identifier),
+    model: requiredText(raw['model'], definition.defaultModel, TEXT_LIMITS.identifier),
+  };
+}
+
+/**
+ * The inactive providers' connections. Only known provider ids survive, never
+ * the id that is about to be active — that connection lives in the flat
+ * fields below, and a second copy here could only drift from it — and only
+ * entries that are actually objects; anything else silently drops the one
+ * provider it belongs to rather than the whole map.
+ */
+function sanitizeSaved(
+  value: unknown,
+  activeProvider: AiProvider,
+): Readonly<Partial<Record<AiProvider, AiConnection>>> {
+  const raw = asRecord(value);
+  const saved: Partial<Record<AiProvider, AiConnection>> = {};
+
+  for (const id of AI_PROVIDER_IDS) {
+    if (id === activeProvider) continue;
+    const entry = raw[id];
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
+    saved[id] = sanitizeConnection(entry, findProvider(id));
+  }
+
+  return saved;
+}
+
 function sanitizeAi(value: unknown): AiSettings {
   const raw = asRecord(value);
   const defaults = DEFAULT_SETTINGS.ai;
@@ -106,19 +146,19 @@ function sanitizeAi(value: unknown): AiSettings {
   const provider = oneOf<AiProvider>(raw['provider'], AI_PROVIDER_IDS, defaults.provider);
   const definition = findProvider(provider);
 
-  /* A catalogued adapter constrains the model to its list; a free-text adapter
-     names its own models, so anything is accepted there. */
-  const model = text(raw['model'], definition.defaultModel, TEXT_LIMITS.identifier);
-  const resolved = definition.models.length === 0
-    ? model
-    : (definition.models.find((entry) => entry.id === model)?.id ?? definition.defaultModel);
+  /* The settings form offers three ways to name the active model: the
+     catalogue's suggested list, whatever the provider's own `/models`
+     endpoint returns for the seller's key, and free text. None of those is
+     ours to second-guess, so any non-blank id within the length limit is
+     accepted as-is; only a blank value falls back to the catalogue default. */
+  const model = requiredText(raw['model'], definition.defaultModel, TEXT_LIMITS.identifier);
 
   return {
     provider,
     baseUrl: requiredText(raw['baseUrl'], definition.baseUrl, TEXT_LIMITS.url),
     apiKey: text(raw['apiKey'], defaults.apiKey, TEXT_LIMITS.secret),
     orgId: text(raw['orgId'], defaults.orgId, TEXT_LIMITS.identifier),
-    model: resolved,
+    model,
     timeoutMs: oneOf(toNumber(raw['timeoutMs']), AI_TIMEOUT_OPTIONS, DEFAULT_REQUEST_TIMEOUT_MS),
     temperature: decimal(
       raw['temperature'],
@@ -134,6 +174,7 @@ function sanitizeAi(value: unknown): AiSettings {
       MAX_TOKENS_BOUNDS.max,
       MAX_TOKENS_STEP,
     ),
+    saved: sanitizeSaved(raw['saved'], provider),
   };
 }
 

@@ -1,4 +1,5 @@
 import { complete } from '@/services/ai/client';
+import { isAiConfigured } from '@/services/ai/modelRules';
 import type { AiSettings } from '@/types/settings';
 import type { Language } from '@/types/domain';
 
@@ -221,7 +222,11 @@ function sanitizeBlocks(blocks: readonly Block[]): readonly Block[] {
 export async function generateInsightCards(
   options: GenerateOptions,
 ): Promise<readonly InsightCard[]> {
-  if (options.ai.apiKey.trim() === '') return [];
+  /* Not "is there a key": a local Ollama or a keyless custom gateway is a
+     working setup with an empty key field. `isAiConfigured` is the one place
+     that knows which providers may go without one — asking it here keeps the
+     rail from staying silent for a connection the chat can use. */
+  if (!isAiConfigured(options.ai)) return [];
 
   const answer = await complete(options.ai, {
     system: buildSystem(options),

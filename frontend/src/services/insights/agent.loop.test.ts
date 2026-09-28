@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { StreamOptions } from '@/services/ai/stream';
+import { DEFAULT_SETTINGS } from '@/constants/settings';
+import type { AnthropicReasoningBlock, ToolCall } from '@/services/ai/messages';
+import type { StreamOptions, StreamResult } from '@/services/ai/stream';
 import type { AiSettings } from '@/types/settings';
 
 import type { AgentSession, Capability } from './agent';
@@ -35,7 +37,10 @@ const { createSession, runAgent } = await import('./agent');
  * when the answer was fine.
  */
 
+/* Spread from the defaults so a field `AiSettings` gains later (as `saved`
+   did) does not break a fixture that has no opinion about it. */
 const SETTINGS: AiSettings = {
+  ...DEFAULT_SETTINGS.ai,
   provider: 'gemini',
   baseUrl: 'https://example.invalid',
   apiKey: 'k',
@@ -329,5 +334,109 @@ describe('a follow-up question called rather than placed', () => {
 
     expect(onRun).not.toHaveBeenCalled();
     expect(blocks[0]).toMatchObject({ kind: 'action', actionId: 'copilot.ask' });
+  });
+});
+
+describe('Claude’s thinking on a turn that called a tool', () => {
+  /**
+   * Anthropic refuses the next request if the thinking behind a tool_use is
+   * dropped or edited, and the transport can only replay what the loop hands
+   * it back. An empty `thinking` and a redacted block are here on purpose:
+   * both are what a tidy-minded copy would lose.
+   */
+  const REASONING: readonly AnthropicReasoningBlock[] = [
+    { type: 'thinking', thinking: '', signature: 'sig-1' },
+    { type: 'redacted_thinking', data: 'opaque-state' },
+  ];
+
+  const CALL: ToolCall = {
+    id: 'toolu_1',
+    name: 'open_toolkit',
+    args: { capability: 'widgets' },
+    reasoning: REASONING,
+  };
+
+  /** One model turn: `text` streamed in a single chunk, then `calls`. */
+  const turn =
+    (text: string, calls: readonly ToolCall[]) =>
+    async (options: StreamOptions): Promise<StreamResult> => {
+      options.onDelta(text);
+      return { text, calls, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
+    };
+
+  /** Every assistant turn the given request replayed with calls on it. */
+  const replayedCalls = (call: number): readonly ToolCall[] =>
+    (streamComplete.mock.calls[call]?.[0] as StreamOptions).request.messages.flatMap((message) =>
+      message.role === 'assistant' ? (message.calls ?? []) : [],
+    );
+
+  it('goes back on the next request as the object that came off the wire', async () => {
+    streamComplete.mockImplementationOnce(turn('', [CALL]));
+
+    await ask(['{"kind":"text","text":"Tayyor."}'], {
+      granted: new Set(),
+      budget: { rounds: 2, calls: 2 },
+    });
+
+    expect(streamComplete).toHaveBeenCalledTimes(2);
+    const [replayed] = replayedCalls(1);
+    /* The same object, not a copy rebuilt from what the loop read off it. */
+    expect(replayed).toBe(CALL);
+    expect(replayed?.reasoning).toBe(REASONING);
+  });
+
+  it('is still there when the round after it failed and was resumed', async () => {
+    const session = createSession({ question: 'sotuv qanday?', history: [] });
+    streamComplete
+      .mockImplementationOnce(turn('', [CALL]))
+      .mockRejectedValueOnce(new Error('network'));
+
+    await expect(
+      runAgent({
+        settings: SETTINGS,
+        system: 'system',
+        session,
+        context: CONTEXT,
+        language: 'uz',
+        granted: new Set(),
+        signal: new AbortController().signal,
+        onBlocks: () => {},
+        onRun: () => {},
+        budget: { rounds: 2, calls: 2 },
+      }),
+    ).rejects.toThrow('network');
+
+    await ask(['{"kind":"text","text":"Tayyor."}'], { session, budget: { rounds: 2, calls: 2 } });
+
+    expect(streamComplete).toHaveBeenCalledTimes(3);
+    expect(replayedCalls(2)).toEqual([CALL]);
+    expect(replayedCalls(2)[0]?.reasoning).toBe(REASONING);
+  });
+
+  it('leaves only with its tool_use, on the rewrite of a round the budget cut short', async () => {
+    /* Round 0 asks and is answered. Round 1 is the answering round, and it both
+       called a tool and wrote a refused line. That call cannot be answered — a
+       tool_use left without a result is a refused request — so the turn goes
+       back as text, and the thinking, which belongs to the call rather than to
+       the text, goes with it. The call round 0 made keeps its own. */
+    const UNANSWERED: ToolCall = {
+      id: 'toolu_2',
+      name: 'window_totals',
+      args: {},
+      reasoning: [{ type: 'thinking', thinking: 'more', signature: 'sig-2' }],
+    };
+    streamComplete
+      .mockImplementationOnce(turn('', [CALL]))
+      .mockImplementationOnce(turn(SHORT_LINE, [UNANSWERED]));
+
+    await ask(['{"kind":"text","text":"Tayyor."}'], {
+      granted: new Set(),
+      budget: { rounds: 1, calls: 1 },
+    });
+
+    expect(streamComplete).toHaveBeenCalledTimes(3);
+    expect(replayedCalls(2)).toEqual([CALL]);
+    expect(replayedCalls(2)[0]?.reasoning).toBe(REASONING);
+    expect(sentMessages(2)).toContain('series.0.values');
   });
 });

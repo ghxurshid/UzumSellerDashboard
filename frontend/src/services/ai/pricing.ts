@@ -27,6 +27,17 @@ interface ModelPrice {
  * ids and pinning the exact string would make the table wrong within a month.
  */
 const PRICES: ReadonlyArray<readonly [string, ModelPrice]> = [
+  /* Longest-prefix-wins (see `priceOf`) is what keeps `claude-opus-4` — 4.0/4.1
+     — from being priced as 4.6/4.7/4.8, and what keeps `claude-sonnet-4` from
+     being priced as 4.6, even though every one of those ids starts with the
+     shorter row above it. */
+  ['claude-opus-5', { input: 5, output: 25 }],
+  ['claude-sonnet-5', { input: 2, output: 10 }],
+  ['claude-haiku-4-5', { input: 1, output: 5 }],
+  ['claude-opus-4-8', { input: 5, output: 25 }],
+  ['claude-opus-4-7', { input: 5, output: 25 }],
+  ['claude-opus-4-6', { input: 5, output: 25 }],
+  ['claude-sonnet-4-6', { input: 3, output: 15 }],
   ['claude-opus-4', { input: 15, output: 75 }],
   ['claude-sonnet-4', { input: 3, output: 15 }],
   ['claude-haiku-4', { input: 1, output: 5 }],

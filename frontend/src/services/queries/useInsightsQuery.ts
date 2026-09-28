@@ -2,6 +2,7 @@ import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { useTranslation } from '@/lib/i18n/useTranslation';
+import { isAiConfigured } from '@/services/ai/modelRules';
 import { summariseFinance } from '@/services/derive/finance';
 import { buildInsights } from '@/services/derive/insights';
 import { toProducts } from '@/services/derive/products';
@@ -92,7 +93,10 @@ export function useInsightsQuery(): InsightsData {
   }, [expenses.data, finance.data, invoices.data, products.data, stocks.data]);
 
   const rules = derived?.rules ?? EMPTY_CARDS;
-  const configured = ai.apiKey.trim() !== '';
+  /* A keyless Ollama or custom endpoint is a normal, working setup, not a
+     missing one — `isAiConfigured` is the one place that knows which
+     providers take no key, shared with the transport itself. */
+  const configured = isAiConfigured(ai);
 
   const generated = useQuery({
     queryKey: ['insights', 'ai', derived?.key ?? '', language, ai.model, ai.provider],

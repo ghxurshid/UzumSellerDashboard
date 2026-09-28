@@ -416,7 +416,8 @@ const TUPLES = {
   ],
   testConn: ['Test connection', 'Проверить соединение', 'Ulanishni tekshirish'],
   testing: ['Testing…', 'Проверка…', 'Tekshirilmoqda…'],
-  testOk: ['Connected · 380 ms', 'Подключено · 380 мс', 'Ulandi · 380 ms'],
+  testOk: ['Connected · {ms} ms', 'Подключено · {ms} мс', 'Ulandi · {ms} ms'],
+  testFailed: ['Failed', 'Не удалось', 'Muvaffaqiyatsiz'],
   apiKey: ['API key', 'API-ключ', 'API kalit'],
   baseUrl: ['Base URL', 'Базовый URL', 'Baza URL'],
   orgId: ['Organization ID', 'ID организации', 'Tashkilot ID'],
@@ -438,24 +439,85 @@ const TUPLES = {
 
   /* — settings storage — */
   model: ['Model', 'Модель', 'Model'],
-  adapters: [
-    'Strategy pattern · {count} adapters',
-    'Strategy pattern · {count} адаптеров',
-    'Strategy pattern · {count} ta adapter',
-  ],
-  addAdapter: ['Add adapter', 'Добавить адаптер', "Adapter qo‘shish"],
-  addAdapterMeta: [
-    'Drop in a new strategy class',
-    'Новый strategy-класс',
-    'Yangi strategy klassi',
-  ],
   providerConfig: ['{name} configuration', 'Конфигурация {name}', '{name} konfiguratsiyasi'],
-  adapterRegistry: [
-    'adapter v3 · loaded from registry',
-    'adapter v3 · из реестра',
-    'adapter v3 · reyestrdan',
-  ],
   syncHistory: ['Sync history', 'История синхронизации', 'Sinxronizatsiya tarixi'],
+
+  /* — AI provider pane —
+     `aiState*` describe a provider card's own state: `Configured` and
+     `Not configured` are about the *active* provider, read straight off
+     `isAiConfigured`; the other three are about every other card, read off
+     `AiSettings.saved` and `requiresApiKey` — never a fixed catalogue label,
+     because the catalogue cannot know what the seller has actually set up. */
+  aiStateConfigured: ['Configured', 'Настроено', 'Sozlangan'],
+  aiStateNotConfigured: ['Not configured', 'Не настроено', 'Sozlanmagan'],
+  aiStateKeySaved: ['Key saved', 'Ключ сохранён', 'Kalit saqlangan'],
+  aiStateNoKeyNeeded: ['No key needed', 'Ключ не нужен', 'Kalit kerak emas'],
+  aiStateNotSetUp: ['Not set up', 'Не подключено', 'Ulanmagan'],
+  getKeyLink: ['Get a key', 'Получить ключ', 'Kalit olish'],
+  keyNoFormat: ['no fixed format', 'без фиксированного формата', "belgilangan format yo'q"],
+  loadModels: ['Load models', 'Загрузить модели', 'Modellarni yuklash'],
+  loadingModels: ['Loading…', 'Загрузка…', 'Yuklanmoqda…'],
+  modelTypeId: ['Type a model id', 'Указать ID модели', 'Model ID kiritish'],
+  modelChooseList: ['Choose from the list', 'Выбрать из списка', "Ro'yxatdan tanlash"],
+  advanced: ['Advanced', 'Дополнительно', "Qo'shimcha"],
+  restoreDefault: ['Restore default', 'Восстановить по умолчанию', 'Standartga qaytarish'],
+  baseUrlRequiredWarn: [
+    'A custom provider needs its own base URL',
+    'Для пользовательского провайдера нужен свой базовый URL',
+    "Maxsus provayder uchun o'z baza URL kerak",
+  ],
+  noSamplingHint: [
+    'This model sets its own sampling — the value below is not sent',
+    'Эта модель сама задаёт сэмплинг — значение ниже не отправляется',
+    "Bu model sampling'ni o'zi belgilaydi — quyidagi qiymat yuborilmaydi",
+  ],
+  ollamaHint: [
+    'Ollama must be running on this machine. Opened from a deployed site (not localhost), Ollama needs OLLAMA_ORIGINS to include {origin} — on localhost this works by default.',
+    'Ollama должен работать на этой машине. Если приложение открыто с развёрнутого сайта (не localhost), в Ollama нужно добавить {origin} в OLLAMA_ORIGINS — на localhost это работает по умолчанию.',
+    "Ollama shu qurilmada ishlab turishi kerak. Ilova joylashtirilgan saytdan ochilganda (localhost emas), Ollama'da OLLAMA_ORIGINS ro'yxatiga {origin} qo'shilishi kerak — localhost'da bu avtomatik ishlaydi.",
+  ],
+  customHint: [
+    'Works with any OpenAI-compatible /chat/completions endpoint that allows browser (CORS) calls.',
+    'Подходит любой OpenAI-совместимый endpoint /chat/completions, разрешающий запросы из браузера (CORS).',
+    "Brauzerdan (CORS) so'rovga ruxsat beradigan istalgan OpenAI-mos /chat/completions endpoint bilan ishlaydi.",
+  ],
+  latencyLabel: ['latency', 'задержка', 'kechikish'],
+  responseLabel: ['response', 'ответ', 'javob'],
+  errorLabel: ['error', 'ошибка', 'xato'],
+  aiFinishSetup: [
+    'Finish the connection details above first',
+    'Сначала заполните данные подключения выше',
+    "Avval yuqoridagi ulanish ma'lumotlarini to'ldiring",
+  ],
+  aiNoKey: ['No key set yet', 'Ключ ещё не задан', "Hali kalit kiritilmagan"],
+  aiErrUnauthorized: ['The key was rejected', 'Ключ отклонён', 'Kalit rad etildi'],
+  aiErrForbidden: [
+    'This key has no access to this model',
+    'У этого ключа нет доступа к этой модели',
+    "Bu kalitning ushbu modelga ruxsati yo'q",
+  ],
+  aiErrRateLimited: [
+    'Rate limit reached — try again shortly',
+    'Достигнут лимит запросов — попробуйте чуть позже',
+    "So'rovlar chegarasiga yetildi — birozdan keyin urinib ko'ring",
+  ],
+  aiErrNetwork: [
+    'The provider could not be reached',
+    'Провайдер недоступен',
+    "Provayderga ulanib bo'lmadi",
+  ],
+  aiErrTimeout: ['The request timed out', 'Истекло время ожидания', "So'rov vaqti tugadi"],
+  aiErrServer: [
+    'The provider is having trouble — try again shortly',
+    'Сбой на стороне провайдера — попробуйте чуть позже',
+    "Provayder tomonida nosozlik — birozdan keyin urinib ko'ring",
+  ],
+  aiErrRequest: [
+    'The provider refused the request: {detail}',
+    'Провайдер отклонил запрос: {detail}',
+    "Provayder so'rovni rad etdi: {detail}",
+  ],
+  aiErrUnknown: ['Something went wrong', 'Что-то пошло не так', 'Nimadir xato ketdi'],
 
   /* — live sync progress — */
   syncOverall: ['Overall', 'Всего', 'Umumiy'],
@@ -746,9 +808,9 @@ const TUPLES = {
     'Barcha sozlamalar tiklansinmi?',
   ],
   resetAllBody: [
-    'Stored endpoints, keys, model choice and flags are cleared and the defaults restored. This cannot be undone.',
-    'Сохранённые endpoint, ключи, выбор модели и флаги будут очищены, вернутся значения по умолчанию. Отменить нельзя.',
-    "Saqlangan endpoint, kalit, model tanlovi va bayroqlar o‘chiriladi va standart qiymatlar tiklanadi. Buni qaytarib bo‘lmaydi.",
+    'Stored endpoints, model choice and flags are cleared and the defaults restored — including every AI provider’s saved key, not only the active one. This cannot be undone.',
+    'Сохранённые endpoint, выбор модели и флаги будут очищены, вернутся значения по умолчанию — включая сохранённый ключ каждого ИИ-провайдера, а не только активного. Отменить нельзя.',
+    "Saqlangan endpoint, model tanlovi va bayroqlar o‘chiriladi va standart qiymatlar tiklanadi — nafaqat faol, balki har bir AI provayderning saqlangan kaliti ham. Buni qaytarib bo‘lmaydi.",
   ],
   storedLocal: [
     'Saved in this browser only. Anything kept here is readable by scripts on this page — use a key you can revoke, never a server-side secret.',

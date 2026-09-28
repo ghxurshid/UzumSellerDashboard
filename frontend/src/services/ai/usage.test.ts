@@ -709,6 +709,24 @@ describe('isKeyRejection', () => {
   it('reads API_KEY_INVALID out of a plain string body with no JSON structure at all', () => {
     expect(isKeyRejection(400, 'API_KEY_INVALID')).toBe(true);
   });
+
+  it('treats xAI\'s flat 400 shape as a key rejection', () => {
+    const body = {
+      code: 'invalid-argument',
+      error: 'Incorrect API key provided. You can obtain an API key from https://console.x.ai.',
+    };
+    expect(isKeyRejection(400, body)).toBe(true);
+  });
+
+  it('does not mistake another flat 400 for a key rejection just because it has a `code`', () => {
+    const body = { code: 'invalid-argument', error: 'model does not exist' };
+    expect(isKeyRejection(400, body)).toBe(false);
+  });
+
+  it('reads xAI\'s flat 400 shape serialized as a JSON string too', () => {
+    const body = JSON.stringify({ code: 'invalid-argument', error: 'Incorrect API key provided.' });
+    expect(isKeyRejection(400, body)).toBe(true);
+  });
 });
 
 /* ── isModelRequestEvent ────────────────────────────────────────────────── */

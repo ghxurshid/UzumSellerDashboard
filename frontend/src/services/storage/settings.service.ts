@@ -1,5 +1,8 @@
 import { DEFAULT_SETTINGS } from '@/constants/settings';
 import type {
+  AiConnection,
+  AiProvider,
+  AiSettings,
   AppSettings,
   DataSettings,
   SettingsPatch,
@@ -119,9 +122,60 @@ function persist(next: AppSettings): void {
     });
 }
 
-/** Sections hold primitives only, so a shallow compare is an exact compare. */
+/**
+ * Every section but `ai` holds primitives only, so a shallow key-by-key
+ * compare is an exact compare for them. `ai` nests a `saved` map of
+ * connections and needs `sameAiSection` below instead.
+ */
 function sameSection<T extends object>(previous: T, next: T): boolean {
   return (Object.keys(previous) as Array<keyof T>).every((key) => previous[key] === next[key]);
+}
+
+function sameConnection(
+  previous: AiConnection | undefined,
+  next: AiConnection | undefined,
+): boolean {
+  if (previous === next) return true;
+  if (previous === undefined || next === undefined) return false;
+  return (
+    previous.baseUrl === next.baseUrl &&
+    previous.apiKey === next.apiKey &&
+    previous.orgId === next.orgId &&
+    previous.model === next.model
+  );
+}
+
+function sameSavedConnections(
+  previous: AiSettings['saved'],
+  next: AiSettings['saved'],
+): boolean {
+  if (previous === next) return true;
+  const previousKeys = Object.keys(previous) as AiProvider[];
+  const nextKeys = Object.keys(next) as AiProvider[];
+  if (previousKeys.length !== nextKeys.length) return false;
+  return previousKeys.every((key) => sameConnection(previous[key], next[key]));
+}
+
+/**
+ * `ai`'s own equality: the flat fields compare like any other section, but
+ * `saved` is rebuilt fresh by `sanitizeAi` on every pass — even when nothing
+ * in it moved — so a reference compare on the whole section would treat
+ * every unrelated settings write (saving the Uzum token, say) as a change to
+ * `ai` and re-render every subscriber. Compare each saved connection's
+ * fields instead.
+ */
+function sameAiSection(previous: AiSettings, next: AiSettings): boolean {
+  return (
+    previous.provider === next.provider &&
+    previous.baseUrl === next.baseUrl &&
+    previous.apiKey === next.apiKey &&
+    previous.orgId === next.orgId &&
+    previous.model === next.model &&
+    previous.timeoutMs === next.timeoutMs &&
+    previous.temperature === next.temperature &&
+    previous.maxTokens === next.maxTokens &&
+    sameSavedConnections(previous.saved, next.saved)
+  );
 }
 
 /**
@@ -131,7 +185,7 @@ function sameSection<T extends object>(previous: T, next: T): boolean {
  */
 function reconcile(previous: AppSettings, next: AppSettings): AppSettings {
   const api = sameSection(previous.api, next.api) ? previous.api : next.api;
-  const ai = sameSection(previous.ai, next.ai) ? previous.ai : next.ai;
+  const ai = sameAiSection(previous.ai, next.ai) ? previous.ai : next.ai;
   const features = sameSection(previous.features, next.features)
     ? previous.features
     : next.features;

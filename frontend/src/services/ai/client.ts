@@ -3,6 +3,14 @@ import axios, { type AxiosRequestConfig } from 'axios';
 import { toApiError, ApiError } from '@/services/api/client';
 import type { AiProvider, AiSettings } from '@/types/settings';
 
+import {
+  anthropicHeaders,
+  claudeSamplingFields,
+  geminiHeaders,
+  isAiConfigured,
+  openAiCompatibleHeaders,
+  openAiCompatibleSamplingFields,
+} from './modelRules';
 import { isKeyRejection, ModelQuotaError, readQuotaFailure, recordModelRequest } from './usage';
 
 /**
@@ -12,7 +20,8 @@ import { isKeyRejection, ModelQuotaError, readQuotaFailure, recordModelRequest }
  * Messages API, Google's `generateContent`, and the OpenAI-compatible
  * `/chat/completions` that every other provider in the list speaks. The app
  * never ships a key — it uses the one in Settings, and refuses to call
- * anything when that is empty.
+ * anything when that is empty (or, for the two providers a key is optional
+ * for, when the rest of the connection is empty — see `isAiConfigured`).
  */
 
 export interface CompletionRequest {
@@ -21,26 +30,66 @@ export interface CompletionRequest {
   readonly signal?: AbortSignal;
 }
 
-/** Anthropic blocks browser calls unless this header opts in explicitly. */
-const ANTHROPIC_BROWSER_HEADER = 'anthropic-dangerous-direct-browser-access';
-const ANTHROPIC_VERSION = '2023-06-01';
-
-function readText(value: unknown, path: readonly (string | number)[]): string | null {
+function at(value: unknown, path: readonly (string | number)[]): unknown {
   let cursor: unknown = value;
   for (const step of path) {
-    if (cursor === null || typeof cursor !== 'object') return null;
+    if (cursor === null || typeof cursor !== 'object') return undefined;
     cursor = (cursor as Record<string | number, unknown>)[step];
   }
-  return typeof cursor === 'string' ? cursor : null;
+  return cursor;
+}
+
+function readText(value: unknown, path: readonly (string | number)[]): string | null {
+  const found = at(value, path);
+  return typeof found === 'string' ? found : null;
 }
 
 function readNumber(value: unknown, path: readonly (string | number)[]): number | null {
-  let cursor: unknown = value;
-  for (const step of path) {
-    if (cursor === null || typeof cursor !== 'object') return null;
-    cursor = (cursor as Record<string | number, unknown>)[step];
+  const found = at(value, path);
+  return typeof found === 'number' ? found : null;
+}
+
+/**
+ * The first real answer in an Anthropic response, skipping thinking blocks.
+ *
+ * With extended thinking on, `content[0]` is a `thinking` (or
+ * `redacted_thinking`) block, not the answer — reading it positionally is
+ * what used to turn every thinking-enabled reply into "Unexpected response
+ * from the model". The text is wherever it is, after however many reasoning
+ * blocks preceded it.
+ */
+function firstAnthropicText(body: unknown): string | null {
+  const content = at(body, ['content']);
+  if (!Array.isArray(content)) return null;
+
+  for (const block of content) {
+    if (readText(block, ['type']) === 'text') {
+      const text = readText(block, ['text']);
+      if (text !== null) return text;
+    }
   }
-  return typeof cursor === 'number' ? cursor : null;
+
+  return null;
+}
+
+/**
+ * The first real answer in a Gemini response, skipping thought parts.
+ *
+ * The same positional assumption breaks the same way here: a part carrying
+ * `thought: true` can arrive ahead of the text part once thought summaries or
+ * a function call ride alongside it.
+ */
+function firstGeminiText(body: unknown): string | null {
+  const parts = at(body, ['candidates', 0, 'content', 'parts']);
+  if (!Array.isArray(parts)) return null;
+
+  for (const part of parts) {
+    if (at(part, ['thought']) === true) continue;
+    const text = readText(part, ['text']);
+    if (text !== null) return text;
+  }
+
+  return null;
 }
 
 /**
@@ -124,6 +173,20 @@ async function send<T>(
           ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
         });
       }
+
+      /* `toApiError` classifies purely on status code, so a key rejection
+         that arrived as a bare 400 — Gemini's `API_KEY_INVALID`, xAI's flat
+         `{code:"invalid-argument"}` — comes back as the generic `client`
+         kind. `isKeyRejection` already knows better; 401/403 already landed
+         on the right kind from `classify()` and are left alone. */
+      if (keyRejected && apiError.kind === 'client') {
+        throw new ApiError(apiError.message, {
+          kind: 'unauthorized',
+          ...(apiError.status === undefined ? {} : { status: apiError.status }),
+          ...(apiError.code === undefined ? {} : { code: apiError.code }),
+          cause: apiError,
+        });
+      }
     }
     /* No response at all — network failure, timeout, cancellation — never
        occupied a request slot on the provider's side, so nothing is recorded. */
@@ -140,10 +203,7 @@ export async function complete(
   settings: AiSettings,
   request: CompletionRequest,
 ): Promise<string> {
-  if (settings.apiKey.trim() === '') {
-    throw new ApiError('AI provider is not configured', { kind: 'unconfigured' });
-  }
-  if (settings.baseUrl.trim() === '' || settings.model.trim() === '') {
+  if (!isAiConfigured(settings)) {
     throw new ApiError('AI provider is not configured', { kind: 'unconfigured' });
   }
 
@@ -159,23 +219,15 @@ export async function complete(
       {
         model: settings.model,
         max_tokens: settings.maxTokens,
-        temperature: settings.temperature,
+        ...claudeSamplingFields(settings.model, settings.temperature),
         system: request.system,
         messages: request.messages,
       },
-      {
-        ...common,
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': settings.apiKey,
-          'anthropic-version': ANTHROPIC_VERSION,
-          [ANTHROPIC_BROWSER_HEADER]: 'true',
-        },
-      },
+      { ...common, headers: anthropicHeaders(settings.apiKey) },
       { provider: settings.provider, model: settings.model },
     );
 
-    const text = readText(body, ['content', 0, 'text']);
+    const text = firstAnthropicText(body);
     if (text === null) throw new ApiError('Unexpected response from the model', { kind: 'server' });
     return text;
   }
@@ -194,14 +246,11 @@ export async function complete(
           maxOutputTokens: settings.maxTokens,
         },
       },
-      {
-        ...common,
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': settings.apiKey },
-      },
+      { ...common, headers: geminiHeaders(settings.apiKey) },
       { provider: settings.provider, model: settings.model },
     );
 
-    const text = readText(body, ['candidates', 0, 'content', 'parts', 0, 'text']);
+    const text = firstGeminiText(body);
     if (text === null) throw new ApiError('Unexpected response from the model', { kind: 'server' });
     return text;
   }
@@ -212,17 +261,12 @@ export async function complete(
     `${base}/chat/completions`,
     {
       model: settings.model,
-      temperature: settings.temperature,
-      max_tokens: settings.maxTokens,
+      ...openAiCompatibleSamplingFields(settings.provider, settings.model, settings.temperature, settings.maxTokens),
       messages: [{ role: 'system', content: request.system }, ...request.messages],
     },
     {
       ...common,
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${settings.apiKey}`,
-        ...(settings.orgId === '' ? {} : { 'openai-organization': settings.orgId }),
-      },
+      headers: openAiCompatibleHeaders(settings.provider, settings.apiKey, settings.orgId),
     },
     { provider: settings.provider, model: settings.model },
   );

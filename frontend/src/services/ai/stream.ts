@@ -1,8 +1,23 @@
 import { ApiError, readRetryAfter } from '@/services/api/client';
+import type { ApiFailureKind } from '@/services/api/errors';
 import type { AiSettings } from '@/types/settings';
 
 import type { JsonSchema } from './jsonSchema';
-import { supportsNativeTools, type ChatMessage, type ToolCall, type ToolSchema } from './messages';
+import {
+  supportsNativeTools,
+  type AnthropicReasoningBlock,
+  type ChatMessage,
+  type ToolCall,
+  type ToolSchema,
+} from './messages';
+import {
+  anthropicHeaders,
+  claudeSamplingFields,
+  geminiHeaders,
+  isAiConfigured,
+  openAiCompatibleHeaders,
+  openAiCompatibleSamplingFields,
+} from './modelRules';
 import { isKeyRejection, ModelQuotaError, readQuotaFailure, recordModelRequest } from './usage';
 
 /**
@@ -65,9 +80,6 @@ export interface StreamResult {
   readonly cachedInputTokens: number;
 }
 
-const ANTHROPIC_BROWSER_HEADER = 'anthropic-dangerous-direct-browser-access';
-const ANTHROPIC_VERSION = '2023-06-01';
-
 /** Rough enough for a cost read-out, and free. See `pricing.ts`. */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3.6);
@@ -86,10 +98,20 @@ interface PartialCall {
   signature?: string;
 }
 
-interface Accumulator {
+/** One Anthropic thinking/redacted_thinking content block, as it streams in. */
+interface PartialReasoning {
+  readonly type: 'thinking' | 'redacted_thinking';
+  thinking: string;
+  signature: string;
+  data: string;
+}
+
+export interface Accumulator {
   text: string;
   readonly calls: Map<string, PartialCall>;
   readonly order: string[];
+  /** Anthropic thinking blocks, keyed by content-block index — order matters. */
+  readonly reasoning: Map<number, PartialReasoning>;
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
@@ -114,14 +136,32 @@ function slotOf(accumulator: Accumulator, key: string): PartialCall {
 }
 
 /**
+ * Anthropic's thinking blocks for this turn, in content-block order.
+ *
+ * `data` on `redacted_thinking` arrives whole in `content_block_start` — it
+ * is already-encrypted state, not something that streams incrementally — so
+ * only `thinking`/`signature` accumulate across deltas.
+ */
+function reasoningBlocksOf(accumulator: Accumulator): readonly AnthropicReasoningBlock[] {
+  return [...accumulator.reasoning.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, block]) =>
+      block.type === 'thinking'
+        ? { type: 'thinking' as const, thinking: block.thinking, signature: block.signature }
+        : { type: 'redacted_thinking' as const, data: block.data },
+    );
+}
+
+/**
  * The calls, once the stream has ended.
  *
  * A call whose arguments did not parse is kept with `{}` rather than dropped:
  * the schema will reject it and the model will be told why, which is a better
  * outcome than a lookup that silently never happened.
  */
-function finishCalls(accumulator: Accumulator): readonly ToolCall[] {
+export function finishCalls(accumulator: Accumulator): readonly ToolCall[] {
   const calls: ToolCall[] = [];
+  const reasoning = reasoningBlocksOf(accumulator);
 
   for (const key of accumulator.order) {
     const partial = accumulator.calls.get(key);
@@ -141,6 +181,10 @@ function finishCalls(accumulator: Accumulator): readonly ToolCall[] {
       name: partial.name,
       args,
       ...(partial.signature === undefined ? {} : { signature: partial.signature }),
+      /* Attached to the first call of the turn only — Claude's thinking is a
+         property of the turn, not of one call, and `anthropicMessages` reads
+         it off whichever call carries it. */
+      ...(calls.length === 0 && reasoning.length > 0 ? { reasoning } : {}),
     });
   }
 
@@ -200,12 +244,12 @@ function geminiSchema(schema: JsonSchema): Record<string, unknown> {
 
 /* ── message dialects ───────────────────────────────────────────────────── */
 
-interface AnthropicBlock {
+export interface AnthropicBlock {
   readonly type: string;
   readonly [key: string]: unknown;
 }
 
-interface AnthropicMessage {
+export interface AnthropicMessage {
   readonly role: 'user' | 'assistant';
   content: AnthropicBlock[];
 }
@@ -218,7 +262,7 @@ interface AnthropicMessage {
  * alternate. So consecutive messages of the same role are merged into one,
  * which is what the format means anyway: several blocks, one turn.
  */
-function anthropicMessages(messages: readonly ChatMessage[]): readonly AnthropicMessage[] {
+export function anthropicMessages(messages: readonly ChatMessage[]): readonly AnthropicMessage[] {
   const out: AnthropicMessage[] = [];
 
   const push = (role: 'user' | 'assistant', blocks: readonly AnthropicBlock[]): void => {
@@ -235,9 +279,16 @@ function anthropicMessages(messages: readonly ChatMessage[]): readonly Anthropic
     }
 
     if (message.role === 'assistant') {
+      const calls = message.calls ?? [];
       const blocks: AnthropicBlock[] = [];
+
+      /* Thinking blocks ride on the first call and must be replayed ahead of
+         everything else in the turn — see `ToolCall.reasoning` in
+         `messages.ts` for why they are carried there. */
+      for (const block of calls[0]?.reasoning ?? []) blocks.push({ ...block });
+
       if (message.content.trim() !== '') blocks.push({ type: 'text', text: message.content });
-      for (const call of message.calls ?? []) {
+      for (const call of calls) {
         blocks.push({ type: 'tool_use', id: call.id, name: call.name, input: call.args ?? {} });
       }
       push('assistant', blocks);
@@ -366,7 +417,7 @@ function geminiContents(messages: readonly ChatMessage[]): readonly GeminiConten
 
 /* ── the three dialects ─────────────────────────────────────────────────── */
 
-interface Dialect {
+export interface Dialect {
   readonly url: string;
   readonly body: unknown;
   readonly headers: Record<string, string>;
@@ -444,7 +495,7 @@ function reduceGemini(
   }
 }
 
-function reduceAnthropic(
+export function reduceAnthropic(
   event: unknown,
   accumulator: Accumulator,
   onText: (text: string) => void,
@@ -470,8 +521,34 @@ function reduceAnthropic(
 
   if (type === 'content_block_start') {
     const block = at(event, ['content_block']);
-    if (textAt(block, ['type']) === 'tool_use') {
-      const index = numberAt(event, ['index']) ?? accumulator.order.length;
+    const blockType = textAt(block, ['type']);
+    const index = numberAt(event, ['index']) ?? accumulator.order.length;
+
+    /* Captured but never handed to `onText` — this is the model's reasoning,
+       not its answer, and Anthropic requires the whole block replayed
+       verbatim on the next request (see `ToolCall.reasoning`). */
+    if (blockType === 'thinking') {
+      accumulator.reasoning.set(index, {
+        type: 'thinking',
+        thinking: textAt(block, ['thinking']) ?? '',
+        signature: textAt(block, ['signature']) ?? '',
+        data: '',
+      });
+      return;
+    }
+
+    if (blockType === 'redacted_thinking') {
+      /* Arrives whole here — already-encrypted state, nothing to stream. */
+      accumulator.reasoning.set(index, {
+        type: 'redacted_thinking',
+        thinking: '',
+        signature: '',
+        data: textAt(block, ['data']) ?? '',
+      });
+      return;
+    }
+
+    if (blockType === 'tool_use') {
       const slot = slotOf(accumulator, `a${index}`);
       slot.id = textAt(block, ['id']) ?? '';
       slot.name = textAt(block, ['name']) ?? '';
@@ -480,6 +557,27 @@ function reduceAnthropic(
   }
 
   if (type === 'content_block_delta') {
+    const deltaType = textAt(event, ['delta', 'type']);
+    const index = numberAt(event, ['index']) ?? 0;
+
+    if (deltaType === 'thinking_delta') {
+      const piece = textAt(event, ['delta', 'thinking']);
+      if (piece !== null && piece !== '') {
+        const slot = accumulator.reasoning.get(index);
+        if (slot !== undefined) slot.thinking += piece;
+      }
+      return;
+    }
+
+    if (deltaType === 'signature_delta') {
+      const piece = textAt(event, ['delta', 'signature']);
+      if (piece !== null && piece !== '') {
+        const slot = accumulator.reasoning.get(index);
+        if (slot !== undefined) slot.signature += piece;
+      }
+      return;
+    }
+
     const text = textAt(event, ['delta', 'text']);
     if (text !== null && text !== '') {
       accumulator.text += text;
@@ -489,7 +587,6 @@ function reduceAnthropic(
 
     const fragment = textAt(event, ['delta', 'partial_json']);
     if (fragment !== null) {
-      const index = numberAt(event, ['index']) ?? 0;
       slotOf(accumulator, `a${index}`).json += fragment;
     }
   }
@@ -536,7 +633,7 @@ function reduceOpenAi(
   }
 }
 
-function dialectFor(settings: AiSettings, request: StreamRequest): Dialect {
+export function dialectFor(settings: AiSettings, request: StreamRequest): Dialect {
   const base = settings.baseUrl.replace(/\/+$/, '');
   const tools = supportsNativeTools(settings.provider) ? (request.tools ?? []) : [];
 
@@ -549,7 +646,7 @@ function dialectFor(settings: AiSettings, request: StreamRequest): Dialect {
       body: {
         model: settings.model,
         max_tokens: settings.maxTokens,
-        temperature: settings.temperature,
+        ...claudeSamplingFields(settings.model, settings.temperature),
         /* An array rather than a string, so the whole instruction can carry a
            cache marker of its own. */
         system: [
@@ -571,12 +668,7 @@ function dialectFor(settings: AiSettings, request: StreamRequest): Dialect {
               })),
             }),
       },
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': settings.apiKey,
-        'anthropic-version': ANTHROPIC_VERSION,
-        [ANTHROPIC_BROWSER_HEADER]: 'true',
-      },
+      headers: anthropicHeaders(settings.apiKey),
       reduce: reduceAnthropic,
     };
   }
@@ -621,7 +713,7 @@ function dialectFor(settings: AiSettings, request: StreamRequest): Dialect {
               ],
             }),
       },
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': settings.apiKey },
+      headers: geminiHeaders(settings.apiKey),
       reduce: reduceGemini,
     };
   }
@@ -642,8 +734,7 @@ function dialectFor(settings: AiSettings, request: StreamRequest): Dialect {
     url: `${base}/chat/completions`,
     body: {
       model: settings.model,
-      temperature: settings.temperature,
-      max_tokens: settings.maxTokens,
+      ...openAiCompatibleSamplingFields(settings.provider, settings.model, settings.temperature, settings.maxTokens),
       messages: [
         { role: 'system', content: request.system },
         ...openAiMessages(request.messages),
@@ -664,11 +755,7 @@ function dialectFor(settings: AiSettings, request: StreamRequest): Dialect {
             tool_choice: 'auto',
           }),
     },
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${settings.apiKey}`,
-      ...(settings.orgId === '' ? {} : { 'openai-organization': settings.orgId }),
-    },
+    headers: openAiCompatibleHeaders(settings.provider, settings.apiKey, settings.orgId),
     reduce: reduceOpenAi,
   };
 }
@@ -796,7 +883,7 @@ export async function streamComplete(options: StreamOptions): Promise<StreamResu
 async function attemptStream(options: StreamOptions): Promise<StreamResult> {
   const { settings, request, onDelta } = options;
 
-  if (settings.apiKey.trim() === '' || settings.baseUrl.trim() === '' || settings.model.trim() === '') {
+  if (!isAiConfigured(settings)) {
     throw new ApiError('AI provider is not configured', { kind: 'unconfigured' });
   }
 
@@ -899,7 +986,8 @@ async function attemptStream(options: StreamOptions): Promise<StreamResult> {
        `usage.ts`'s header — so it is not recorded at all, rather than
        counted as a `'failed'` request that would push every gauge toward a
        false "exhausted". */
-    if (!isKeyRejection(response.status, detail)) {
+    const keyRejected = isKeyRejection(response.status, detail);
+    if (!keyRejected) {
       recordModelRequest({
         provider: settings.provider,
         model: settings.model,
@@ -909,15 +997,26 @@ async function attemptStream(options: StreamOptions): Promise<StreamResult> {
       });
     }
 
-    throw new ApiError(detail.slice(0, 300) || `The model returned ${response.status}`, {
-      kind:
-        response.status === 401
+    /* `isKeyRejection` already recognises 401/403 and, per provider, the
+       oddly-shaped 400s that mean the same thing (Gemini's
+       `API_KEY_INVALID`, xAI's flat `{code:"invalid-argument"}`) — so a
+       rejected key is always `unauthorized`, never the generic `client` a
+       bare status code would otherwise produce. 403 is kept apart: it is a
+       real key that the provider will not extend this way (a model the plan
+       excludes), which `isKeyRejection` also treats as a key problem for the
+       usage ledger's purposes but which the chat should still call
+       `forbidden`, not `unauthorized`. */
+    const kind: ApiFailureKind =
+      response.status === 403
+        ? 'forbidden'
+        : keyRejected
           ? 'unauthorized'
-          : response.status === 403
-            ? 'forbidden'
-            : response.status >= 500
-              ? 'server'
-              : 'client',
+          : response.status >= 500
+            ? 'server'
+            : 'client';
+
+    throw new ApiError(detail.slice(0, 300) || `The model returned ${response.status}`, {
+      kind,
       status: response.status,
       ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
     });
@@ -930,6 +1029,7 @@ async function attemptStream(options: StreamOptions): Promise<StreamResult> {
     text: '',
     calls: new Map(),
     order: [],
+    reasoning: new Map(),
     inputTokens: 0,
     outputTokens: 0,
     cachedInputTokens: 0,

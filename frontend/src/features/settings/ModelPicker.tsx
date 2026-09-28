@@ -40,19 +40,31 @@ interface ModelPickerProps {
   readonly options: readonly AiModelOption[];
   readonly value: string;
   readonly onChange: (value: string) => void;
+  /** Shown in place of a blank trigger when nothing is selected yet. */
+  readonly placeholder?: string;
 }
 
 /**
- * The model field for a provider whose catalogue publishes rate limits.
+ * The model field, for any provider with at least one suggested or loaded
+ * model to offer.
  *
  * A native `<select>` cannot draw a bar inside an `<option>`, so this is
  * Radix `Select` instead — it keeps the same listbox semantics, `Escape`,
  * roving focus and typeahead a native control gives for free, and only the
  * visuals of each row are custom. Every option stays selectable, exhausted
  * ones included: quota is a reason to pick a different model, not a reason
- * to hide one the seller already has configured elsewhere.
+ * to hide one the seller already has configured elsewhere. Only Gemini's
+ * catalogue entries publish `limits` today, so this is the only provider that
+ * ever draws a bar — every other option here renders as a plain row.
  */
-export function ModelPicker({ label, provider, options, value, onChange }: ModelPickerProps): ReactNode {
+export function ModelPicker({
+  label,
+  provider,
+  options,
+  value,
+  onChange,
+  placeholder,
+}: ModelPickerProps): ReactNode {
   const { t } = useTranslation();
   const usage = useProviderModelUsage(provider);
   const loaded = useModelUsageLoaded();
@@ -60,6 +72,7 @@ export function ModelPicker({ label, provider, options, value, onChange }: Model
   const labelId = useId();
 
   const selected = options.find((option) => option.id === value);
+  const triggerText = selected?.label ?? (value !== '' ? value : (placeholder ?? value));
 
   return (
     <div className="flex flex-col gap-5">
@@ -74,9 +87,10 @@ export function ModelPicker({ label, provider, options, value, onChange }: Model
             CONTROL,
             CONTROL_HEIGHT,
             'flex cursor-pointer items-center justify-between gap-8 border-line-2',
+            value === '' && 'text-faint',
           )}
         >
-          <Select.Value className="min-w-0 truncate">{selected?.label ?? value}</Select.Value>
+          <Select.Value className="min-w-0 truncate">{triggerText}</Select.Value>
           <Select.Icon>
             <ChevronDown aria-hidden className="size-14 shrink-0 text-faint" />
           </Select.Icon>

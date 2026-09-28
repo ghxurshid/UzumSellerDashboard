@@ -4,6 +4,7 @@ import { formatClock } from '@/lib/format';
 import { useTranslation, type Translator } from '@/lib/i18n/useTranslation';
 import { ApiError } from '@/services/api/client';
 import { estimateCost } from '@/services/ai/pricing';
+import { isAiConfigured } from '@/services/ai/modelRules';
 import { supportsNativeTools } from '@/services/ai/messages';
 import { ModelQuotaError, nextPacificMidnight } from '@/services/ai/usage';
 import { createSession, runAgent, summariseAnswer, type AgentSession } from '@/services/insights/agent';
@@ -68,7 +69,7 @@ interface UseCopilotAnswersResult {
   readonly retry: (id: string) => void;
   readonly cancel: () => void;
   readonly suggestions: readonly SuggestedQuestion[];
-  /** True when no provider key is stored — the panel offers Settings instead. */
+  /** True when there is not enough to send a request — the panel offers Settings instead. */
   readonly unconfigured: boolean;
 }
 
@@ -288,5 +289,5 @@ export function useCopilotAnswers(): UseCopilotAnswersResult {
     { id: 'q-ops', text: t('qOps') },
   ];
 
-  return { ask, retry, cancel, suggestions, unconfigured: ai.apiKey.trim() === '' };
+  return { ask, retry, cancel, suggestions, unconfigured: !isAiConfigured(ai) };
 }
