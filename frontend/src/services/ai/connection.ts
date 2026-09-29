@@ -76,7 +76,7 @@ async function probeModelsForUnauthorized(
   try {
     response = await fetch(`${base}/models`, {
       method: 'GET',
-      headers: openAiCompatibleHeaders(ai.provider, ai.apiKey, ai.orgId),
+      headers: openAiCompatibleHeaders(ai),
       ...(signal !== undefined ? { signal } : {}),
     });
   } catch {
@@ -153,6 +153,11 @@ function at(value: unknown, path: readonly (string | number)[]): unknown {
 function textAt(value: unknown, path: readonly (string | number)[]): string | null {
   const found = at(value, path);
   return typeof found === 'string' ? found : null;
+}
+
+function numberAt(value: unknown, path: readonly (string | number)[]): number | null {
+  const found = at(value, path);
+  return typeof found === 'number' ? found : null;
 }
 
 /**
@@ -245,23 +250,50 @@ export function readGeminiModels(data: unknown): ProviderModel[] {
 /**
  * Ids that are never a text chat model, so an OpenAI catalogue — which lists
  * every model type the account can reach — does not offer an embedding or
- * audio model as though it could hold a conversation.
+ * audio model as though it could hold a conversation. `instruct`/`search` ids
+ * are chat-shaped requests OpenAI still accepts, but tuned for a legacy
+ * completion style or a web-search-augmented answer rather than the ordinary
+ * conversation this transport holds, so they are held back the same way.
  */
-const OPENAI_NON_CHAT = /embed|tts|whisper|dall-?e|image|audio|realtime|moderation|transcribe/i;
+const OPENAI_NON_CHAT = /embed|tts|whisper|dall-?e|image|audio|realtime|moderation|transcribe|instruct|search/i;
+
+/**
+ * The families that can actually hold this application's conversation: GPT
+ * (`gpt-…`), ChatGPT's own alias (`chatgpt-…`), and the `o1`/`o3`/`o4`
+ * reasoning line. Everything else an OpenAI account's `/models` response
+ * lists — embeddings, moderation, TTS, and the legacy
+ * `davinci`/`babbage`/`curie`/`ada` completion models this catalogue was
+ * never built for — is left off rather than offered and then failing on the
+ * first `/responses` call.
+ */
+const OPENAI_CHAT_PREFIX = /^(gpt-|chatgpt-|o1|o3|o4)/i;
 
 export function readOpenAiModels(data: unknown, provider: AiProvider): ProviderModel[] {
   const list = at(data, ['data']);
   if (!Array.isArray(list)) return [];
 
-  const models: ProviderModel[] = [];
+  const models: Array<ProviderModel & { readonly created: number | null }> = [];
   for (const entry of list) {
     const id = textAt(entry, ['id']);
     if (id === null) continue;
-    if (provider === 'openai' && OPENAI_NON_CHAT.test(id)) continue;
+    if (provider === 'openai' && (!OPENAI_CHAT_PREFIX.test(id) || OPENAI_NON_CHAT.test(id))) continue;
 
-    models.push({ id, label: textAt(entry, ['name']) ?? id });
+    models.push({ id, label: textAt(entry, ['name']) ?? id, created: numberAt(entry, ['created']) });
   }
-  return models;
+
+  if (provider !== 'openai') return models.map(({ id, label }) => ({ id, label }));
+
+  /**
+   * Newest first, so GPT-6 sits above GPT-4.1 without the seller hunting for
+   * it — the alphabetical order `sortModels` gives every other provider would
+   * put `gpt-4.1` ahead of `gpt-6-astra` and bury the model OpenAI's own docs
+   * say to start with. `created` is the Unix-seconds field every model in a
+   * real catalogue carries; an id missing it (never seen in practice) sorts
+   * after every dated one rather than breaking the comparison.
+   */
+  return [...models]
+    .sort((a, b) => (b.created ?? -1) - (a.created ?? -1))
+    .map(({ id, label }) => ({ id, label }));
 }
 
 /**
@@ -285,7 +317,7 @@ export async function listModels(
   const base = ai.baseUrl.replace(/\/+$/, '');
 
   if (ai.provider === 'claude') {
-    const data = await fetchJson(`${base}/models?limit=1000`, anthropicHeaders(ai.apiKey), signal);
+    const data = await fetchJson(`${base}/models?limit=1000`, anthropicHeaders(ai), signal);
     return sortModels(readClaudeModels(data));
   }
 
@@ -294,10 +326,11 @@ export async function listModels(
     return sortModels(readGeminiModels(data));
   }
 
-  const data = await fetchJson(
-    `${base}/models`,
-    openAiCompatibleHeaders(ai.provider, ai.apiKey, ai.orgId),
-    signal,
-  );
-  return sortModels(readOpenAiModels(data, ai.provider));
+  const data = await fetchJson(`${base}/models`, openAiCompatibleHeaders(ai), signal);
+  const models = readOpenAiModels(data, ai.provider);
+  /* `openai` is pre-ordered newest-first by `readOpenAiModels` itself — see
+     its own doc for why alphabetising it would bury GPT-6 under GPT-4.1.
+     Every other OpenAI-compatible gateway keeps the plain alphabetical
+     order every other dialect here already uses. */
+  return ai.provider === 'openai' ? models : sortModels(models);
 }

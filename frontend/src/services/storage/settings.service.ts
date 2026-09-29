@@ -1,7 +1,8 @@
-import { DEFAULT_SETTINGS } from '@/constants/settings';
+import { AI_PROVIDER_IDS, DEFAULT_SETTINGS } from '@/constants/settings';
 import type {
   AiConnection,
   AiProvider,
+  AiSection,
   AiSettings,
   AppSettings,
   DataSettings,
@@ -10,6 +11,7 @@ import type {
   UzumApiSettings,
 } from '@/types/settings';
 
+import { resolveAiSettings, withActiveProvider, withAiConnection } from './aiConnections';
 import { readKv, removeKv, writeKv } from './idb/kv.repo';
 import { KV_KEYS } from './idb/schema';
 import { parseStoredSettings, sanitizeSettings, settingsEnvelope } from './settingsSchema';
@@ -124,58 +126,71 @@ function persist(next: AppSettings): void {
 
 /**
  * Every section but `ai` holds primitives only, so a shallow key-by-key
- * compare is an exact compare for them. `ai` nests a `saved` map of
- * connections and needs `sameAiSection` below instead.
+ * compare is an exact compare for them. `ai` nests a `providers` map and
+ * needs `reconcileAi` below instead.
  */
 function sameSection<T extends object>(previous: T, next: T): boolean {
   return (Object.keys(previous) as Array<keyof T>).every((key) => previous[key] === next[key]);
 }
 
-function sameConnection(
-  previous: AiConnection | undefined,
-  next: AiConnection | undefined,
-): boolean {
-  if (previous === next) return true;
-  if (previous === undefined || next === undefined) return false;
+/** Field-by-field equality for one provider's connection — every field on
+ * `AiConnection` is a primitive, so this is a complete compare, not a subset
+ * chosen for one screen. */
+function sameConnection(previous: AiConnection, next: AiConnection): boolean {
   return (
-    previous.baseUrl === next.baseUrl &&
-    previous.apiKey === next.apiKey &&
-    previous.orgId === next.orgId &&
-    previous.model === next.model
+    previous === next ||
+    (previous.baseUrl === next.baseUrl &&
+      previous.apiKey === next.apiKey &&
+      previous.model === next.model &&
+      previous.timeoutMs === next.timeoutMs &&
+      previous.temperature === next.temperature &&
+      previous.maxTokens === next.maxTokens &&
+      previous.orgId === next.orgId &&
+      previous.projectId === next.projectId &&
+      previous.reasoningEffort === next.reasoningEffort &&
+      previous.anthropicVersion === next.anthropicVersion &&
+      previous.thinkingLevel === next.thinkingLevel &&
+      previous.appUrl === next.appUrl &&
+      previous.appTitle === next.appTitle &&
+      previous.thinking === next.thinking)
   );
-}
-
-function sameSavedConnections(
-  previous: AiSettings['saved'],
-  next: AiSettings['saved'],
-): boolean {
-  if (previous === next) return true;
-  const previousKeys = Object.keys(previous) as AiProvider[];
-  const nextKeys = Object.keys(next) as AiProvider[];
-  if (previousKeys.length !== nextKeys.length) return false;
-  return previousKeys.every((key) => sameConnection(previous[key], next[key]));
 }
 
 /**
- * `ai`'s own equality: the flat fields compare like any other section, but
- * `saved` is rebuilt fresh by `sanitizeAi` on every pass — even when nothing
- * in it moved — so a reference compare on the whole section would treat
- * every unrelated settings write (saving the Uzum token, say) as a change to
- * `ai` and re-render every subscriber. Compare each saved connection's
- * fields instead.
+ * `ai`'s own equality: the active pointer compares like any primitive field,
+ * and every one of the nine connections compares field by field — `sanitizeAi`
+ * rebuilds all nine fresh on every pass, even the eight nobody touched, so a
+ * reference compare on the whole section would treat an unrelated settings
+ * write (saving the Uzum token, say) as a change to every provider's card.
  */
-function sameAiSection(previous: AiSettings, next: AiSettings): boolean {
+function sameAiSection(previous: AiSection, next: AiSection): boolean {
   return (
     previous.provider === next.provider &&
-    previous.baseUrl === next.baseUrl &&
-    previous.apiKey === next.apiKey &&
-    previous.orgId === next.orgId &&
-    previous.model === next.model &&
-    previous.timeoutMs === next.timeoutMs &&
-    previous.temperature === next.temperature &&
-    previous.maxTokens === next.maxTokens &&
-    sameSavedConnections(previous.saved, next.saved)
+    AI_PROVIDER_IDS.every((id) => sameConnection(previous.providers[id], next.providers[id]))
   );
+}
+
+/**
+ * Reconcile `ai` at the grain of one provider's connection, not the section
+ * as a whole. Even when the section did change overall — a different
+ * provider made active, one card's field committed — every *other*
+ * provider's connection object is carried over by reference, so a card
+ * memoized on its own provider's entry never re-renders because a sibling
+ * card, or the active pointer, changed.
+ */
+function reconcileAi(previous: AiSection, next: AiSection): AiSection {
+  if (sameAiSection(previous, next)) return previous;
+
+  const providers = {} as Record<AiProvider, AiConnection>;
+  for (const id of AI_PROVIDER_IDS) {
+    const previousConnection = previous.providers[id];
+    const nextConnection = next.providers[id];
+    providers[id] = sameConnection(previousConnection, nextConnection)
+      ? previousConnection
+      : nextConnection;
+  }
+
+  return { provider: next.provider, providers };
 }
 
 /**
@@ -185,7 +200,7 @@ function sameAiSection(previous: AiSettings, next: AiSettings): boolean {
  */
 function reconcile(previous: AppSettings, next: AppSettings): AppSettings {
   const api = sameSection(previous.api, next.api) ? previous.api : next.api;
-  const ai = sameAiSection(previous.ai, next.ai) ? previous.ai : next.ai;
+  const ai = reconcileAi(previous.ai, next.ai);
   const features = sameSection(previous.features, next.features)
     ? previous.features
     : next.features;
@@ -233,6 +248,14 @@ export const readApiSettings = (): UzumApiSettings => snapshot.api;
  */
 export const readDataSettings = (): DataSettings => snapshot.data;
 
+/**
+ * The active provider's configuration, resolved and flattened, for callers
+ * outside React — the AI transport builds a request from exactly this shape.
+ * Mirrors `readApiSettings`/`readDataSettings`: a synchronous read of the
+ * committed snapshot, never a copy a caller could hold past the next write.
+ */
+export const readAiSettings = (): AiSettings => resolveAiSettings(snapshot.ai);
+
 /* ── write ──────────────────────────────────────────────────────────────── */
 
 /**
@@ -254,6 +277,32 @@ export function updateSettings(patch: SettingsPatch): AppSettings {
   return commit(reconcile(snapshot, sanitizeSettings(merged)));
 }
 
+/**
+ * Replace one provider's connection with `patch` merged over what it already
+ * held. Reads `snapshot.ai` at call time — never a value a caller captured
+ * earlier — so two cards editing different providers back to back can never
+ * race: the second write starts from whatever the first one actually
+ * committed. `withAiConnection` touches only `provider`'s own entry; every
+ * other provider's connection, including the active one when a different
+ * provider is being edited, passes through `sanitizeSettings` and `reconcile`
+ * unchanged in value and, via `reconcileAi`, in identity too.
+ */
+export function updateAiConnection(provider: AiProvider, patch: Partial<AiConnection>): AppSettings {
+  const merged: AppSettings = { ...snapshot, ai: withAiConnection(snapshot.ai, provider, patch) };
+  return commit(reconcile(snapshot, sanitizeSettings(merged)));
+}
+
+/**
+ * Make `provider` the one the Copilot uses. Moves only the active pointer —
+ * `withActiveProvider` copies, moves or clears nothing — so every provider's
+ * configuration, the one just left and the one just entered alike, reads back
+ * exactly as it was last saved.
+ */
+export function setActiveAiProvider(provider: AiProvider): AppSettings {
+  const merged: AppSettings = { ...snapshot, ai: withActiveProvider(snapshot.ai, provider) };
+  return commit(reconcile(snapshot, sanitizeSettings(merged)));
+}
+
 /** Replace one section wholesale. */
 export function setSection<K extends SettingsSection>(
   section: K,
@@ -271,9 +320,18 @@ export function resetSettings(): AppSettings {
   snapshot = DEFAULT_SETTINGS;
   publish();
 
-  void removeKv(KV_KEYS.settings).then(() => {
-    persist(DEFAULT_SETTINGS);
-  });
+  /* `.catch` here, not only inside `persist`'s own write: `removeKv` can
+     reject on its own (storage unavailable, a quota error) before `persist`
+     ever runs, and that rejection needs a handler of its own or it surfaces
+     as an unhandled promise rejection rather than the recorded write error
+     every other failure here becomes. */
+  void removeKv(KV_KEYS.settings)
+    .then(() => {
+      persist(DEFAULT_SETTINGS);
+    })
+    .catch((error: unknown) => {
+      lastWriteError = error instanceof Error ? error.message : 'Settings could not be saved';
+    });
 
   return snapshot;
 }

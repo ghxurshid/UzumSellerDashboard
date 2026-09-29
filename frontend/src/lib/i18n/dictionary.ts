@@ -443,16 +443,25 @@ const TUPLES = {
   syncHistory: ['Sync history', 'История синхронизации', 'Sinxronizatsiya tarixi'],
 
   /* — AI provider pane —
-     `aiState*` describe a provider card's own state: `Configured` and
-     `Not configured` are about the *active* provider, read straight off
-     `isAiConfigured`; the other three are about every other card, read off
-     `AiSettings.saved` and `requiresApiKey` — never a fixed catalogue label,
-     because the catalogue cannot know what the seller has actually set up. */
+     `aiState*` describe one provider card's own state, read straight off that
+     provider's own connection (`isAiConfigured`, `requiresApiKey`) — never off
+     a fixed catalogue label or a shared "active provider" flag, because every
+     card is independent and configured or not entirely on its own. */
   aiStateConfigured: ['Configured', 'Настроено', 'Sozlangan'],
-  aiStateNotConfigured: ['Not configured', 'Не настроено', 'Sozlanmagan'],
-  aiStateKeySaved: ['Key saved', 'Ключ сохранён', 'Kalit saqlangan'],
+  aiStateKeyMissing: ['Key missing', 'Ключ не указан', 'Kalit kiritilmagan'],
   aiStateNoKeyNeeded: ['No key needed', 'Ключ не нужен', 'Kalit kerak emas'],
-  aiStateNotSetUp: ['Not set up', 'Не подключено', 'Ulanmagan'],
+  aiActiveProviderSr: [
+    'Active — the Copilot uses this provider',
+    'Активен — Copilot использует этого провайдера',
+    "Faol — Copilot shu provayderdan foydalanadi",
+  ],
+  aiActiveBadge: ['Active', 'Активен', 'Faol'],
+  aiMakeActive: ['Make active', 'Сделать активным', 'Faollashtirish'],
+  aiGridHint: [
+    'Click a card to edit it — editing does not change which provider the Copilot uses. Use “Make active” on a card for that.',
+    'Нажмите на карточку, чтобы её изменить — это не меняет провайдера, которым пользуется Copilot. Для этого на карточке есть «Сделать активным».',
+    "Kartani tahrirlash uchun bosing — bu Copilot foydalanadigan provayderni o'zgartirmaydi. Buning uchun kartadagi „Faollashtirish“dan foydalaning.",
+  ],
   getKeyLink: ['Get a key', 'Получить ключ', 'Kalit olish'],
   keyNoFormat: ['no fixed format', 'без фиксированного формата', "belgilangan format yo'q"],
   loadModels: ['Load models', 'Загрузить модели', 'Modellarni yuklash'],
@@ -518,6 +527,120 @@ const TUPLES = {
     "Provayder so'rovni rad etdi: {detail}",
   ],
   aiErrUnknown: ['Something went wrong', 'Что-то пошло не так', 'Nimadir xato ketdi'],
+  aiErrIncomplete: [
+    'The model ran out of Max tokens before it could answer — raise Max tokens or lower this provider’s reasoning effort',
+    'У модели закончился лимит Max tokens раньше, чем она успела ответить — увеличьте Max tokens или снизьте уровень рассуждения у этого провайдера',
+    "Model javob berishdan oldin Max tokens tugadi — Max tokens'ni oshiring yoki shu provayderning fikrlash darajasini pasaytiring",
+  ],
+  aiErrInsufficientQuota: [
+    'This provider account has no credit or quota left',
+    'На аккаунте этого провайдера не осталось средств или квоты',
+    "Bu provayder hisobida mablag' yoki kvota qolmagan",
+  ],
+
+  /* — AI provider card parameters —
+     Shared by every provider's card: `aiParamWireField` names the header or
+     body field a parameter becomes, `effort*` are the one shared vocabulary
+     for `reasoningEffort` and `thinkingLevel` (the same depths, different
+     vendor spellings), and `aiParamHeaderUnsafe` guards the five parameters
+     that become HTTP headers (`orgId`, `projectId`, `anthropicVersion`,
+     `appUrl`, `appTitle`) plus the API key — `fetch` throws on anything
+     outside printable ASCII in a header value. */
+  projectId: ['Project ID', 'ID проекта', 'Loyiha ID'],
+  anthropicVersion: ['Anthropic API version', 'Версия API Anthropic', 'Anthropic API versiyasi'],
+  appUrl: ['App URL', 'URL приложения', 'Ilova URL manzili'],
+  appTitle: ['App title', 'Название приложения', 'Ilova nomi'],
+  reasoningEffort: ['Reasoning effort', 'Уровень рассуждения', 'Fikrlash darajasi'],
+  thinkingLevel: ['Thinking level', 'Уровень размышления', "O'ylash darajasi"],
+  thinkingToggle: ['Thinking', 'Размышление', "O'ylash"],
+  thinkingHint: [
+    'DeepSeek’s own reasoning phase. While it is on, temperature has no effect.',
+    'Собственная фаза рассуждения DeepSeek. Пока она включена, temperature не действует.',
+    "DeepSeek'ning o'z fikrlash bosqichi. U yoqilganda temperature ta'sir qilmaydi.",
+  ],
+  reasoningEffortProviderDefault: ['Provider default', 'По умолчанию у провайдера', 'Provayder standarti'],
+  thinkingLevelModelDefault: ['Model default', 'По умолчанию у модели', 'Model standarti'],
+  aiParamWireField: ['Sent as {field}', 'Отправляется как {field}', "{field} sifatida yuboriladi"],
+  aiParamStaleWarn: [
+    'This model does not accept the saved value — it will not be sent',
+    'Эта модель не принимает сохранённое значение — оно не будет отправлено',
+    "Bu model saqlangan qiymatni qabul qilmaydi — u yuborilmaydi",
+  ],
+  aiParamHeaderUnsafe: [
+    'Only Latin letters, digits and basic punctuation are allowed — this value is sent as an HTTP header',
+    'Разрешены только латинские буквы, цифры и базовые знаки препинания — это значение отправляется как HTTP-заголовок',
+    "Faqat lotin harflari, raqamlar va oddiy tinish belgilariga ruxsat berilgan — bu qiymat HTTP sarlavhasi sifatida yuboriladi",
+  ],
+  effortNone: ['none', 'нет', "yo'q"],
+  effortMinimal: ['minimal', 'минимальный', 'minimal'],
+  effortLow: ['low', 'низкий', 'past'],
+  effortMedium: ['medium', 'средний', "o'rta"],
+  effortHigh: ['high', 'высокий', 'yuqori'],
+  effortXhigh: ['very high', 'очень высокий', 'juda yuqori'],
+  effortMax: ['maximum', 'максимальный', 'maksimal'],
+
+  /* — AI token usage panel —
+     Per-provider spend, read from this browser's own request log since local
+     midnight. `tokenPanelNotReported` — never a bare "0" — is what a figure
+     the provider did not state reads as; `summarizeTokens`'s `*Reported`
+     counts are what decide when that applies. */
+  tokenPanelTitle: ['Token usage today', 'Расход токенов сегодня', 'Bugungi token sarfi'],
+  tokenPanelEmpty: ['No requests yet today', 'Сегодня запросов ещё не было', 'Bugun hali so‘rov bo‘lmagan'],
+  tokenPanelRequests: ['Requests', 'Запросов', "So'rovlar"],
+  tokenPanelInput: ['Input', 'Входные', 'Kirish'],
+  tokenPanelCached: ['Cached', 'Из кэша', 'Keshdan'],
+  tokenPanelOutput: ['Output', 'Выходные', 'Chiqish'],
+  tokenPanelReasoning: ['Reasoning', 'Рассуждение', 'Fikrlash'],
+  tokenPanelNotReported: ['not reported', 'не сообщается', 'berilmagan'],
+  tokenPanelNoneReported: [
+    'This provider does not report token counts',
+    'Этот провайдер не сообщает количество токенов',
+    "Bu provayder token sonini bermaydi",
+  ],
+  tokenPanelByModel: ['By model', 'По модели', 'Model bo‘yicha'],
+  /** A figure only some of the reported requests stated — `cachedReported`/`reasoningReported` short of `reported`. */
+  tokenPanelPartialReported: [
+    'reported by {reported} of {of} requests',
+    'указано в {reported} из {of} запросов',
+    '{of} ta so‘rovdan {reported} tasida ko‘rsatilgan',
+  ],
+  /** `usage.last` — the newest event that stated tokens, not necessarily the newest request this provider sent at all. */
+  tokenPanelLastReported: [
+    'Last reported request',
+    'Последний запрос с данными о токенах',
+    'Tokeni ma’lum so‘nggi so‘rov',
+  ],
+  tokenPanelLastFlow: [
+    '{input} in → {output} out',
+    '{input} вход → {output} выход',
+    '{input} kirish → {output} chiqish',
+  ],
+  tokenPanelCostApprox: ['≈ {cost}', '≈ {cost}', '≈ {cost}'],
+  tokenPanelCostAtMost: [
+    '≤ {cost} (cache use not reported for every request — counted as uncached)',
+    '≤ {cost} (использование кэша указано не для всех запросов — учтено как без кэша)',
+    "≤ {cost} (kesh ishlatilishi barcha so'rovlarda ko'rsatilmagan — keshsiz deb hisoblangan)",
+  ],
+  tokenPanelCostPartial: [
+    'part of today’s usage has no known price',
+    'часть сегодняшнего расхода не имеет известной цены',
+    "bugungi sarfning bir qismi narxi noma'lum",
+  ],
+  tokenPanelCostExcludesUnknown: [
+    'excludes {n} request(s) with no token count',
+    'не включает {n} запрос(ов) без данных о токенах',
+    "{n} ta token soni yo'q so'rov kiritilmagan",
+  ],
+  tokenPanelCostSource: [
+    'From this app’s built-in price list, not an invoice',
+    'По встроенному в приложение списку цен, а не по счёту',
+    "Ilovaga o'rnatilgan narxlar ro'yxati bo'yicha, hisob-faktura emas",
+  ],
+  tokenPanelSource: [
+    'Counted from what each response reported — this browser only',
+    'Считается по данным, которые сообщил каждый ответ — только в этом браузере',
+    "Har bir javobda berilgan ma'lumot asosida hisoblanadi — faqat shu brauzerda",
+  ],
 
   /* — live sync progress — */
   syncOverall: ['Overall', 'Всего', 'Umumiy'],

@@ -12,6 +12,7 @@ import {
   readQuotaFailure,
   recordModelRequest,
   subscribeModelRequests,
+  summarizeTokens,
   summarizeUsage,
   USAGE_RETENTION_MS,
   type ModelRequestEvent,
@@ -376,6 +377,158 @@ describe('summarizeUsage', () => {
 
     expect(usage.rpm.remaining).toBe(0);
     expect(usage.bottleneck).toBe('rpm');
+  });
+});
+
+/* ── summarizeTokens ────────────────────────────────────────────────────── */
+
+describe('summarizeTokens', () => {
+  const SINCE = Date.UTC(2026, 0, 15, 0, 0, 0);
+
+  function usageEvent(input: {
+    readonly at: number;
+    readonly model?: string;
+    readonly inputTokens?: number | null;
+    readonly cachedInputTokens?: number | null;
+    readonly outputTokens?: number | null;
+    readonly reasoningTokens?: number | null;
+    readonly outcome?: ModelRequestEvent['outcome'];
+  }): ModelRequestEvent {
+    return {
+      id: `t${input.at}`,
+      provider: PROVIDER,
+      model: input.model ?? MODEL,
+      at: input.at,
+      inputTokens: input.inputTokens ?? null,
+      ...(input.cachedInputTokens === undefined ? {} : { cachedInputTokens: input.cachedInputTokens }),
+      ...(input.outputTokens === undefined ? {} : { outputTokens: input.outputTokens }),
+      ...(input.reasoningTokens === undefined ? {} : { reasoningTokens: input.reasoningTokens }),
+      outcome: input.outcome ?? 'ok',
+    };
+  }
+
+  it('is all zero with no events at all', () => {
+    const summary = summarizeTokens([], PROVIDER, SINCE);
+    expect(summary.total).toEqual({
+      requests: 0,
+      reported: 0,
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      cachedReported: 0,
+      outputTokens: 0,
+      reasoningTokens: 0,
+      reasoningReported: 0,
+    });
+    expect(summary.byModel).toEqual([]);
+    expect(summary.last).toBeNull();
+  });
+
+  it('ignores an event from a different provider and one before `since`', () => {
+    const events = [
+      usageEvent({ at: SINCE + 1_000, inputTokens: 10, outputTokens: 5 }),
+      { ...usageEvent({ at: SINCE + 2_000, inputTokens: 99, outputTokens: 99 }), provider: 'openai' as const },
+      usageEvent({ at: SINCE - 1, inputTokens: 50, outputTokens: 50 }),
+    ];
+    const summary = summarizeTokens(events, PROVIDER, SINCE);
+    expect(summary.total.requests).toBe(1);
+    expect(summary.total.inputTokens).toBe(10);
+  });
+
+  it('counts every outcome toward `requests`, but only a reported event toward the sums', () => {
+    const events = [
+      usageEvent({ at: SINCE + 1_000, inputTokens: 10, outputTokens: 5, outcome: 'ok' }),
+      usageEvent({ at: SINCE + 2_000, outcome: 'limited' }), // no usage reported at all
+      usageEvent({ at: SINCE + 3_000, outcome: 'failed' }),
+    ];
+    const summary = summarizeTokens(events, PROVIDER, SINCE);
+
+    expect(summary.total.requests).toBe(3);
+    expect(summary.total.reported).toBe(1);
+    expect(summary.total.inputTokens).toBe(10);
+    expect(summary.total.outputTokens).toBe(5);
+  });
+
+  it('treats an event with outputTokens explicitly null as unreported, not a zero', () => {
+    const events = [usageEvent({ at: SINCE + 1_000, inputTokens: 10, outputTokens: null })];
+    const summary = summarizeTokens(events, PROVIDER, SINCE);
+    expect(summary.total.reported).toBe(0);
+    expect(summary.total.inputTokens).toBe(0);
+  });
+
+  it('sums cachedInputTokens and reasoningTokens across reported events, and counts how many stated each', () => {
+    const events = [
+      usageEvent({ at: SINCE + 1_000, inputTokens: 100, cachedInputTokens: 20, outputTokens: 50, reasoningTokens: 10 }),
+      usageEvent({ at: SINCE + 2_000, inputTokens: 200, cachedInputTokens: 40, outputTokens: 80, reasoningTokens: 30 }),
+    ];
+    const summary = summarizeTokens(events, PROVIDER, SINCE);
+
+    expect(summary.total).toEqual({
+      requests: 2,
+      reported: 2,
+      inputTokens: 300,
+      cachedInputTokens: 60,
+      cachedReported: 2,
+      outputTokens: 130,
+      reasoningTokens: 40,
+      reasoningReported: 2,
+    });
+  });
+
+  it('never lets a provider that stays silent about cache or reasoning read as a truthful 0 — cachedReported/reasoningReported stay 0', () => {
+    const events = [
+      // A reported event (inputTokens + outputTokens both present) that never
+      // mentions cache or reasoning at all — Claude never reports reasoning,
+      // DeepSeek/Mistral may not report cache.
+      usageEvent({ at: SINCE + 1_000, inputTokens: 100, outputTokens: 50 }),
+    ];
+    const summary = summarizeTokens(events, PROVIDER, SINCE);
+
+    expect(summary.total.reported).toBe(1);
+    expect(summary.total.cachedReported).toBe(0);
+    expect(summary.total.cachedInputTokens).toBe(0);
+    expect(summary.total.reasoningReported).toBe(0);
+    expect(summary.total.reasoningTokens).toBe(0);
+  });
+
+  it('counts a cache figure of exactly 0 as reported — a stated zero is not silence', () => {
+    const events = [usageEvent({ at: SINCE + 1_000, inputTokens: 100, cachedInputTokens: 0, outputTokens: 50 })];
+    const summary = summarizeTokens(events, PROVIDER, SINCE);
+
+    expect(summary.total.cachedReported).toBe(1);
+    expect(summary.total.cachedInputTokens).toBe(0);
+  });
+
+  it('breaks totals out per model, most recently used model first', () => {
+    const events = [
+      usageEvent({ at: SINCE + 1_000, model: 'model-a', inputTokens: 10, outputTokens: 5 }),
+      usageEvent({ at: SINCE + 3_000, model: 'model-b', inputTokens: 20, outputTokens: 10 }),
+      usageEvent({ at: SINCE + 2_000, model: 'model-a', inputTokens: 30, outputTokens: 15 }),
+    ];
+    const summary = summarizeTokens(events, PROVIDER, SINCE);
+
+    expect(summary.byModel.map((entry) => entry.model)).toEqual(['model-b', 'model-a']);
+    const modelA = summary.byModel.find((entry) => entry.model === 'model-a');
+    expect(modelA).toMatchObject({ requests: 2, inputTokens: 40, outputTokens: 20, lastAt: SINCE + 2_000 });
+  });
+
+  it('ranks a model by its own newest event even when that event carried no usage', () => {
+    const events = [
+      usageEvent({ at: SINCE + 1_000, model: 'model-a', inputTokens: 10, outputTokens: 5 }),
+      usageEvent({ at: SINCE + 2_000, model: 'model-b', inputTokens: 20, outputTokens: 10 }),
+      // model-a's most recent event reported nothing, but it is still model-a's newest.
+      usageEvent({ at: SINCE + 5_000, model: 'model-a', outcome: 'failed' }),
+    ];
+    const summary = summarizeTokens(events, PROVIDER, SINCE);
+    expect(summary.byModel.map((entry) => entry.model)).toEqual(['model-a', 'model-b']);
+  });
+
+  it('reports the newest event that carried usage as `last`, not simply the newest event', () => {
+    const events = [
+      usageEvent({ at: SINCE + 1_000, inputTokens: 10, outputTokens: 5 }),
+      usageEvent({ at: SINCE + 2_000, outcome: 'failed' }), // newest overall, but unreported
+    ];
+    const summary = summarizeTokens(events, PROVIDER, SINCE);
+    expect(summary.last?.at).toBe(SINCE + 1_000);
   });
 });
 
@@ -812,6 +965,40 @@ describe('isModelRequestEvent', () => {
     expect(isModelRequestEvent(withRetry(Number.NEGATIVE_INFINITY))).toBe(false);
     expect(isModelRequestEvent(withRetry(-1))).toBe(false);
     expect(isModelRequestEvent(withRetry(0))).toBe(true);
+  });
+
+  /**
+   * `cachedInputTokens`/`outputTokens`/`reasoningTokens` were added after the
+   * first events were already on disk — an event restored from IndexedDB or a
+   * `BroadcastChannel` that predates them must still be trusted.
+   */
+  describe('the token-usage fields added after the first events existed', () => {
+    it('accepts a legacy event that carries none of the three new fields at all', () => {
+      expect(isModelRequestEvent(valid)).toBe(true);
+    });
+
+    it('accepts all three as reported numbers', () => {
+      expect(
+        isModelRequestEvent({ ...(valid as object), cachedInputTokens: 10, outputTokens: 40, reasoningTokens: 15 }),
+      ).toBe(true);
+    });
+
+    it('accepts all three as null — reported as "provider said nothing"', () => {
+      expect(
+        isModelRequestEvent({
+          ...(valid as object),
+          cachedInputTokens: null,
+          outputTokens: null,
+          reasoningTokens: null,
+        }),
+      ).toBe(true);
+    });
+
+    it('rejects a negative, NaN or Infinity value on any of the three', () => {
+      expect(isModelRequestEvent({ ...(valid as object), outputTokens: -1 })).toBe(false);
+      expect(isModelRequestEvent({ ...(valid as object), cachedInputTokens: Number.NaN })).toBe(false);
+      expect(isModelRequestEvent({ ...(valid as object), reasoningTokens: Number.POSITIVE_INFINITY })).toBe(false);
+    });
   });
 });
 

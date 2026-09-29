@@ -46,6 +46,15 @@ function describeFailure(error: ApiError, t: Translator): string {
       return t('aiOffline');
     case 'timeout':
       return t('aiSlow');
+    case 'client':
+    case 'notFound':
+      /* Same two codes `features/settings/aiErrors.ts` names for the settings
+         pane's own connection test — the chat hits the identical OpenAI
+         failure and must not paraphrase it two different ways depending on
+         which surface the seller was looking at when it happened. */
+      if (error.code === 'incomplete') return t('aiErrIncomplete');
+      if (error.code === 'insufficient_quota') return t('aiErrInsufficientQuota');
+      return error.message;
     default:
       return error.message;
   }

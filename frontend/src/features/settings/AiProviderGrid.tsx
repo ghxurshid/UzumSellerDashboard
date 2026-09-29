@@ -6,82 +6,82 @@ import { AI_PROVIDERS } from '@/constants/settings';
 import type { TranslationKey } from '@/lib/i18n/dictionary';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { cn } from '@/lib/utils';
+import { resolveAiSettings } from '@/services/storage/aiConnections';
 import { isAiConfigured, requiresApiKey } from '@/services/ai/modelRules';
 import type { Tone } from '@/types/domain';
-import type { AiProvider, AiProviderDefinition, AiSettings } from '@/types/settings';
+import type { AiProvider, AiProviderDefinition, AiSection } from '@/types/settings';
 
 /**
- * The nine-card provider grid.
+ * The nine-card provider navigator.
  *
- * Every card reads a fact this app actually holds — never a fixed "operational"
- * string the bundle shipped with and cannot know is still true. The active
- * card asks `isAiConfigured` about the connection on screen right now; every
- * other card asks whether a key for it is filed under `AiSettings.saved`, so a
- * seller who set up three providers and is trying a fourth can see which ones
- * they can switch back to without retyping a key.
+ * Clicking a tile only opens that provider's card below for editing — it does
+ * not make the provider active. Every provider now keeps its own complete,
+ * independent configuration (`AiSection.providers`), so a card's state is read
+ * straight off that provider's own connection, never off a fixed catalogue
+ * label and never off a side table of "providers touched earlier": there is no
+ * such table any more, which is exactly the fix for the bug this grid used to
+ * paper over (a key typed for one provider showing up under another's card).
  */
 
-type CardState = 'configured' | 'notConfigured' | 'keySaved' | 'noKeyNeeded' | 'notSetUp';
+type CardState = 'configured' | 'keyMissing' | 'noKeyNeeded';
 
 const TONE: Readonly<Record<CardState, Tone>> = {
   configured: 'positive',
-  notConfigured: 'warning',
-  keySaved: 'accent',
+  keyMissing: 'warning',
   noKeyNeeded: 'neutral',
-  notSetUp: 'neutral',
 };
 
 const LABEL: Readonly<Record<CardState, TranslationKey>> = {
   configured: 'aiStateConfigured',
-  notConfigured: 'aiStateNotConfigured',
-  keySaved: 'aiStateKeySaved',
+  keyMissing: 'aiStateKeyMissing',
   noKeyNeeded: 'aiStateNoKeyNeeded',
-  notSetUp: 'aiStateNotSetUp',
 };
 
-function cardState(provider: AiProviderDefinition, ai: AiSettings): CardState {
-  if (provider.id === ai.provider) return isAiConfigured(ai) ? 'configured' : 'notConfigured';
-
-  const saved = ai.saved[provider.id];
-  if (saved !== undefined && saved.apiKey.trim() !== '') return 'keySaved';
-  if (!requiresApiKey(provider.id)) return 'noKeyNeeded';
-  return 'notSetUp';
+function cardState(provider: AiProviderDefinition, section: AiSection): CardState {
+  if (isAiConfigured(resolveAiSettings(section, provider.id))) return 'configured';
+  return requiresApiKey(provider.id) ? 'keyMissing' : 'noKeyNeeded';
 }
 
 interface AiProviderGridProps {
-  readonly ai: AiSettings;
+  readonly section: AiSection;
+  /** The card currently open below — independent of which provider is active. */
+  readonly selected: AiProvider;
   readonly onSelect: (id: AiProvider) => void;
 }
 
-export function AiProviderGrid({ ai, onSelect }: AiProviderGridProps): ReactNode {
+export function AiProviderGrid({ section, selected, onSelect }: AiProviderGridProps): ReactNode {
   const { t } = useTranslation();
 
   return (
     <div className="grid grid-cols-5 gap-8 max-[860px]:grid-cols-3 max-[560px]:grid-cols-2">
       {AI_PROVIDERS.map((provider) => {
-        const active = provider.id === ai.provider;
-        const state = cardState(provider, ai);
+        const isOpen = provider.id === selected;
+        const isActive = provider.id === section.provider;
+        const state = cardState(provider, section);
 
         return (
           <button
             key={provider.id}
             type="button"
-            aria-pressed={active}
+            aria-current={isOpen ? 'true' : undefined}
             onClick={() => onSelect(provider.id)}
             className={cn(
               'flex cursor-pointer flex-col items-start gap-6 rounded-10 border px-10 py-9 text-left',
               'transition-colors hover:border-acc-line',
-              active ? 'border-acc bg-acc-soft' : 'border-line bg-panel',
+              isOpen ? 'border-acc bg-acc-soft' : 'border-line bg-panel',
             )}
           >
             <div className="flex w-full items-center gap-7">
               <Icon
                 name={provider.icon}
-                className={cn('size-14 shrink-0', active ? 'text-acc-dim' : 'text-faint')}
+                className={cn('size-14 shrink-0', isOpen ? 'text-acc-dim' : 'text-faint')}
               />
               <span className="truncate text-sm font-medium">{provider.label}</span>
-              {active && (
-                <Icon name="circle-check" className="ml-auto size-13 shrink-0 text-acc-dim" />
+              {isActive && (
+                <span className="ml-auto flex shrink-0 items-center gap-3 text-acc-dim">
+                  <Icon name="circle-check" className="size-13 shrink-0" />
+                  <span className="sr-only">{t('aiActiveProviderSr')}</span>
+                </span>
               )}
             </div>
             <Pill tone={TONE[state]} size="sm">

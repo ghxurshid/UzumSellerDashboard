@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { isAiConfigured } from '@/services/ai/modelRules';
+import { ApiError } from '@/services/api/client';
 import { summariseFinance } from '@/services/derive/finance';
 import { buildInsights } from '@/services/derive/insights';
 import { toProducts } from '@/services/derive/products';
@@ -104,11 +105,11 @@ export function useInsightsQuery(): InsightsData {
     /* One window of data is one answer. Re-asking on a remount, or every time
        the tab regains focus, would spend the seller's credits to be told the
        same thing — so an answer never goes stale and only new figures ask
-       again. A failed call is retried once and then left alone. */
+       again. */
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 30 * 60 * 1000,
     refetchOnWindowFocus: false,
-    retry: 1,
+    retry: shouldRetryAiCards,
     queryFn: ({ signal }) =>
       generateInsightCards({
         ai,
@@ -136,3 +137,21 @@ export function useInsightsQuery(): InsightsData {
 }
 
 const EMPTY_CARDS: readonly InsightCard[] = [];
+
+/**
+ * A failed call is retried once, but never for a failure repeating it cannot
+ * fix.
+ *
+ * `ApiError.isRetryable` already tells the transport failures apart from the
+ * server's own refusals — a 401, a daily quota (`ModelQuotaError` overrides it
+ * to `false` for that), an `insufficient_quota`, and OpenAI's own
+ * `response.incomplete` with no text once `max_output_tokens` is spent on
+ * reasoning. Every one of those bills tokens on the failed attempt and answers
+ * an identical second request with the identical refusal, so asking again only
+ * spends the seller's credits a second time to be told the same thing. Only a
+ * transport hiccup — one the same request could plausibly survive — earns the
+ * one retry this query allows.
+ */
+export function shouldRetryAiCards(failureCount: number, error: unknown): boolean {
+  return failureCount < 1 && (!(error instanceof ApiError) || error.isRetryable);
+}

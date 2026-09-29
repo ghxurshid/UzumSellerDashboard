@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_SETTINGS } from '@/constants/settings';
+import { DEFAULT_AI_SETTINGS, defaultAiConnection } from '@/constants/settings';
 import { ApiError } from '@/services/api/client';
-import type { AiSettings } from '@/types/settings';
+import type { AiProvider, AiSettings } from '@/types/settings';
 
 import {
   listModels,
@@ -14,8 +14,15 @@ import {
 } from './connection';
 import * as streamModule from './stream';
 
-function settingsFor(overrides: Partial<AiSettings>): AiSettings {
-  return { ...DEFAULT_SETTINGS.ai, apiKey: 'test-key', ...overrides };
+/**
+ * A settings object for one provider, built from that provider's own
+ * catalogue defaults — not a fixed provider's connection with the `provider`
+ * field swapped out, which would leave an override still carrying a
+ * different provider's own parameters.
+ */
+function settingsFor(overrides: Partial<AiSettings> & { readonly provider?: AiProvider }): AiSettings {
+  const provider = overrides.provider ?? DEFAULT_AI_SETTINGS.provider;
+  return { provider, ...defaultAiConnection(provider), apiKey: 'test-key', ...overrides };
 }
 
 afterEach(() => {
@@ -75,8 +82,13 @@ describe('testConnection', () => {
     await testConnection(settingsFor({ provider: 'claude' }));
     expect(spy.mock.calls[0]?.[0].request.tools).toHaveLength(1);
 
+    /* openai is native now too — Responses lifts the restriction Chat
+       Completions had on GPT-6's tool calling, see `supportsNativeTools`. */
+    await testConnection(settingsFor({ provider: 'openai' }));
+    expect(spy.mock.calls[1]?.[0].request.tools).toHaveLength(1);
+
     await testConnection(settingsFor({ provider: 'deepseek' }));
-    expect(spy.mock.calls[1]?.[0].request.tools).toBeUndefined();
+    expect(spy.mock.calls[2]?.[0].request.tools).toBeUndefined();
   });
 
   it('passes an unauthorized failure straight through, without probing /models', async () => {
@@ -242,6 +254,61 @@ describe('listModels', () => {
 
     expect(readOpenAiModels(body, 'openai')).toEqual([{ id: 'gpt-4o', label: 'gpt-4o' }]);
     expect(readOpenAiModels(body, 'openrouter')).toHaveLength(4);
+  });
+
+  it('drops instruct and search-tuned ids for openai, but keeps them for a compatible gateway', async () => {
+    const body = {
+      data: [{ id: 'gpt-6-astra' }, { id: 'gpt-3.5-turbo-instruct' }, { id: 'gpt-4o-search-preview' }],
+    };
+
+    expect(readOpenAiModels(body, 'openai')).toEqual([{ id: 'gpt-6-astra', label: 'gpt-6-astra' }]);
+    expect(readOpenAiModels(body, 'openrouter')).toHaveLength(3);
+  });
+
+  it('drops legacy completion families for openai even though they are not embeddings or audio', async () => {
+    const body = { data: [{ id: 'gpt-6-astra' }, { id: 'davinci-002' }, { id: 'babbage-002' }] };
+    expect(readOpenAiModels(body, 'openai')).toEqual([{ id: 'gpt-6-astra', label: 'gpt-6-astra' }]);
+  });
+
+  it('orders openai models newest first by the created field, GPT-6 above GPT-4.1', async () => {
+    const body = {
+      data: [
+        { id: 'gpt-4.1', created: 100 },
+        { id: 'gpt-6-astra', created: 300 },
+        { id: 'gpt-6-sol', created: 200 },
+      ],
+    };
+
+    expect(readOpenAiModels(body, 'openai').map((model) => model.id)).toEqual(['gpt-6-astra', 'gpt-6-sol', 'gpt-4.1']);
+  });
+
+  it('sorts an openai id with no created field after every dated one, rather than breaking the order', async () => {
+    const body = {
+      data: [
+        { id: 'gpt-6-astra', created: 300 },
+        { id: 'gpt-oss-no-date' },
+      ],
+    };
+
+    expect(readOpenAiModels(body, 'openai').map((model) => model.id)).toEqual(['gpt-6-astra', 'gpt-oss-no-date']);
+  });
+
+  it('does not alphabetise the openai list through listModels — the created order must survive', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: [
+            { id: 'gpt-4.1', created: 100 },
+            { id: 'gpt-6-astra', created: 300 },
+          ],
+        }),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const models = await listModels(settingsFor({ provider: 'openai', baseUrl: 'https://api.openai.com/v1' }));
+    expect(models.map((model) => model.id)).toEqual(['gpt-6-astra', 'gpt-4.1']);
   });
 
   it('sends no authorization header for a keyless custom endpoint', async () => {

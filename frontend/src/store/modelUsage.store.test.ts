@@ -218,15 +218,21 @@ describe('restoreModelUsage', () => {
     }
   });
 
-  it('drops a live event for a provider/model the catalogue publishes no limits for, without touching kv', () => {
+  it('keeps a live event for a provider/model with no catalogue limits, reported or not', () => {
+    // Every validated event is kept — not only the ones a Gemini-style quota
+    // gauge can be drawn from, or that happened to report tokens. A DeepSeek
+    // or Ollama request that stays silent, or a failed/cancelled request on
+    // any provider, is still a fact the token panel (and a future reading of
+    // this same ledger) needs to see — see `MAX_EVENTS`'s own doc.
     initModelUsageSync();
     useModelUsageStore.setState({ events: [], loaded: true });
     writeKv.mockClear();
 
-    recordModelRequest({ provider: 'openai', model: 'gpt-5.1', at: NOW - 1_000, inputTokens: 10, outcome: 'ok' });
+    recordModelRequest({ provider: 'openai', model: 'gpt-5.1', at: NOW - 2_000, inputTokens: null, outcome: 'ok' });
+    recordModelRequest({ provider: 'openai', model: 'gpt-6-astra', at: NOW - 1_000, inputTokens: 120, outputTokens: 40, outcome: 'ok' });
 
-    expect(useModelUsageStore.getState().events).toHaveLength(0);
-    expect(writeKv).not.toHaveBeenCalled();
+    expect(useModelUsageStore.getState().events).toHaveLength(2);
+    expect(writeKv).toHaveBeenCalledTimes(2);
   });
 
   it('persists a live event straight away once loaded is already true', () => {
@@ -243,7 +249,7 @@ describe('restoreModelUsage', () => {
     expect(written[0]?.provider).toBe(PROVIDER);
   });
 
-  it('drops a stored event for a provider/model the catalogue no longer publishes limits for', async () => {
+  it('keeps a stored event for a provider/model the catalogue publishes no limits for', async () => {
     readKv.mockResolvedValue([
       {
         id: 'no-limits',
@@ -258,7 +264,9 @@ describe('restoreModelUsage', () => {
 
     await restoreModelUsage();
 
-    expect(useModelUsageStore.getState().events.map((entry) => entry.id)).toEqual(['has-limits']);
+    expect(useModelUsageStore.getState().events.map((entry) => entry.id).sort()).toEqual(
+      ['has-limits', 'no-limits'].sort(),
+    );
   });
 
   it('caps the merged ledger at the private 5 000-event limit, keeping the newest', async () => {

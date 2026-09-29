@@ -1,7 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react';
 
 import { findProvider } from '@/constants/settings';
-import { summarizeUsage, type ModelUsage } from '@/services/ai/usage';
+import { summarizeTokens, summarizeUsage, type ModelUsage, type TokenUsageSummary } from '@/services/ai/usage';
 import { useModelUsageStore } from '@/store/modelUsage.store';
 import type { AiProvider } from '@/types/settings';
 
@@ -101,4 +101,31 @@ export function useProviderModelUsage(provider: AiProvider): ReadonlyMap<string,
 /** Whether the ledger has finished restoring — gate a bar on this, not on a zero. */
 export function useModelUsageLoaded(): boolean {
   return useModelUsageStore((state) => state.loaded);
+}
+
+/**
+ * Local midnight, browser-clock — the same "today" `lib/dateRange.ts` already
+ * uses for the reporting-period ranges elsewhere in this app, not the Pacific
+ * day `pacificDayStart` computes for Gemini's own quota reset above: the token
+ * panel is answering "what did I spend today" for the seller sitting at this
+ * machine, not gauging a provider's rate-limit window.
+ */
+function localMidnight(now: number): number {
+  const date = new Date(now);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+/**
+ * What this browser has spent with one provider since local midnight — the
+ * settings screen's token panel. Live in two senses: a new event folded into
+ * `useModelUsageStore` re-renders through the `events` subscription below, and
+ * the shared clock already ticking for the quota gauges also catches the
+ * boundary rolling over to a new day even when no fresh event triggers it.
+ */
+export function useProviderTokenUsage(provider: AiProvider): TokenUsageSummary {
+  const events = useModelUsageStore((state) => state.events);
+  const now = useNow();
+
+  return useMemo(() => summarizeTokens(events, provider, localMidnight(now)), [events, provider, now]);
 }

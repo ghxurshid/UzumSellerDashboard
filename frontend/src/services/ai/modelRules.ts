@@ -1,4 +1,5 @@
-import type { AiProvider, AiSettings } from '@/types/settings';
+import { ApiError } from '@/services/api/client';
+import type { AiProvider, AiSettings, ReasoningEffort, ThinkingLevel } from '@/types/settings';
 
 /**
  * Facts about a model id that decide what the wire dialect may send it, and
@@ -14,6 +15,17 @@ import type { AiProvider, AiSettings } from '@/types/settings';
  * field that could break it. An id this catalogue does not recognise —
  * because it is new, a preview, or a typo — gets the conservative request,
  * not a guess.
+ *
+ * Every provider now keeps its own complete configuration (`AiConnection` in
+ * `types/settings.ts`) — a reasoning effort, a thinking level, an attribution
+ * header — editable on that provider's own card and saved whether or not it
+ * is the active one. This file is where that configuration turns into a
+ * request: a value the seller chose that the *chosen model* does not accept
+ * (Astra's `reasoning.effort` table has no `"none"`, a Gemini 2.x id has no
+ * `thinkingConfig` at all) is dropped rather than sent — see
+ * `reasoningEffortOptions`/`thinkingLevelOptions` and the private
+ * `validReasoningEffort`/`validThinkingLevel` every sampling-field builder
+ * below reads through.
  */
 
 /**
@@ -73,13 +85,14 @@ export function claudeSupportsTemperature(model: string): boolean {
 }
 
 /**
- * Whether `output_config: { effort }` is worth sending.
+ * Whether `output_config: { effort }` is worth sending at all.
  *
  * It lowers how long Opus-5/Sonnet-5-class adaptive thinking runs before the
  * first word — the same trade the Gemini dialect makes with
- * `thinkingLevel: 'low'`, and one Anthropic explicitly prefers over disabling
+ * `thinkingLevel`, and one Anthropic explicitly prefers over disabling
  * thinking outright on these models. It errors on Haiku, which has no
- * thinking budget to trim.
+ * thinking budget to trim. The *value* sent is a separate question — see
+ * `reasoningEffortOptions` — this only gates whether the field exists here.
  */
 const CLAUDE_EFFORT: ReadonlyArray<readonly [string, boolean]> = [
   ['claude-opus-5', true],
@@ -95,18 +108,6 @@ export function claudeSupportsEffort(model: string): boolean {
   return matchPrefix(model, CLAUDE_EFFORT, false);
 }
 
-/**
- * The sampling-related body fields for a Claude request — the one place
- * `client.ts` and `stream.ts` both read so a model's temperature/effort
- * treatment cannot drift between the streaming and one-shot paths.
- */
-export function claudeSamplingFields(model: string, temperature: number): Record<string, unknown> {
-  return {
-    ...(claudeSupportsTemperature(model) ? { temperature } : {}),
-    ...(claudeSupportsEffort(model) ? { output_config: { effort: 'low' } } : {}),
-  };
-}
-
 /* ── OpenAI reasoning family ────────────────────────────────────────────── */
 
 const OPENAI_REASONING_PREFIXES: readonly string[] = ['gpt-5', 'gpt-6', 'o1', 'o3', 'o4'];
@@ -120,7 +121,8 @@ export function openAiIsReasoningModel(model: string): boolean {
 const OPENAI_TEMPERATURE_ALLOW: readonly string[] = ['gpt-4.1', 'gpt-4o'];
 
 /**
- * Whether OpenAI's Chat Completions accepts `temperature` for this id.
+ * Whether OpenAI accepts `temperature` for this id, Chat Completions or
+ * Responses alike.
  *
  * Reasoning models never do — Astra, the family OpenAI's own guide says to
  * start with, is one of them. An id that is neither a known reasoning family
@@ -134,30 +136,232 @@ export function openAiSendsTemperature(model: string): boolean {
   return OPENAI_TEMPERATURE_ALLOW.some((prefix) => id.startsWith(prefix));
 }
 
+/* ── reasoning effort: which values each model actually accepts ──────────── */
+
 /**
- * The OpenAI-compatible body fields that vary by provider and model:
- * `max_tokens` vs. `max_completion_tokens`, `reasoning_effort`, and
- * DeepSeek's thinking toggle. Read by both request paths so a provider's
- * quirks are declared once.
+ * Anthropic's own scale, the same on every effort-capable model — the vendor
+ * docs give one set for the whole family, not a per-model table the way
+ * OpenAI's does.
  */
-export function openAiCompatibleSamplingFields(
+const CLAUDE_EFFORT_OPTIONS: readonly ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/**
+ * Per-model option sets, from OpenAI's own model pages: Astra has no
+ * `"none"` — sending it is a 400 — while Sol and Luna accept the full scale
+ * down to `"none"`.
+ */
+const OPENAI_EFFORT_OPTIONS: ReadonlyArray<readonly [string, readonly ReasoningEffort[]]> = [
+  ['gpt-6-astra', ['low', 'medium', 'high', 'xhigh', 'max']],
+  ['gpt-6-sol', ['none', 'low', 'medium', 'high', 'xhigh', 'max']],
+  ['gpt-6-luna', ['none', 'low', 'medium', 'high', 'xhigh', 'max']],
+];
+
+/**
+ * A reasoning id (`o1`, `o3`, `o4`, `gpt-5*`) this table has no per-model
+ * evidence for. `low`/`medium`/`high` is the subset every named GPT-6 row
+ * above accepts in common — the conservative middle, not a guess at the
+ * extremes (`none`, `xhigh`, `max`) a family with no confirmed table might
+ * reject.
+ */
+const OPENAI_EFFORT_FALLBACK: readonly ReasoningEffort[] = ['low', 'medium', 'high'];
+
+/** OpenRouter's own scale for its `reasoning.effort` body field — not gated by the (unknown) upstream model. */
+const OPENROUTER_EFFORT_OPTIONS: readonly ReasoningEffort[] = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+];
+
+/**
+ * `grok-4.5` and up accept `reasoning_effort`; `4.6` and up also accept
+ * `xhigh`. The catalogue's other id, `grok-4.3`, is below the 4.5 floor xAI's
+ * own guide states, so it gets nothing — never a guessed value an older model
+ * might 400 on.
+ */
+function grokEffortOptions(model: string): readonly ReasoningEffort[] {
+  const match = /^grok-4\.(\d+)/i.exec(model.trim());
+  const raw = match?.[1];
+  const minor = raw === undefined ? null : Number(raw);
+  if (minor === null || !Number.isFinite(minor) || minor < 5) return [];
+  return minor >= 6 ? ['low', 'medium', 'high', 'xhigh'] : ['low', 'medium', 'high'];
+}
+
+/**
+ * The `reasoningEffort` values this provider's card may offer for this
+ * model — `[]` means the parameter does not apply here at all, and the card
+ * hides the control rather than showing one that can only ever be wrong.
+ *
+ * Every dialect that sends a reasoning effort reads the *same* table through
+ * `validReasoningEffort` below before putting a value on the wire, so the
+ * card's menu and the transport's own gate can never disagree about which
+ * values a model accepts.
+ */
+export function reasoningEffortOptions(provider: AiProvider, model: string): readonly ReasoningEffort[] {
+  if (provider === 'claude') return claudeSupportsEffort(model) ? CLAUDE_EFFORT_OPTIONS : [];
+  if (provider === 'openai') {
+    return openAiIsReasoningModel(model) ? matchPrefix(model, OPENAI_EFFORT_OPTIONS, OPENAI_EFFORT_FALLBACK) : [];
+  }
+  if (provider === 'openrouter') return OPENROUTER_EFFORT_OPTIONS;
+  if (provider === 'grok') return grokEffortOptions(model);
+  return [];
+}
+
+/**
+ * A stored `reasoningEffort` this model will actually accept on the wire, or
+ * `null`.
+ *
+ * `''` always means "the provider's own default" — nothing is sent, on
+ * purpose. Anything else the model does not currently list in
+ * `reasoningEffortOptions` is dropped the same way, silently, rather than
+ * substituted with a guess: a model swap that leaves a value behind from the
+ * model it *was* chosen for (Astra's `'none'`, left over after switching to
+ * Sol) must never reach a request for a model it was never validated against.
+ * The card is expected to only ever offer a value `reasoningEffortOptions`
+ * lists, so this is a defensive floor under a stored configuration, not the
+ * normal path.
+ */
+function validReasoningEffort(
   provider: AiProvider,
   model: string,
-  temperature: number,
-  maxTokens: number,
+  value: ReasoningEffort | '',
+): ReasoningEffort | null {
+  if (value === '') return null;
+  return reasoningEffortOptions(provider, model).includes(value) ? value : null;
+}
+
+/* ── Gemini thinking level ─────────────────────────────────────────────── */
+
+/**
+ * `thinkingConfig.thinkingLevel`'s accepted values, per Gemini 3 model —
+ * ai.google.dev/gemini-api/docs/thinking, fetched 2026-09-28. Everything
+ * below Gemini 3 has no such field at all (see `thinkingLevelOptions`), and
+ * the page was ambiguous about 2.x, so this table starts at 3.
+ */
+const GEMINI_THINKING_OPTIONS: ReadonlyArray<readonly [string, readonly ThinkingLevel[]]> = [
+  ['gemini-3.8-flash', ['low', 'medium', 'high']],
+  ['gemini-3.7-flash', ['low', 'medium', 'high']],
+  ['gemini-3.6-flash', ['minimal', 'low', 'medium', 'high']],
+  ['gemini-3.5-flash-lite', ['minimal', 'low', 'medium', 'high']],
+  ['gemini-3.5-flash', ['minimal', 'low', 'medium', 'high']],
+  ['gemini-3-flash-preview', ['minimal', 'low', 'medium', 'high']],
+  ['gemini-3.1-pro-preview', ['low', 'medium', 'high']],
+  ['gemini-3-pro-preview', ['low', 'high']],
+];
+
+/**
+ * A Gemini 3+ id not named above (`gemini-3.1-flash-lite` is in the
+ * catalogue's model list but not in Google's own thinking-levels table) —
+ * `low` and `high` are the one pair every row above accepts in common, so
+ * this is the safe floor rather than a guess at `minimal` or `medium`, which
+ * at least one named model (`3-pro-preview`) refuses.
+ */
+const GEMINI_THINKING_FALLBACK: readonly ThinkingLevel[] = ['low', 'high'];
+
+/**
+ * The `thinkingLevel` values this model's card may offer — `[]` below
+ * Gemini 3, where the field does not exist at all.
+ */
+export function thinkingLevelOptions(model: string): readonly ThinkingLevel[] {
+  const id = model.trim().toLowerCase();
+  if (!/^gemini-[3-9]/.test(id)) return [];
+  return matchPrefix(id, GEMINI_THINKING_OPTIONS, GEMINI_THINKING_FALLBACK);
+}
+
+/** Same defensive floor as `validReasoningEffort`, for Gemini's own scale. */
+function validThinkingLevel(model: string, value: ThinkingLevel | ''): ThinkingLevel | null {
+  if (value === '') return null;
+  return thinkingLevelOptions(model).includes(value) ? value : null;
+}
+
+/* ── sampling / reasoning fields, per dialect ─────────────────────────────
+ *
+ * One function per wire shape, each reading only the settings fields its own
+ * provider owns — `client.ts` and `stream.ts` call these rather than
+ * building the fragment themselves, so the one-shot and streaming paths
+ * cannot describe the same request two different ways.
+ */
+
+/**
+ * The sampling-related body fields for a Claude request.
+ */
+export function claudeSamplingFields(
+  ai: Pick<AiSettings, 'model' | 'temperature' | 'reasoningEffort'>,
 ): Record<string, unknown> {
-  const isOpenAi = provider === 'openai';
-  const reasoning = isOpenAi && openAiIsReasoningModel(model);
+  const effort = validReasoningEffort('claude', ai.model, ai.reasoningEffort);
+  return {
+    ...(claudeSupportsTemperature(ai.model) ? { temperature: ai.temperature } : {}),
+    ...(effort === null ? {} : { output_config: { effort } }),
+  };
+}
+
+/**
+ * The Chat Completions body fields for the rest of the OpenAI-compatible
+ * list — OpenRouter, DeepSeek, Mistral, Grok, Ollama, a custom gateway.
+ *
+ * `openai` itself is no longer one of these: it speaks Responses now (see
+ * `openAiResponsesFields` and the `openai` branch of `dialectFor` in
+ * `stream.ts`). Every field read here belongs to the provider it is gated
+ * on — DeepSeek's `thinking` never reaches Grok's `reasoning_effort` branch —
+ * so a field that does not belong to the active provider is structurally
+ * unreachable, not merely blank.
+ */
+export function openAiCompatibleSamplingFields(
+  ai: Pick<AiSettings, 'provider' | 'model' | 'temperature' | 'maxTokens' | 'thinking' | 'reasoningEffort'>,
+): Record<string, unknown> {
+  const grokEffort = ai.provider === 'grok' ? validReasoningEffort('grok', ai.model, ai.reasoningEffort) : null;
+  const openRouterEffort =
+    ai.provider === 'openrouter' ? validReasoningEffort('openrouter', ai.model, ai.reasoningEffort) : null;
 
   return {
-    ...(samplingSupported({ provider, model }) ? { temperature } : {}),
-    ...(isOpenAi ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
-    ...(reasoning ? { reasoning_effort: 'low' } : {}),
-    /* Our fixed 4 096-token default and the silent reasoning phase make
-       DeepSeek's default high-effort thinking the wrong trade for a chat —
-       and disabling it is also what makes `temperature` take effect again. */
-    ...(provider === 'deepseek' ? { thinking: { type: 'disabled' } } : {}),
+    ...(samplingSupported(ai) ? { temperature: ai.temperature } : {}),
+    max_tokens: ai.maxTokens,
+    /* DeepSeek's own toggle — the seller's choice, no longer hard-coded. */
+    ...(ai.provider === 'deepseek' ? { thinking: { type: ai.thinking ? 'enabled' : 'disabled' } } : {}),
+    ...(grokEffort === null ? {} : { reasoning_effort: grokEffort }),
+    ...(openRouterEffort === null ? {} : { reasoning: { effort: openRouterEffort } }),
   };
+}
+
+/**
+ * The Responses-only body fields for an `openai` request.
+ *
+ * `max_output_tokens` is Responses' own name for the same budget Chat
+ * Completions calls `max_completion_tokens`. `store: false` because this
+ * application ships no server side for OpenAI to hold the conversation state
+ * on, which is also why a reasoning model additionally gets the one
+ * `include` value that asks for the encrypted reasoning item a later
+ * function-call turn has to replay — see `OpenAiReasoningItem` in
+ * `messages.ts`. `include` is sent whether or not `reasoning.effort` itself
+ * ends up on the wire: `''` (or a value this model does not list) means only
+ * the effort is left for OpenAI's own default, not the encrypted-content
+ * request that later turn depends on.
+ */
+export function openAiResponsesFields(
+  ai: Pick<AiSettings, 'model' | 'temperature' | 'maxTokens' | 'reasoningEffort'>,
+): Record<string, unknown> {
+  const effort = validReasoningEffort('openai', ai.model, ai.reasoningEffort);
+
+  return {
+    max_output_tokens: ai.maxTokens,
+    store: false,
+    ...(openAiSendsTemperature(ai.model) ? { temperature: ai.temperature } : {}),
+    ...(openAiIsReasoningModel(ai.model) ? { include: ['reasoning.encrypted_content'] } : {}),
+    ...(effort === null ? {} : { reasoning: { effort } }),
+  };
+}
+
+/**
+ * The Gemini 3+ thinking level to send, or `null` to omit `thinkingConfig`
+ * entirely and let the model pick its own — Gemini 3 always thinks, so `null`
+ * is "no floor under it", never "thinking off", which these models cannot do
+ * anyway.
+ */
+export function geminiThinkingLevel(ai: Pick<AiSettings, 'model' | 'thinkingLevel'>): ThinkingLevel | null {
+  return validThinkingLevel(ai.model, ai.thinkingLevel);
 }
 
 /* ── the one switch every dialect and the settings form read ───────────── */
@@ -168,11 +372,15 @@ export function openAiCompatibleSamplingFields(
  * `client.ts` and `stream.ts` call this to decide whether to put `temperature`
  * on the wire; the settings form calls the exact same function to decide
  * whether to show the slider at all, so the two can never disagree about a
- * model the seller is looking at right now.
+ * model the seller is looking at right now. DeepSeek is the one provider
+ * where sampling depends on a *setting* rather than the model id: its
+ * thinking phase silently ignores `temperature`, so the slider only does
+ * anything once thinking is switched off.
  */
-export function samplingSupported(ai: Pick<AiSettings, 'provider' | 'model'>): boolean {
+export function samplingSupported(ai: Pick<AiSettings, 'provider' | 'model' | 'thinking'>): boolean {
   if (ai.provider === 'claude') return claudeSupportsTemperature(ai.model);
   if (ai.provider === 'openai') return openAiSendsTemperature(ai.model);
+  if (ai.provider === 'deepseek') return !ai.thinking;
   return true;
 }
 
@@ -222,43 +430,164 @@ export function canListModels(
 
 /* ── headers ────────────────────────────────────────────────────────────── */
 
+/**
+ * Whether a value is safe to put on the wire as an HTTP header, verbatim.
+ *
+ * `fetch`'s `Headers` throws a `TypeError` — not an HTTP error, not something
+ * `toApiError` or this transport's own error mapping ever sees — for a value
+ * outside printable ASCII. A seller's own `appTitle` ("Savdo doʻkoni",
+ * U+02BB), a Cyrillic organisation name, an IDN URL, or a key pasted with a
+ * stray non-breaking space all qualify. Left unguarded, that `TypeError` is
+ * caught by the generic handler around `fetch` and reported as `kind:
+ * 'network'` — "could not be reached" — which sends the seller looking for a
+ * firewall problem that does not exist, and for a streaming request gets
+ * retried three times for a header that will never become valid. Exported so
+ * the settings card can refuse the same input before it is ever saved.
+ */
+export function isHeaderSafe(value: string): boolean {
+  return /^[\x20-\x7E]*$/.test(value.trim());
+}
+
+/**
+ * A key that cannot be written into a request header at all is not a network
+ * problem — it never reaches `fetch`. Thrown before the request is built, so
+ * it is never counted as a request the provider saw (see `usage.ts`'s "what
+ * counts as a request") and never retried (`isRetryable` is `false` for
+ * `'unauthorized'`).
+ */
+function assertHeaderSafeKey(apiKey: string): void {
+  if (!isHeaderSafe(apiKey)) {
+    throw new ApiError('The API key contains characters no request header can carry', {
+      kind: 'unauthorized',
+    });
+  }
+}
+
 /** Anthropic blocks browser calls unless this header opts in explicitly. */
 export const ANTHROPIC_BROWSER_HEADER = 'anthropic-dangerous-direct-browser-access';
+/** The current stable value, and the fallback when the card's own field is blank or unsafe to send. */
 export const ANTHROPIC_VERSION = '2023-06-01';
 
-export function anthropicHeaders(apiKey: string): Record<string, string> {
+export function anthropicHeaders(ai: Pick<AiSettings, 'apiKey' | 'anthropicVersion'>): Record<string, string> {
+  assertHeaderSafeKey(ai.apiKey);
+  const version = ai.anthropicVersion.trim();
+
   return {
     'content-type': 'application/json',
-    'x-api-key': apiKey,
-    'anthropic-version': ANTHROPIC_VERSION,
+    'x-api-key': ai.apiKey,
+    'anthropic-version': version !== '' && isHeaderSafe(version) ? version : ANTHROPIC_VERSION,
     [ANTHROPIC_BROWSER_HEADER]: 'true',
   };
 }
 
 export function geminiHeaders(apiKey: string): Record<string, string> {
+  assertHeaderSafeKey(apiKey);
   return { 'content-type': 'application/json', 'x-goog-api-key': apiKey };
 }
 
 /**
- * The header set every OpenAI-compatible dialect sends.
+ * The header set every OpenAI-compatible dialect sends — OpenAI's own
+ * Responses API included, which reuses this rather than growing a second
+ * copy of the bearer/organisation logic.
  *
  * A key is optional for exactly the two providers `requiresApiKey` excludes,
  * and a bare `Bearer ` with nothing after it is worse than sending no header
  * at all — several gateways treat it as a malformed credential rather than an
- * anonymous request. The organisation header is OpenAI's own concept: the
- * settings form only ever offers an org id for `provider === 'openai'`, but a
- * value left over from a provider switch must never ride along to a
- * different vendor's endpoint.
+ * anonymous request. Every provider-specific header is read only inside its
+ * own `if` — OpenAI's organisation/project headers cannot reach an OpenRouter
+ * request, and OpenRouter's attribution headers cannot reach OpenAI's, even
+ * if a stale value happens to sit in the field from a provider the seller
+ * switched away from, because each provider now keeps its own configuration
+ * and this function never reads the other's.
  */
 export function openAiCompatibleHeaders(
-  provider: AiProvider,
-  apiKey: string,
-  orgId: string,
+  ai: Pick<AiSettings, 'provider' | 'apiKey' | 'orgId' | 'projectId' | 'appUrl' | 'appTitle'>,
 ): Record<string, string> {
-  const key = apiKey.trim();
-  return {
+  assertHeaderSafeKey(ai.apiKey);
+
+  const key = ai.apiKey.trim();
+  const headers: Record<string, string> = {
     'content-type': 'application/json',
     ...(key === '' ? {} : { authorization: `Bearer ${key}` }),
-    ...(provider === 'openai' && orgId.trim() !== '' ? { 'openai-organization': orgId } : {}),
   };
+
+  /* An unsafe org/project/attribution value is dropped, not thrown on — it is
+     an optional header, not a credential, so the request still goes out. */
+  if (ai.provider === 'openai') {
+    const orgId = ai.orgId.trim();
+    const projectId = ai.projectId.trim();
+    if (orgId !== '' && isHeaderSafe(orgId)) headers['openai-organization'] = orgId;
+    if (projectId !== '' && isHeaderSafe(projectId)) headers['openai-project'] = projectId;
+  } else if (ai.provider === 'openrouter') {
+    const appUrl = ai.appUrl.trim();
+    const appTitle = ai.appTitle.trim();
+    if (appUrl !== '' && isHeaderSafe(appUrl)) headers['http-referer'] = appUrl;
+    if (appTitle !== '' && isHeaderSafe(appTitle)) headers['x-openrouter-title'] = appTitle;
+  }
+
+  return headers;
+}
+
+/* ── OpenAI Responses failures, classified so a retry cannot repeat one ──── */
+
+/**
+ * `response.incomplete` (streaming) or `status: "incomplete"` (one-shot) with
+ * nothing to show for it — no text, no call.
+ *
+ * Always `kind: 'client'`, never `'server'`: the run was cut off by something
+ * about *this request* — `max_output_tokens` too low for the model's own
+ * reasoning phase, most often, per OpenAI's reasoning guide's own warning that
+ * this can happen with the tokens already spent — and the identical request
+ * hits the identical wall on a retry. `ApiError.isRetryable` is `false` for
+ * `'client'`, which is what stops `shouldRetry` in `stream.ts` from spending
+ * the same reasoning tokens three more times for the same empty answer. The
+ * reason rides in the message, which the settings pane's `aiErrRequest`
+ * shows verbatim in English — which is the wrong frame for a seller reading
+ * it in their own language. `code: 'incomplete'` is the machine-readable
+ * half: the settings card maps it to a translated dictionary entry ("raise
+ * max tokens, or lower reasoning effort") instead, and only falls back to the
+ * raw message for a `code` it does not recognise.
+ */
+export function openAiIncompleteError(reason: string): ApiError {
+  return new ApiError(`The model stopped before answering (${reason})`, {
+    kind: 'client',
+    code: 'incomplete',
+  });
+}
+
+/**
+ * `response.failed`'s nested `error`, or a bare `error` SSE event — classified
+ * by `code` so a deterministic refusal is never retried and a genuine
+ * transient failure still gets the three attempts every other 5xx in this
+ * transport gets.
+ *
+ * `insufficient_quota` is checked first and on its own: OpenAI's billing
+ * exhaustion code contains the substring `"quota"`, so the general rule below
+ * would otherwise read it as a rate limit — three pointless retries and a
+ * "slow down" message for a seller who needs to add billing, not wait a
+ * minute. It keeps its own `code` for the same reason `'incomplete'` does:
+ * the settings card can name the actual problem instead of paraphrasing the
+ * message.
+ *
+ * OpenAI's own `server_error` type carries `code: null` in practice, which is
+ * why an absent code is treated the same as one that names a server problem
+ * rather than as the safer-sounding default of "leave it alone" — a bare mid-
+ * stream `error` event historically corresponds to exactly this kind of
+ * transient hiccup. Anything else specific enough to be named — a content
+ * filter, an unsupported parameter, a model id the account cannot reach — is
+ * a fact about this request that a retry cannot change.
+ */
+export function classifyOpenAiFailure(code: string | null, message: string): ApiError {
+  const lower = (code ?? '').trim().toLowerCase();
+
+  if (lower.includes('insufficient_quota')) {
+    return new ApiError(message, { kind: 'client', code: 'insufficient_quota' });
+  }
+  if (lower.includes('rate_limit') || lower.includes('quota')) {
+    return new ApiError(message, { kind: 'rateLimited', status: 429 });
+  }
+  if (lower === '' || lower.includes('server') || lower.includes('internal')) {
+    return new ApiError(message, { kind: 'server' });
+  }
+  return new ApiError(message, { kind: 'client' });
 }

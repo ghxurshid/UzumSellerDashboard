@@ -5,23 +5,28 @@ import type { AiProvider, AiSettings } from '@/types/settings';
 
 import {
   anthropicHeaders,
+  classifyOpenAiFailure,
   claudeSamplingFields,
   geminiHeaders,
+  geminiThinkingLevel,
   isAiConfigured,
   openAiCompatibleHeaders,
   openAiCompatibleSamplingFields,
+  openAiIncompleteError,
+  openAiResponsesFields,
 } from './modelRules';
 import { isKeyRejection, ModelQuotaError, readQuotaFailure, recordModelRequest } from './usage';
 
 /**
  * The analysis layer's connection to whichever model the user configured.
  *
- * Three request shapes cover the nine adapters in the registry: Anthropic's
- * Messages API, Google's `generateContent`, and the OpenAI-compatible
- * `/chat/completions` that every other provider in the list speaks. The app
- * never ships a key — it uses the one in Settings, and refuses to call
- * anything when that is empty (or, for the two providers a key is optional
- * for, when the rest of the connection is empty — see `isAiConfigured`).
+ * Four request shapes cover the nine adapters in the registry: Anthropic's
+ * Messages API, Google's `generateContent`, OpenAI's own Responses API, and
+ * the OpenAI-compatible `/chat/completions` that every other provider in the
+ * list speaks. The app never ships a key — it uses the one in Settings, and
+ * refuses to call anything when that is empty (or, for the two providers a
+ * key is optional for, when the rest of the connection is empty — see
+ * `isAiConfigured`).
  */
 
 export interface CompletionRequest {
@@ -93,29 +98,113 @@ function firstGeminiText(body: unknown): string | null {
 }
 
 /**
- * The prompt as the provider counted it, for the quota meter.
+ * The first assistant message's text in an OpenAI Responses body, walking
+ * `output[*]` of type `message` → `content[*]` of type `output_text` →
+ * `.text`.
  *
- * This is not the number `estimateCost` would want — that one discounts a
- * cached prefix — and there is no accumulator here to carry both through a
- * single response the way the streaming path does, so this reads the raw
- * count straight from the one body there is. `null` when the provider said
- * nothing about usage at all, which `ollama` and most self-hosted gateways
- * never do.
+ * The SDK also exposes a top-level `output_text` convenience getter, but that
+ * is a client-library computed property, not a field the wire itself sends —
+ * relying on it here would read `undefined` forever, since this application
+ * parses the JSON body directly rather than through OpenAI's own SDK.
  */
-function rawInputTokens(provider: AiProvider, body: unknown): number | null {
+export function firstOpenAiResponsesText(body: unknown): string | null {
+  const output = at(body, ['output']);
+  if (!Array.isArray(output)) return null;
+
+  for (const item of output) {
+    if (readText(item, ['type']) !== 'message') continue;
+    const content = at(item, ['content']);
+    if (!Array.isArray(content)) continue;
+
+    for (const part of content) {
+      if (readText(part, ['type']) !== 'output_text') continue;
+      const text = readText(part, ['text']);
+      if (text !== null) return text;
+    }
+  }
+
+  return null;
+}
+
+/** What a provider's own usage object said about one request, read defensively. */
+interface ProviderUsage {
+  /** The whole prompt as the provider counted it, cache included. */
+  readonly inputTokens: number | null;
+  /** Subset of `inputTokens` served from the provider's own cache. */
+  readonly cachedInputTokens: number | null;
+  /** Output as the provider counted it, reasoning included. */
+  readonly outputTokens: number | null;
+  /** Subset of `outputTokens` spent on reasoning, where reported apart. */
+  readonly reasoningTokens: number | null;
+}
+
+const NO_USAGE: ProviderUsage = {
+  inputTokens: null,
+  cachedInputTokens: null,
+  outputTokens: null,
+  reasoningTokens: null,
+};
+
+/**
+ * What a provider's own body said it spent, for the usage ledger.
+ *
+ * `null` on every field a provider said nothing about — `ollama` and most
+ * self-hosted gateways never send a usage object at all — because the ledger
+ * must never show a guess dressed up as a fact. Not the number `estimateCost`
+ * would want either: that one discounts a cached prefix out of `inputTokens`,
+ * and the ledger's own meaning for the field is the raw, undiscounted count —
+ * see `ModelRequestEvent` in `usage.ts`.
+ */
+export function usageOf(provider: AiProvider, body: unknown): ProviderUsage {
   if (provider === 'claude') {
     const input = readNumber(body, ['usage', 'input_tokens']);
-    if (input === null) return null;
+    if (input === null) return NO_USAGE;
     const created = readNumber(body, ['usage', 'cache_creation_input_tokens']) ?? 0;
-    const read = readNumber(body, ['usage', 'cache_read_input_tokens']) ?? 0;
-    return input + created + read;
+    const read = readNumber(body, ['usage', 'cache_read_input_tokens']);
+    return {
+      inputTokens: input + created + (read ?? 0),
+      cachedInputTokens: read,
+      outputTokens: readNumber(body, ['usage', 'output_tokens']),
+      /* Anthropic's usage object carries no separate thinking-token count —
+         `output_tokens` already includes it, undivided. */
+      reasoningTokens: null,
+    };
   }
 
   if (provider === 'gemini') {
-    return readNumber(body, ['usageMetadata', 'promptTokenCount']);
+    const answer = readNumber(body, ['usageMetadata', 'candidatesTokenCount']);
+    const thoughts = readNumber(body, ['usageMetadata', 'thoughtsTokenCount']);
+    return {
+      inputTokens: readNumber(body, ['usageMetadata', 'promptTokenCount']),
+      cachedInputTokens: readNumber(body, ['usageMetadata', 'cachedContentTokenCount']),
+      outputTokens: answer === null && thoughts === null ? null : (answer ?? 0) + (thoughts ?? 0),
+      reasoningTokens: thoughts,
+    };
   }
 
-  return readNumber(body, ['usage', 'prompt_tokens']);
+  if (provider === 'openai') {
+    return {
+      inputTokens: readNumber(body, ['usage', 'input_tokens']),
+      cachedInputTokens: readNumber(body, ['usage', 'input_tokens_details', 'cached_tokens']),
+      outputTokens: readNumber(body, ['usage', 'output_tokens']),
+      reasoningTokens: readNumber(body, ['usage', 'output_tokens_details', 'reasoning_tokens']),
+    };
+  }
+
+  /* Chat Completions: OpenRouter, DeepSeek, Mistral, Grok, Ollama, custom.
+     DeepSeek spells its cache hit apart from the standard
+     `prompt_tokens_details.cached_tokens` field — `prompt_cache_hit_tokens`,
+     per its own API reference (api-docs.deepseek.com/api/create-chat-completion,
+     fetched 2026-09-28) — read only where the standard field said nothing at
+     all, never invented for a provider that is silent about caching entirely. */
+  return {
+    inputTokens: readNumber(body, ['usage', 'prompt_tokens']),
+    cachedInputTokens:
+      readNumber(body, ['usage', 'prompt_tokens_details', 'cached_tokens']) ??
+      readNumber(body, ['usage', 'prompt_cache_hit_tokens']),
+    outputTokens: readNumber(body, ['usage', 'completion_tokens']),
+    reasoningTokens: readNumber(body, ['usage', 'completion_tokens_details', 'reasoning_tokens']),
+  };
 }
 
 async function send<T>(
@@ -128,12 +217,16 @@ async function send<T>(
 
   try {
     const response = await axios.post<T>(url, body, config);
+    const usage = usageOf(meta.provider, response.data);
 
     recordModelRequest({
       provider: meta.provider,
       model: meta.model,
       at: dispatchedAt,
-      inputTokens: rawInputTokens(meta.provider, response.data),
+      inputTokens: usage.inputTokens,
+      cachedInputTokens: usage.cachedInputTokens,
+      outputTokens: usage.outputTokens,
+      reasoningTokens: usage.reasoningTokens,
       outcome: 'ok',
     });
 
@@ -219,11 +312,11 @@ export async function complete(
       {
         model: settings.model,
         max_tokens: settings.maxTokens,
-        ...claudeSamplingFields(settings.model, settings.temperature),
+        ...claudeSamplingFields(settings),
         system: request.system,
         messages: request.messages,
       },
-      { ...common, headers: anthropicHeaders(settings.apiKey) },
+      { ...common, headers: anthropicHeaders(settings) },
       { provider: settings.provider, model: settings.model },
     );
 
@@ -233,6 +326,8 @@ export async function complete(
   }
 
   if (settings.provider === 'gemini') {
+    const thinkingLevel = geminiThinkingLevel(settings);
+
     const body = await send<unknown>(
       `${base}/models/${settings.model}:generateContent`,
       {
@@ -244,6 +339,7 @@ export async function complete(
         generationConfig: {
           temperature: settings.temperature,
           maxOutputTokens: settings.maxTokens,
+          ...(thinkingLevel === null ? {} : { thinkingConfig: { thinkingLevel } }),
         },
       },
       { ...common, headers: geminiHeaders(settings.apiKey) },
@@ -255,18 +351,56 @@ export async function complete(
     return text;
   }
 
-  /* OpenAI-compatible: OpenAI, OpenRouter, DeepSeek, Mistral, Grok, Ollama and
-     anything the user points the custom adapter at. */
+  if (settings.provider === 'openai') {
+    /* No tools here — the insights rail asks one question and reads one
+       answer; it never runs the agent loop that `streamComplete` serves. */
+    const body = await send<unknown>(
+      `${base}/responses`,
+      {
+        model: settings.model,
+        instructions: request.system,
+        input: request.messages.map((message) => ({ role: message.role, content: message.content })),
+        ...openAiResponsesFields(settings),
+      },
+      { ...common, headers: openAiCompatibleHeaders(settings) },
+      { provider: settings.provider, model: settings.model },
+    );
+
+    const status = readText(body, ['status']);
+    const text = firstOpenAiResponsesText(body);
+
+    /* Cut off before writing anything — most often `max_output_tokens`, per
+       OpenAI's own reasoning guide, which warns this can happen with the
+       tokens already spent. Non-retryable — see `openAiIncompleteError` — so
+       a caller that retries a failed `complete()` does not spend the same
+       reasoning tokens again for the same empty answer. */
+    if (status === 'incomplete' && (text === null || text === '')) {
+      const reason = readText(body, ['incomplete_details', 'reason']) ?? 'unknown reason';
+      throw openAiIncompleteError(reason);
+    }
+    if (status === 'failed') {
+      const message = readText(body, ['error', 'message']) ?? 'The model request failed';
+      const code = readText(body, ['error', 'code']);
+      throw classifyOpenAiFailure(code, message);
+    }
+
+    if (text === null) throw new ApiError('Unexpected response from the model', { kind: 'server' });
+    return text;
+  }
+
+  /* OpenAI-compatible: OpenRouter, DeepSeek, Mistral, Grok, Ollama and
+     anything the user points the custom adapter at. `openai` itself left this
+     branch for the Responses one above. */
   const body = await send<unknown>(
     `${base}/chat/completions`,
     {
       model: settings.model,
-      ...openAiCompatibleSamplingFields(settings.provider, settings.model, settings.temperature, settings.maxTokens),
+      ...openAiCompatibleSamplingFields(settings),
       messages: [{ role: 'system', content: request.system }, ...request.messages],
     },
     {
       ...common,
-      headers: openAiCompatibleHeaders(settings.provider, settings.apiKey, settings.orgId),
+      headers: openAiCompatibleHeaders(settings),
     },
     { provider: settings.provider, model: settings.model },
   );

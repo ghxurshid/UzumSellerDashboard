@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 
-import { findProvider } from '@/constants/settings';
 import {
   isModelRequestEvent,
   pruneUsage,
@@ -43,23 +42,18 @@ import { KV_KEYS } from '@/services/storage/idb/schema';
  * it was reading.
  */
 
-/** A corrupt or runaway ledger must not grow the `kv` record without bound. */
-const MAX_EVENTS = 5_000;
-
 /**
- * Whether the catalogue still publishes rate limits for this event's
- * provider+model.
+ * A corrupt or runaway ledger must not grow the `kv` record without bound.
  *
- * `MAX_EVENTS` is shared by every provider this browser has ever talked to,
- * so an event this meter can never gauge anything from (a free-text adapter,
- * a Gemini model dropped from the catalogue) must not occupy a slot that
- * could instead hold a Gemini request the panel actually draws a bar for.
+ * Every validated event is kept, not only the ones a Gemini-style quota gauge
+ * can be drawn from or that happened to carry a token count: a DeepSeek or
+ * Ollama request that reports nothing, and a failed or cancelled request on
+ * any provider, is still a fact the settings screen's token panel and a
+ * future reading of this ledger need to see (a request count that is honest
+ * about what happened, not only about what could be priced). `pruneUsage`'s
+ * 26 h window and this cap are what bound the ledger instead.
  */
-function hasCatalogueLimits(event: ModelRequestEvent): boolean {
-  return findProvider(event.provider).models.some(
-    (entry) => entry.id === event.model && entry.limits !== undefined,
-  );
-}
+const MAX_EVENTS = 5_000;
 
 interface ModelUsageState {
   readonly events: readonly ModelRequestEvent[];
@@ -110,11 +104,10 @@ function mergeById(
  * counts.
  */
 function applyIncoming(incoming: readonly ModelRequestEvent[]): void {
-  const relevant = incoming.filter(hasCatalogueLimits);
-  if (relevant.length === 0) return;
+  if (incoming.length === 0) return;
 
   const state = useModelUsageStore.getState();
-  const merged = pruneUsage(mergeById(state.events, relevant), Date.now());
+  const merged = pruneUsage(mergeById(state.events, incoming), Date.now());
   useModelUsageStore.setState({ events: merged });
   if (state.loaded) persist(merged);
 }
@@ -167,9 +160,7 @@ export function initModelUsageSync(): void {
 export async function restoreModelUsage(): Promise<void> {
   try {
     const stored = await readKv<unknown>(KV_KEYS.modelUsage);
-    const usable = (Array.isArray(stored) ? stored : [])
-      .filter(isModelRequestEvent)
-      .filter(hasCatalogueLimits);
+    const usable = (Array.isArray(stored) ? stored : []).filter(isModelRequestEvent);
 
     /* Merge with whatever is already in memory — see the module header for
        why this must never be a plain overwrite. Everything that arrived

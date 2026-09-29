@@ -1,7 +1,7 @@
 # Savdo Copilot — Texnik spetsifikatsiya
 
-**Versiya:** 2.7.0
-**Hujjat sanasi:** 2026-09-21
+**Versiya:** 2.8.0
+**Hujjat sanasi:** 2026-09-29
 **Maqsad:** [FUNCTIONAL-SPECIFICATION.md](./FUNCTIONAL-SPECIFICATION.md) dagi har bir
 talab texnik jihatdan qanday amalga oshirilganini ifodalash.
 
@@ -76,7 +76,7 @@ rejalashtirilgan sinxronizatsiya uchun.
 | HTTP | axios |
 | Animatsiya | framer-motion |
 | Saqlash | IndexedDB (to'g'ridan-to'g'ri, ORM'siz) |
-| AI | Provayder adapterlari qo'lda yozilgan: Anthropic Messages, Google `generateContent`, OpenAI-mos `/chat/completions` (OpenRouter, DeepSeek, Mistral, Ollama va boshqalar) |
+| AI | Provayder adapterlari qo'lda yozilgan: Anthropic Messages, Google `generateContent`, OpenAI'ning o'z Responses API'si (`/v1/responses`), OpenAI-mos `/chat/completions` (OpenRouter, DeepSeek, Mistral, Grok, Ollama, boshqa gateway) |
 | Matn | react-markdown + remark-gfm (Copilot javobidagi prose, xom HTML'siz) |
 | Testlar | Vitest (node muhiti) |
 
@@ -687,10 +687,66 @@ Ikki muallif, bitta karta tili:
 
 [`services/ai/`](./frontend/src/services/ai/):
 
-- **Uch xil so'rov shakli:** Anthropic Messages, Google `generateContent`,
-  OpenAI-mos `/chat/completions`.
-- **Streaming va native tool chaqiruvlari.** Gemini 3'ning `thoughtSignature`i
-  chaqiruv bilan birga qaytariladi.
+- **To'rt xil so'rov shakli:** Anthropic Messages, Google `generateContent`,
+  OpenAI'ning o'z Responses API'si va qolgan olti provayder (OpenRouter,
+  DeepSeek, Mistral, Grok, Ollama, `custom`) uchun OpenAI-mos
+  `/chat/completions`.
+  - **OpenAI — Responses API**
+    ([`dialectFor`](./frontend/src/services/ai/stream.ts#L1004)ning `openai`
+    bo'limi — oqim; [`client.ts`](./frontend/src/services/ai/client.ts#L354) —
+    bir martalik so'rov): ikkalasi ham `/v1/responses`ga, `store:false` bilan
+    boradi — ilovada OpenAI uchun suhbat holatini saqlaydigan server yo'q.
+    Fikrlash modeliga (`gpt-5*`, `gpt-6*`, `o1`/`o3`/`o4`) shuning uchun
+    `include: ["reasoning.encrypted_content"]` so'raladi
+    ([`openAiResponsesFields`](./frontend/src/services/ai/modelRules.ts#L343)):
+    keyingi tool raundida faqat **shu fikrlash elementi**, chaqiruvdan oldin,
+    qayta yuboriladi
+    ([`openAiResponsesInput`](./frontend/src/services/ai/stream.ts#L494)), va
+    shifrlanmagan (`encrypted_content`siz) element tashlab yuboriladi — uni
+    `store:false`da qayta tiklab bo'lmaydi. Tool'lar `strict:false` bilan
+    e'lon qilinadi: zod'dan chiqqan sxemalarda ixtiyoriy maydonlar bor, ular
+    strict rejimda rad etiladi. **Dalil kuchsiz:** bu yo'l haqiqiy OpenAI
+    kaliti bilan hali sinalmagan — OpenAI'ning hujjatlaridan qurilgan va
+    faqat mock javoblar bilan test qilingan; "chaqiruvni qayta yuborishda
+    `fc_` id emas, faqat `call_id` yetarli" qoidasi 2025 yilgi hamjamiyat
+    xabarlariga asoslangan, hujjatlashtirilgan talab emas.
+  - Qolgan olti provayder xuddi avvalgidek `/chat/completions`ga boradi.
+- **Streaming va native tool chaqiruvlari** — Claude, Gemini **va endi
+  OpenAI**da (10.1-bo'lim); Gemini 3'ning `thoughtSignature`i chaqiruv bilan
+  birga qaytariladi.
+- **Provayderga xos parametrlar** — har biri o'z kartasida ko'rinadi va
+  simning aynan qayeriga tushishi karta ostida yoziladi
+  ([`openAiCompatibleHeaders`](./frontend/src/services/ai/modelRules.ts#L503),
+  [`anthropicHeaders`](./frontend/src/services/ai/modelRules.ts#L471)):
+
+  | Provayder | Parametr | Simda |
+  |---|---|---|
+  | OpenAI | `orgId`, `projectId` | `OpenAI-Organization`, `OpenAI-Project` sarlavhalari |
+  | OpenAI, OpenRouter | `reasoningEffort` | `reasoning.effort` (so'rov tanasida) |
+  | Claude | `reasoningEffort` | `output_config.effort` |
+  | Grok | `reasoningEffort` | `reasoning_effort` |
+  | Claude | `anthropicVersion` | `anthropic-version` sarlavhasi (bo'sh yoki xavfsiz bo'lmasa — `2023-06-01`) |
+  | Gemini 3+ | `thinkingLevel` | `generationConfig.thinkingConfig.thinkingLevel` |
+  | DeepSeek | `thinking` | `thinking.type` (`enabled`/`disabled`) |
+  | OpenRouter | `appUrl`, `appTitle` | `HTTP-Referer`, `X-OpenRouter-Title` sarlavhalari |
+
+  Model qabul qilmaydigan qiymat — yoki `''` — hech qachon yuborilmaydi, jimgina
+  tashlab ketiladi
+  ([`validReasoningEffort`](./frontend/src/services/ai/modelRules.ts#L227));
+  karta menyusi va transport aynan shu tekshiruvdan o'qiydi, shuning uchun
+  ular bir model uchun ikki xil javob berolmaydi.
+- **Sarlavha xavfsizligi.** `fetch`ning `Headers`i bosiladigan ASCII'dan
+  tashqari qiymatda `TypeError` otadi. Ixtiyoriy sarlavha (tashkilot, loyiha,
+  atributsiya) xavfsiz bo'lmasa jimgina tashlab ketiladi; kalitning o'zi
+  xavfsiz bo'lmasa esa so'rov hech qachon `fetch`ga yetmasdan `unauthorized`
+  bilan rad etiladi
+  ([`isHeaderSafe`](./frontend/src/services/ai/modelRules.ts#L447)).
+- **`stream_options.include_usage`** faqat OpenRouter, DeepSeek va Ollama
+  uchun so'raladi — uchalasi ham buni o'z hujjatida tasdiqlagan; Mistral esa
+  oqimda usage umuman qaytarmasligini aytadi, shuning uchun undan so'ralmaydi
+  ([`stream.ts`](./frontend/src/services/ai/stream.ts#L1056)). OpenAI bu
+  ro'yxatdan chiqib ketgan — uning usage'si Responses'ning
+  `response.completed` hodisasidan keladi.
 - **Qayta urinish** (`RETRIES = 3`): `429`/`5xx`/tarmoq xatosida, `Retry-After`
   yoki Gemini'ning `RetryInfo.retryDelay`si hurmat qilinadi.
   - Faqat javobdan hali hech narsa ekranga chiqmagan bo'lsa takrorlanadi. Aks
@@ -699,43 +755,101 @@ Ikki muallif, bitta karta tili:
   - Bekor qilingan so'rov va noto'g'ri kalit takrorlanmaydi.
   - **Kunlik (RPD) `429` ham takrorlanmaydi.** `ModelQuotaError.isRetryable`
     buni ataylab `false` qaytaradi
-    ([`ai/usage.ts`](./frontend/src/services/ai/usage.ts#L120)) — bu chegara
+    ([`ai/usage.ts`](./frontend/src/services/ai/usage.ts#L127)) — bu chegara
     faqat Tinch okean yarim tunida ochiladi, har bir urinish esa bir xil rad
     javobini yana bir marta hisoblatib qo'yardi. Suhbat paneli bu holatda
     sababni va tiklanish vaqtini ko'rsatadi, **Davom ettirish** tugmasisiz
     ([`features/chat/useCopilotAnswers.ts`](./frontend/src/features/chat/useCopilotAnswers.ts#L36)).
-- **Kvota o'lchagichi** — brauzerda, faqat Gemini uchun
+  - **OpenAI Responses'ning o'z rad javoblari kod bo'yicha ajratiladi**
+    ([`classifyOpenAiFailure`](./frontend/src/services/ai/modelRules.ts#L580)):
+    `insufficient_quota` — `client`, takrorlanmaydi (hisobga pul qo'shish
+    kerak, kutish emas); `rate_limit`/`quota` — `rateLimited`, oddiy qoida
+    bo'yicha takrorlanadi; nomsiz yoki `server` so'zli kod — `server`,
+    takrorlanadi. `response.incomplete` hech narsa (matn ham, chaqiruv ham)
+    yozmasdan tugasa — odatda `max_output_tokens` fikrlashga sarflanib
+    bo'lgani uchun — `client`/`incomplete` bilan rad etiladi va **hech
+    qachon** takrorlanmaydi: bir xil so'rov bir xil devorga urilaveradi
+    ([`openAiIncompleteError`](./frontend/src/services/ai/modelRules.ts#L551)).
+    Sozlamalar paneli `incomplete` va `insufficient_quota` kodlarini o'z
+    tiliga tarjima qilingan gap bilan ko'rsatadi
+    ([`aiErrors.ts`](./frontend/src/features/settings/aiErrors.ts#L49)).
+  - **Insights paneli (rail)** modelning topilmalarini bitta ma'lumot oynasiga
+    bitta marta so'raydi va muvaffaqiyatsizlikni **faqat bir marta**, shu ham
+    `ApiError.isRetryable` `true` bo'lgandagina, qaytadan so'raydi — kunlik
+    kvota, `insufficient_quota` va `incomplete` kabi qaytarilsa ham bir xil
+    javob beradigan xatolarda emas
+    ([`shouldRetryAiCards`](./frontend/src/services/queries/useInsightsQuery.ts#L155)).
+- **Voqealar jurnali (ledger) — har bir provayder uchun, barchasi**
   ([`ai/usage.ts`](./frontend/src/services/ai/usage.ts)):
-  - `stream.ts` va `client.ts` javob **olgan** har bir so'rov uchun (qayta
-    urinishlar, suhbat, rail muallifi, Sozlamalardagi ulanish testi
-    qo'shilgan) bitta `ModelRequestEvent` yozadi. Javob kelmagan so'rov
-    (tarmoq xatosi, timeout, bekor qilish) va kalit rad etilishi
-    (`401`/`403`, `400 API_KEY_INVALID`) yozilmaydi — ular loyiha kvotasiga
-    umuman tegmagan.
-  - Gemini'ning `429` tanasi (`google.rpc.QuotaFailure` / `RetryInfo`) qaysi
-    o'lchov (`rpm`/`tpm`/`rpd`) tugaganini va qachon qayta so'rash
-    mumkinligini ajratib oladi (`readQuotaFailure`). **Dalil kuchsiz:** bu
-    tana shakli loyihada yozib olingan haqiqiy namuna emas — Google'ning
-    ommaviy xato formati hujjatlaridan va misollardan olingan.
-  - RPM va TPM oxirgi 60 soniyalik sirpanuvchi oynada, TPM kiruvchi
-    tokenlarda (`promptTokenCount`), RPD Tinch okean yarim tunidan (DST'ni
-    hisobga olib) hisoblanadi; Gemini'ning o'zi `429`da aytgan limit
-    katalogdagi raqamni o'zib ketadi. "Har bir natija — muvaffaqiyatli ham,
-    rad etilgan ham — so'rov sifatida sanaladi" qoidasi ham **dalili
-    kuchsiz**: bitta AI Studio kuzatuviga (3.5 Flash'da 23/20 RPD
-    ko'rsatilgani) asoslangan.
-  - Hisob [`store/modelUsage.store.ts`](./frontend/src/store/modelUsage.store.ts)da
-    IndexedDB `kv`ning `model_usage` yozuvida (26 soat, 5000 tagacha,
-    faqat katalogda `limits`i bor model — hozircha to'qqizta Gemini modeli)
-    saqlanadi va `BroadcastChannel('savdo.model-usage')` orqali oynalar
-    orasida sinxronlanadi. Ko'rsatish —
+  - `stream.ts` va `client.ts` javob **olgan** har bir so'rov uchun — qaysi
+    provayder bo'lishidan qat'i nazar (qayta urinishlar, suhbat, rail
+    muallifi, Sozlamalardagi ulanish testi qo'shilgan) — bitta
+    `ModelRequestEvent` yozadi: provayder aytgan xom kiruvchi (kesh bilan),
+    kesh, chiquvchi va fikrlash tokenlari — hech qachon taxmin emas, noma'lum
+    bo'lsa `null`. Javob kelmagan so'rov (tarmoq xatosi, timeout, bekor
+    qilish) va kalit rad etilishi (`401`/`403`, `400 API_KEY_INVALID`)
+    yozilmaydi — ular loyiha kvotasiga umuman tegmagan. Jurnal
+    [`store/modelUsage.store.ts`](./frontend/src/store/modelUsage.store.ts)da
+    IndexedDB `kv`ning `model_usage` yozuvida saqlanadi (26 soat, 5000
+    tagacha —
+    [`MAX_EVENTS`](./frontend/src/store/modelUsage.store.ts#L56)) va
+    `BroadcastChannel('savdo.model-usage')` orqali oynalar orasida
+    sinxronlanadi.
+  - **Limit chizig'i (rpm/tpm/rpd) hamon faqat Gemini uchun** — katalogda
+    faqat Gemini modellarining nashr qilingan limiti bor
+    (`AI_PROVIDERS[…].limits`), boshqa sakkiz provayder uchun taqqoslanadigan
+    tavan yo'q. Gemini'ning `429` tanasi (`google.rpc.QuotaFailure` /
+    `RetryInfo`) qaysi o'lchov (`rpm`/`tpm`/`rpd`) tugaganini ajratib oladi
+    (`readQuotaFailure`). **Dalil kuchsiz:** bu tana shakli loyihada yozib
+    olingan haqiqiy namuna emas — Google'ning ommaviy xato formati
+    hujjatlaridan olingan. RPM va TPM oxirgi 60 soniyalik sirpanuvchi oynada,
+    TPM kiruvchi tokenlarda, RPD Tinch okean yarim tunidan (DST'ni hisobga
+    olib) hisoblanadi; Gemini'ning o'zi `429`da aytgan limit katalogdagi
+    raqamni o'zib ketadi. "Har bir natija — muvaffaqiyatli ham, rad etilgan
+    ham — so'rov sifatida sanaladi" qoidasi ham **dalili kuchsiz**: bitta AI
+    Studio kuzatuviga (3.5 Flash'da 23/20 RPD ko'rsatilgani) asoslangan.
+    Ko'rsatish —
     [`features/settings/ModelPicker.tsx`](./frontend/src/features/settings/ModelPicker.tsx)
     (model tanlashda) va
     [`features/settings/ModelQuotaPanel.tsx`](./frontend/src/features/settings/ModelQuotaPanel.tsx)
-    (tanlangan model uchun uchta chiziq).
-- **Narx hisobi:** kesh orqali berilgan tokenlar alohida hisoblanadi.
-- **Kalit:** ilova kalit olib kelmaydi — Sozlamalardagi kalit ishlatiladi, u
-  bo'sh bo'lsa Copilot so'rov yubormaydi.
+    (faqat Gemini kartasida, tanlangan model uchun uchta chiziq).
+  - **Bugungi token sarfi — har bir provayder uchun, alohida-alohida.**
+    [`summarizeTokens()`](./frontend/src/services/ai/usage.ts#L862) mahalliy
+    yarim tundan beri shu provayderning voqealarini yig'adi: so'rovlar soni,
+    kiruvchi/keshlangan/chiquvchi/fikrlash tokenlari — har biri necha so'rov
+    buni aytgani bilan birga (provayder aytmagan raqam hech qachon nolga
+    aylanmaydi, "aytilmagan" deb ko'rinadi), model bo'yicha taqsimot va oxirgi
+    xabar bergan so'rov.
+    [`features/settings/TokenUsagePanel.tsx`](./frontend/src/features/settings/TokenUsagePanel.tsx)
+    buni har bir provayder kartasida chizadi.
+- **Narx hisobi.**
+  [`costOfTokens()`](./frontend/src/services/ai/pricing.ts#L166) o'sha
+  voqealardan qo'lda kiritilgan narx jadvali bilan dollar hisoblaydi — GPT-6
+  narxlari OpenAI'ning o'z model sahifalaridan, 2026-09-28 tekshirilgan. Kesh
+  har bir so'rovda aytilmagan bo'lsa, narx "≈" o'rniga "≤" bilan ko'rsatiladi —
+  haqiqiy sarf hech qachon undan yuqori bo'lmasligini bildiradi.
+- **Kalit va konfiguratsiya — har bir provayder alohida.** Ilova kalit olib
+  kelmaydi — Sozlamalardagi kalit ishlatiladi, u bo'sh bo'lsa (Ollama va
+  `custom`dan tashqari, ularga kalit shart emas) Copilot o'sha provayderga
+  so'rov yubormaydi. Sozlamalar sxemasi **v5**da `ai = { provider, providers }`
+  — `providers` to'qqizta provayderning **har biri** uchun to'liq, mustaqil
+  konfiguratsiya saqlaydi (kalit, endpoint, model, timeout, harorat,
+  maksimal token, yuqoridagi jadvaldagi o'ziga xos parametrlar), `provider`
+  esa ulardan qaysi biri ishlatilayotganini ko'rsatadi
+  ([`AiSection`](./frontend/src/types/settings.ts#L132)). Yozish ikki atom
+  amal orqali boradi —
+  [`updateAiConnection(provider, patch)`](./frontend/src/services/storage/settings.service.ts#L290)
+  faqat nomlangan provayderning yozuvini o'zgartiradi,
+  [`setActiveAiProvider(provider)`](./frontend/src/services/storage/settings.service.ts#L301)
+  esa faqat ko'rsatkichni suradi — shuning uchun bitta kartaning tahriri
+  boshqa provayderning yozuviga hech qachon tegmaydi. v4 → v5 migratsiyasi
+  ([`settingsSchema.ts`](./frontend/src/services/storage/settingsSchema.ts#L348))
+  ikki xil v4 shaklidan ham o'tadi: eski, umumiy maydonli shakldan va oraliq
+  `saved` yon jadvalli shakldan — ikkalasi ham `version: 4` bilan yozilgan
+  edi. **Dalil kuchsiz:** provayderlar orasidagi izolyatsiya avtomatlashtirilgan
+  testlarda soxta kalitlar bilan tekshirilgan
+  ([`aiConnections.test.ts`](./frontend/src/services/storage/aiConnections.test.ts)),
+  haqiqiy ikkita kalit bilan qo'lda emas.
 
 ---
 
@@ -756,8 +870,8 @@ npm run test:watch # vitest
 uchun. Tekshiruv modul nomida qism-satr bo'yicha, shuning uchun tartib muhim:
 `vendor-markdown` `vendor-react` dan oldin turadi.
 
-**Hozirgi holat (2026-09-14):** typecheck ✅ · lint ✅ · test ✅ (160 ta) · build ✅
-(asosiy bundle 474 KB / gzip 156 KB)
+**Hozirgi holat (2026-09-29):** typecheck ✅ · lint ✅ · test ✅ (611 ta) · build ✅
+(asosiy bundle 527 KB / gzip 173 KB)
 
 **Ishlab chiqish jamoasi.** Loyiha ustida ishlaydigan agentlar tuzilmasi
 [CLAUDE.md](./CLAUDE.md) va [`.claude/agents/`](./.claude/agents/) da:
@@ -789,9 +903,15 @@ uchun. Tekshiruv modul nomida qism-satr bo'yicha, shuning uchun tartib muhim:
 | `insights/alerts.test.ts` | Qoidalar — imzo, sovish vaqti, har bir tur |
 | `ai/jsonSchema.test.ts` | Zod → JSON Schema konvertatsiyasi |
 | `ai/stream.test.ts` | Qayta urinish qarori — qaysi xato takrorlanadi, `Retry-After`, chekinish oralig'i, kunlik (RPD) `429` hech qachon takrorlanmasligi |
-| `ai/usage.test.ts` | Kvota o'lchagichi — `readQuotaFailure`/`isKeyRejection`ning himoyalangan o'qishi, RPM/TPM/RPD gauge arifmetikasi, Tinch okean yarim tunining DST'dagi holati |
+| `ai/usage.test.ts` | Kvota o'lchagichi — `readQuotaFailure`/`isKeyRejection`ning himoyalangan o'qishi, RPM/TPM/RPD gauge arifmetikasi, Tinch okean yarim tunining DST'dagi holati, `summarizeTokens` |
+| `ai/client.test.ts` | OpenAI Responses'ning bir martalik javobi — `firstOpenAiResponsesText`, `usageOf` provayder bo'yicha, `incomplete`/`failed` klassifikatsiyasi |
+| `ai/connection.test.ts` | Ulanish testi va model ro'yxati — CORS orqasidagi 401'ni tarmoq xatosidan ajratish, OpenAI'ning chat bo'lmagan modellarini filtrlash |
+| `ai/pricing.test.ts` | Narx jadvali — eng uzun prefiks g'olib, kesh chegirmasi, GPT-6 narxlari |
+| `storage/settingsSchema.test.ts` | v4 → v5 migratsiyasi — ikkala eski v4 shaklidan ham (umumiy maydon, oraliq `saved` yon jadval) to'g'ri o'tish |
+| `storage/aiConnections.test.ts` | Provayderlar orasidagi izolyatsiya — bitta kartaning tahriri boshqa provayderning yozuviga tegmasligi |
 | `store/modelUsage.store.test.ts` | Voqealar jurnali — restore va kelayotgan hodisa orasidagi poyga, `BroadcastChannel` orqali qo'shilish |
 | `insights/session.test.ts` | Javob sessiyasi — to'xtagan joydan davom ettirish, ochilgan hujjatlar nusxasi |
+| `queries/useInsightsQuery.test.ts` | Rail'ning AI so'rovi — digest barmoq izi bo'yicha kesh, muvaffaqiyatsizlikni faqat bir marta qayta so'rash |
 
 > ⚠️ IndexedDB va worker qatlamlari hali qoplanmagan — ular uchun
 > `fake-indexeddb` kerak bo'ladi.
@@ -817,6 +937,8 @@ uchun. Tekshiruv modul nomida qism-satr bo'yicha, shuning uchun tartib muhim:
 | Model Uzum'ga yozmaydi | Yopiq amallar registri, xavf darajasi, tugma + tasdiq oynasi (10.4) |
 | Provayder band bo'lsa davom ettirish | `RETRIES`, `Retry-After`, sessiya `checkpoint` dan davom etadi; kunlik (RPD) limitda takrorlanmaydi (10.1, 10.7) |
 | Gemini modeli tanlanganda qolgan limitni bilish | `AI_PROVIDERS[…].limits` katalogi + so'ralgan har bir javobdan hisob (`ai/usage.ts`), model tanlash va "Qolgan limit" paneli (10.7) |
+| Provayder almashtirilganda kalit boshqasiga o'tib ketmasligi | Sozlamalar sxemasi v5 — `AiSection.providers`, har biri mustaqil; `updateAiConnection`/`setActiveAiProvider` atom yozuvlari (10.7) |
+| Sotuvchi bugungi token sarfini ko'rishi | `summarizeTokens()` va har bir provayder kartasidagi "Token sarfi" paneli, qo'lda kiritilgan narx jadvalidan taxminiy xarajat (10.7) |
 | Javobni panelga qadash | Sana va davr bilan surat, "qayta so'rash" tugmasi (10.5) |
 
 ---
@@ -840,11 +962,11 @@ Ustuvorlik tartibida:
   [ENDPOINTS.md](./frontend/src/services/uzum/ENDPOINTS.md), 12.3-bo'lim.
 
 ### 2. Testlar bor, lekin saqlash qatlami qoplanmagan
-Sof funksiyalar qoplandi (160 ta test): `coverage.ts` interval algebrasi,
-Copilot protokoli, toolkit arifmetikasi. Qolgani: `archivePlan.ts`,
-`paginate()`, wire→row mapperlar, `missingRanges()` va v2→v3 migratsiyasi.
-Oxirgi uchtasi IndexedDB talab qiladi, shuning uchun `fake-indexeddb`
-qo'shilishi kerak.
+Sof funksiyalar qoplandi (611 ta test): `coverage.ts` interval algebrasi,
+Copilot protokoli, toolkit arifmetikasi, AI provayder transporti va
+sozlamalar sxemasi. Qolgani: `archivePlan.ts`, `paginate()`, wire→row
+mapperlar, `missingRanges()` va v2→v3 migratsiyasi. Bular IndexedDB talab
+qiladi, shuning uchun `fake-indexeddb` qo'shilishi kerak.
 
 ### 3. Kod va OpenAPI hujjat orasidagi 8 ta ziddiyat
 Namunalarda faqat GET so'rovlar yozilgan, shuning uchun POST va print
@@ -877,6 +999,28 @@ bo'lmaydi.
   bir nechta `violations`li holatni) yozib olib, `pickViolation` va
   `axisFromQuotaId` ustidan tekshirish.
 
-### 6. `backend/` bo'sh shablon
+### 6. OpenAI Responses integratsiyasi haqiqiy kalit bilan hali sinalmagan
+- **Qaysi joyda:** `services/ai/stream.ts` (`reduceOpenAiResponses`,
+  `dialectFor`'ning `openai` bo'limi, `openAiResponsesInput`) va
+  `services/ai/client.ts` (bir martalik so'rov) — butun yo'l OpenAI'ning
+  hujjatlaridan qurilgan, faqat mock javoblar bilan test qilingan
+  (`ai/stream.test.ts`, `ai/client.test.ts`).
+- **Dalil qanchalik kuchli:** fikrlash elementini `store:false` bilan
+  chaqiruvdan oldin qayta yuborish OpenAI'ning o'z reasoning qo'llanmasiga
+  asoslangan — hujjatlashtirilgan. Ammo "chaqiruvni qayta yuborishda `fc_`
+  id emas, faqat `call_id` yetarli" qoidasi 2025 yilgi hamjamiyat
+  xabarlariga asoslangan, OpenAI'ning o'z hujjatida yozilmagan va qayta
+  tekshirilmagan.
+- **Nima uchun darhol xavfli emas:** noto'g'ri bo'lsa eng yomon holatda
+  OpenAI 400 qaytaradi (`classifyOpenAiFailure` buni `client` deb
+  belgilaydi) va sotuvchi tushunarli xato ko'radi — jimgina noto'g'ri javob
+  yozilmaydi.
+- **Keyingi qadam:** haqiqiy OpenAI kaliti va fikrlash modeli
+  (`gpt-6-astra`) bilan ikki+ raundli, tool chaqiruvli suhbatni sinab
+  ko'rish — xususan ikkinchi raundda `reasoning` elementi qabul qilinishini
+  va `fc_` id yubormaslikning haqiqatan zarur yoki zararsiz ekanini
+  tasdiqlash.
+
+### 7. `backend/` bo'sh shablon
 Agar jamoaviy ishlash yoki serverdagi zaxira kerak bo'lsa, arxitektura qarori
 qaytadan ko'rib chiqilishi kerak.

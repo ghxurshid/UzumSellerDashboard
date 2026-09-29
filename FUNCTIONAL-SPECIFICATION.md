@@ -1,7 +1,7 @@
 # Savdo Copilot — Funksional spetsifikatsiya
 
-**Versiya:** 2.6.0
-**Hujjat sanasi:** 2026-09-18
+**Versiya:** 2.7.0
+**Hujjat sanasi:** 2026-09-29
 **Maqsad:** Mahsulot oddiy foydalanuvchi — Uzum Market sotuvchisi — nuqtai nazaridan
 nima qilishini ifodalash. Bu yerda texnik yechim yo'q; u
 [TECHNICAL-SPECIFICATION.md](./TECHNICAL-SPECIFICATION.md) da.
@@ -221,7 +221,7 @@ xarajatlar, sof foyda.
 | Bo'lim | Nima sozlanadi |
 |---|---|
 | **API** | Uzum tokeni, asosiy URL, ulanishni tekshirish |
-| **AI** | Sun'iy intellekt provayderi, model (Gemini uchun — qolgan limit ko'rsatkichi bilan), kalit (ixtiyoriy) |
+| **AI** | To'qqizta provayderning har biri — o'z kaliti, modeli va parametrlari bilan; qaysi biri ishlatilishini tanlash, har birini alohida tekshirish, bugungi token sarfi (Gemini uchun — qolgan limit ko'rsatkichi ham) |
 | **Ma'lumotlar** | Yangilik oynasi, saqlangan hajm, do'kon bo'yicha qamrov, tarixni davom ettirish, o'chirish |
 | **Umumiy** | Til (o'zbek/rus/ingliz), mavzu (yorug'/qorong'i), raqam formati |
 | **Klaviatura** | Tezkor tugmalar ro'yxati |
@@ -230,18 +230,47 @@ xarajatlar, sof foyda.
 davrlar yuklangani** ni chizma ko'rinishida ko'rsatadi. Foydalanuvchi qayerda
 teshik borligini ko'radi va uni to'ldirishni so'rashi mumkin.
 
-**AI** bo'limida Gemini provayderi tanlanganda model ro'yxatining o'zi ham
-qo'shimcha narsa aytadi: har bir model nomi ostida o'sha modelning qancha
-limiti qolgani — daqiqadagi so'rov, daqiqadagi token va kunlik so'rov
-sonidan eng tor joyi — qisqa chiziq bilan ko'rinadi. Tanlangan model uchun
-esa alohida "Qolgan limit" panelida uchala o'lchov alohida-alohida chiziq,
-son va qachon tiklanishi bilan chiqadi. Bu raqamlar faqat **shu brauzerda**
-yuborilgan so'rovlardan hisoblanadi — boshqa qurilma, boshqa brauzer yoki
-bir loyihaning boshqa kaliti ko'rinmaydi, shuning uchun ular "qolganining
-yuqori chegarasi", aniq qoldiq emas — va Google AI Studio'ning bepul tarif
-jadvalidan olingan, manba va sana panel ostida yozilgan. Boshqa provayderlar
-va Gemini'ning erkin matn bilan kiritiladigan modeli uchun bunday ko'rsatkich
-yo'q.
+**AI** bo'limi to'qqizta provayderning — OpenAI, Claude, Gemini, OpenRouter,
+DeepSeek, Mistral, Grok, Ollama va o'zi ko'rsatgan boshqa (`custom`)
+provayderning — kartochkalar to'plami. Kartochkaga bosish uni faqat pastda
+ochib ko'rsatadi — provayderni ishlatishga **o'tkazmaydi**. Har bir kartada
+o'sha provayderning butunlay o'z sozlamasi bor: kalit, manzil (aksariyat
+provayderlarda o'zgartirib bo'lmaydi), model ("Modellarni yuklash" tugmasi
+bilan kalit ko'rgan ro'yxatdan tanlab yoki qo'lda kiritib), so'rov kutish
+muddati, qo'llab-quvvatlansa — harorat va maksimal token, va o'sha
+provayderga xos qo'shimcha parametrlar (masalan, OpenAI'ning tashkilot va
+loyiha identifikatori, Claude'ning API versiyasi, Gemini'ning fikrlash
+chuqurligi, DeepSeek'ning fikrlash rejimi) — har biri qaysi so'rov maydoniga
+tushishi bilan birga yoziladi. Bir provayderning kartasida kiritilgan hech
+narsa boshqasining kartasiga o'tmaydi va uni bosib yozmaydi.
+
+Har bir kartada ikkita tugma bor: **"Faollashtirish"** — faqat karta to'liq
+sozlangandan keyin bosiladigan bo'ladi, bosilsa Copilot shu provayderga
+o'tadi — va **ulanishni tekshirish**, u aynan shu kartaning o'z sozlamasi
+bilan haqiqiy so'rov yuboradi, karta hozir faol yoki emasligidan qat'i
+nazar.
+
+Har bir kartada, pastroqda, **shu provayderning bugungi token sarfi**
+paneli bor: nechta so'rov ketgani, kiruvchi/keshlangan/chiquvchi/fikrlash
+tokenlari (provayder bu raqamni aytmagan bo'lsa, hech qachon nolga
+aylanmaydi — "aytilmagan" deb yoziladi), bir nechta model ishlatilgan
+bo'lsa — model bo'yicha taqsimot, oxirgi javob bergan so'rov vaqti va —
+narxi ilovaga ma'lum modellarda — taxminiy xarajat (dollarda, ilova ichidagi
+narx ro'yxatidan).
+
+Gemini kartasida bundan tashqari alohida "Qolgan limit" paneli ham bor:
+har bir model nomi ostida — daqiqadagi so'rov, daqiqadagi token va kunlik
+so'rov sonidan eng tor joyi — qisqa chiziq, tanlangan model uchun esa
+uchala o'lchov alohida-alohida chiziq, son va qachon tiklanishi bilan
+chiqadi. Bu raqamlar faqat **shu brauzerda** yuborilgan so'rovlardan
+hisoblanadi — boshqa qurilma, boshqa brauzer yoki bir loyihaning boshqa
+kaliti ko'rinmaydi, shuning uchun ular "qolganining yuqori chegarasi", aniq
+qoldiq emas — va Google AI Studio'ning bepul tarif jadvalidan olingan,
+manba va sana panel ostida yozilgan. Bu ko'rsatkich faqat Gemini'ning
+katalogdagi modellarida bor — boshqa provayderlarda va Gemini'ning erkin
+matn bilan kiritiladigan modelida yo'q, chunki ularning nashr qilingan
+limiti yo'q. Bugungi token sarfi paneli esa — Gemini bilan bir qatorda —
+**har bir provayderda** bor.
 
 ---
 

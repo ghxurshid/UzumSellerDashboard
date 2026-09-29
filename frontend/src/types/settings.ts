@@ -7,6 +7,13 @@
  * `types/domain.ts` — that file mirrors the seller API, this one describes the
  * local installation.
  *
+ * The AI section stores every provider's whole configuration side by side,
+ * keyed by provider, next to a pointer naming the one the Copilot uses. A key
+ * belongs to the vendor that issued it, and a sampling or reasoning value chosen
+ * for one vendor's model says nothing about another's, so no value is shared
+ * between providers: making a provider active moves the pointer and nothing
+ * else, and every other provider's configuration stays exactly as it was left.
+ *
  * Everything here is stored in the browser, in the `kv` store of the local
  * IndexedDB database, so it is readable by any script running on the page. That
  * is acceptable for credentials the user pastes in themselves; it is never
@@ -30,17 +37,79 @@ export type AiProvider =
   | 'custom';
 
 /**
- * One provider's own connection, kept while another provider is the active one.
+ * One vocabulary for reasoning depth across OpenAI, OpenRouter, xAI and
+ * Anthropic; each accepts a per-model subset (decided in
+ * `services/ai/modelRules.ts`).
  *
- * A key belongs to the vendor that issued it. Keeping each provider's connection
- * apart is what stops a switch from sending one vendor's secret to another's
- * endpoint, and lets the seller switch back without pasting it in again.
+ * The vendors spell the field differently (`reasoning.effort`,
+ * `reasoning_effort`, `output_config.effort`) but grade it on one scale, so a
+ * single union lets the card offer one control and leaves the per-model subset
+ * and the wire spelling to the transport, where they are known.
+ */
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+/**
+ * Gemini 3's `thinkingConfig.thinkingLevel`; the accepted subset depends on the
+ * model. Kept apart from `ReasoningEffort` because it is a different request
+ * field with its own scale, and folding it in would offer Gemini values it
+ * refuses.
+ */
+export type ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
+
+/**
+ * The provider-specific fields of `AiConnection`. A catalogue entry lists the
+ * ones its card offers, so a card never shows a field its provider would ignore.
+ */
+export type AiParam =
+  | 'orgId'
+  | 'projectId'
+  | 'reasoningEffort'
+  | 'anthropicVersion'
+  | 'thinkingLevel'
+  | 'appUrl'
+  | 'appTitle'
+  | 'thinking';
+
+/**
+ * One provider's whole configuration — every value a request to it is built
+ * from.
+ *
+ * Nothing here is shared between providers. A key belongs to the vendor that
+ * issued it, and keeping each provider's configuration apart is what stops a
+ * switch from sending one vendor's secret to another's endpoint, or one model's
+ * sampling to a model it was never chosen for. A field a provider does not use
+ * keeps its default and is never sent.
  */
 export interface AiConnection {
+  /** The provider's endpoint. */
   readonly baseUrl: string;
+  /** The provider's key — empty until the seller pastes one in. */
   readonly apiKey: string;
-  readonly orgId: string;
+  /** Model id as the provider spells it, e.g. `gemini-3.6-flash`. */
   readonly model: string;
+  readonly timeoutMs: number;
+  readonly temperature: number;
+  readonly maxTokens: number;
+  /** OpenAI `OpenAI-Organization` header; '' = not sent. */
+  readonly orgId: string;
+  /** OpenAI `OpenAI-Project` header; '' = not sent. */
+  readonly projectId: string;
+  /**
+   * '' = the provider's own default (field not sent). OpenAI
+   * `reasoning.effort`, OpenRouter `reasoning.effort`, xAI `reasoning_effort`,
+   * Anthropic `output_config.effort`.
+   */
+  readonly reasoningEffort: ReasoningEffort | '';
+  /** Anthropic `anthropic-version` header. */
+  readonly anthropicVersion: string;
+  /** Gemini 3+ thinking level; '' = the model's default. */
+  readonly thinkingLevel: ThinkingLevel | '';
+  /** OpenRouter `HTTP-Referer` attribution header; '' = not sent. */
+  readonly appUrl: string;
+  /** OpenRouter `X-OpenRouter-Title` attribution header; '' = not sent. */
+  readonly appTitle: string;
+  /** DeepSeek `thinking.type`: true = enabled. */
+  readonly thinking: boolean;
 }
 
 /** Uzum seller API connection. */
@@ -52,32 +121,29 @@ export interface UzumApiSettings {
 }
 
 /**
- * AI provider connection and sampling.
+ * What is stored: which provider the Copilot uses, and every provider's own
+ * configuration.
  *
- * The flat connection fields describe the ACTIVE provider only, so every
- * consumer that talks to the model reads one connection and never has to know
- * the others exist. The inactive providers' connections wait in `saved` until
- * the seller switches back to them.
+ * `providers` holds an entry for every provider, not only the ones the seller
+ * has touched, so a card always has a complete configuration to show and no
+ * reader needs a fallback. The active provider's configuration lives in
+ * `providers` like every other — there is no second copy of it that could drift.
  */
-export interface AiSettings {
+export interface AiSection {
   readonly provider: AiProvider;
-  /** The active provider's endpoint. */
-  readonly baseUrl: string;
-  /** The active provider's key — empty until the seller pastes one in. */
-  readonly apiKey: string;
-  /** The active provider's organisation id — empty unless the provider takes one (only OpenAI does). */
-  readonly orgId: string;
-  /** Model id as the active provider spells it, e.g. `gemini-3.6-flash`. */
-  readonly model: string;
-  readonly timeoutMs: number;
-  readonly temperature: number;
-  readonly maxTokens: number;
-  /**
-   * Connections of the providers that are not active. Never holds an entry for
-   * `provider` — the active connection lives in the flat fields above, and a
-   * second copy here could only drift from it.
-   */
-  readonly saved: Readonly<Partial<Record<AiProvider, AiConnection>>>;
+  readonly providers: Readonly<Record<AiProvider, AiConnection>>;
+}
+
+/**
+ * What the transport reads: one provider's configuration together with its id.
+ *
+ * A request talks to one provider at a time, so the transport receives that
+ * provider's configuration flat and never has to know the others exist. It is
+ * resolved from `AiSection` by a pure helper and never stored itself — a stored
+ * copy could only drift from the section it came from.
+ */
+export interface AiSettings extends AiConnection {
+  readonly provider: AiProvider;
 }
 
 /** Integration flags — behaviour the user opts into, not screen state. */
@@ -109,14 +175,19 @@ export interface DataSettings {
 
 export interface AppSettings {
   readonly api: UzumApiSettings;
-  readonly ai: AiSettings;
+  readonly ai: AiSection;
   readonly features: FeatureFlags;
   readonly data: DataSettings;
 }
 
 export type SettingsSection = keyof AppSettings;
 
-/** A partial write: any subset of sections, any subset of their fields. */
+/**
+ * A partial write: any subset of sections, any subset of their fields.
+ *
+ * Partial one level deep only — for `ai`, `providers` is still the whole map,
+ * so a write that carries it carries every provider's configuration.
+ */
 export type SettingsPatch = {
   readonly [K in SettingsSection]?: Partial<AppSettings[K]>;
 };
@@ -168,7 +239,7 @@ export type AiEndpointMode = 'fixed' | 'editable' | 'required';
 
 /**
  * A catalogue entry: the static facts the settings form needs to lay out one
- * provider's connection.
+ * provider's card.
  *
  * It deliberately carries no health status — the catalogue is compiled into the
  * bundle and cannot know whether a vendor is up, so any status it claimed would
@@ -188,9 +259,14 @@ export interface AiProviderDefinition {
   readonly keyPlaceholder: string;
   /** Where the seller creates a key; `null` for self-hosted adapters. */
   readonly keyUrl: string | null;
-  /** Whether the provider takes an organisation header (OpenAI only). */
-  readonly orgId: boolean;
   /** Suggested models. The seller may also load the key's own list or type an id. */
   readonly models: readonly AiModelOption[];
   readonly defaultModel: string;
+  /** Provider-specific request parameters this provider's card offers, in display order. */
+  readonly params: readonly AiParam[];
+  /**
+   * This provider's own defaults over the app-wide ones (temperature 0.2,
+   * maxTokens 4096, timeout 60 s, '' / false for params).
+   */
+  readonly defaults?: Partial<Omit<AiConnection, 'baseUrl' | 'apiKey' | 'model'>>;
 }

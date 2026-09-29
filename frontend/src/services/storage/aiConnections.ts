@@ -1,57 +1,64 @@
-import { findProvider } from '@/constants/settings';
-import type { AiConnection, AiProvider, AiSettings } from '@/types/settings';
+import type { AiConnection, AiProvider, AiSection, AiSettings } from '@/types/settings';
 
 /**
- * Switching the active AI provider without losing or leaking a key.
+ * Pure helpers over `AiSection` — the shape that keeps every provider's whole
+ * configuration side by side, next to a pointer naming the one in use.
  *
- * The active provider's connection lives in `AiSettings`'s flat fields, so
- * every consumer that talks to the model — `services/ai`, `services/insights`,
- * `services/queries` — reads one connection and never has to know the others
- * exist. This module is the one place that moves a connection between that
- * flat shape and `saved`, so the seller can switch providers back and forth
- * without a stray field ever crossing from one vendor's key to another's
- * endpoint.
+ * The seller's reported bug was one card and one set of fields shared by
+ * every provider: entering a Gemini key, switching to OpenAI, entering its
+ * key, and switching back showed OpenAI's key under Gemini's card. The fix is
+ * structural, not a card that tries harder to remember — `providers` already
+ * holds every provider's connection, complete, independent of which one is
+ * active, so there is nothing left to move, save or restore when the active
+ * pointer changes. These three functions are the only place `AiSection` is
+ * built or read from; nothing above should reach into `.providers` directly.
  */
 
 /**
- * The AI section after the seller picks `next`: the current connection is filed
- * under `saved[current]`, and `next`'s saved connection — or, when it has none,
- * its catalogue defaults (endpoint, default model, empty key and org id) —
- * becomes the active one. Selecting the active provider returns `ai` itself.
+ * One provider's configuration, flattened with its id the way a request is
+ * built from. `provider` defaults to the section's own active provider, but a
+ * caller may resolve any provider's settings without switching to it first —
+ * a connection test run from a card that is not yet active, say.
  */
-export function switchAiProvider(ai: AiSettings, next: AiProvider): AiSettings {
-  if (next === ai.provider) return ai;
+export function resolveAiSettings(section: AiSection, provider?: AiProvider): AiSettings {
+  const id = provider ?? section.provider;
+  return { provider: id, ...section.providers[id] };
+}
 
-  /* File the outgoing provider's connection away before anything else reads
-     the flat fields. */
-  const nextSaved: Partial<Record<AiProvider, AiConnection>> = {
-    ...ai.saved,
-    [ai.provider]: { baseUrl: ai.baseUrl, apiKey: ai.apiKey, orgId: ai.orgId, model: ai.model },
-  };
-
-  /* What `next` had saved, or — the first time it is ever selected — the
-     catalogue's defaults for it: its own endpoint and default model, with no
-     key or org id, never another provider's. */
-  const restored = nextSaved[next];
-  const definition = findProvider(next);
-  const activated: AiConnection = restored ?? {
-    baseUrl: definition.baseUrl,
-    apiKey: '',
-    orgId: '',
-    model: definition.defaultModel,
-  };
-
-  /* The active connection lives only in the flat fields below; a copy left
-     behind in `saved` could drift from it. */
-  delete nextSaved[next];
+/**
+ * Merge `patch` over `provider`'s current connection and nothing else.
+ *
+ * Every other entry in `providers` — including the active one, when a
+ * different provider is being edited — is carried over by reference. That is
+ * what makes the independence real rather than asserted: a card bound to
+ * `providers.openai` can edit its own key field a hundred times and the
+ * object at `providers.gemini` never changes identity, let alone value.
+ */
+export function withAiConnection(
+  section: AiSection,
+  provider: AiProvider,
+  patch: Partial<AiConnection>,
+): AiSection {
+  const current = section.providers[provider];
+  const next: AiConnection = { ...current, ...patch };
 
   return {
-    ...ai,
-    provider: next,
-    baseUrl: activated.baseUrl,
-    apiKey: activated.apiKey,
-    orgId: activated.orgId,
-    model: activated.model,
-    saved: nextSaved,
+    ...section,
+    providers: { ...section.providers, [provider]: next },
   };
+}
+
+/**
+ * Move the active pointer, and nothing else.
+ *
+ * Earlier designs filed the outgoing provider's connection into a side table
+ * and restored the incoming one from it or from catalogue defaults — the
+ * "switch" this module used to perform. There is no such step now: every
+ * provider's configuration already lives in `providers`, complete, whether or
+ * not it is the one in use, so making one active is exactly as small as
+ * naming it. No connection is copied, moved or cleared.
+ */
+export function withActiveProvider(section: AiSection, provider: AiProvider): AiSection {
+  if (provider === section.provider) return section;
+  return { ...section, provider };
 }

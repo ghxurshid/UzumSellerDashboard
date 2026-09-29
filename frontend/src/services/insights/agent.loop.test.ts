@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_SETTINGS } from '@/constants/settings';
+import { DEFAULT_AI_SETTINGS, defaultAiConnection } from '@/constants/settings';
 import type { AnthropicReasoningBlock, ToolCall } from '@/services/ai/messages';
 import type { StreamOptions, StreamResult } from '@/services/ai/stream';
 import type { AiSettings } from '@/types/settings';
@@ -37,10 +37,13 @@ const { createSession, runAgent } = await import('./agent');
  * when the answer was fine.
  */
 
-/* Spread from the defaults so a field `AiSettings` gains later (as `saved`
-   did) does not break a fixture that has no opinion about it. */
+/* Spread from the defaults so a field `AiSettings` gains later (as the
+   provider-specific parameters did) does not break a fixture that has no
+   opinion about it — and from Gemini's own defaults, so whatever the app's
+   default provider is, no other provider's values leak into this one. */
 const SETTINGS: AiSettings = {
-  ...DEFAULT_SETTINGS.ai,
+  ...DEFAULT_AI_SETTINGS,
+  ...defaultAiConnection('gemini'),
   provider: 'gemini',
   baseUrl: 'https://example.invalid',
   apiKey: 'k',

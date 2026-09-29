@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AI_PROVIDER_IDS,
+  AI_TIMEOUT_OPTIONS,
+  DEFAULT_AI_PROVIDER,
   DEFAULT_FRESHNESS_MINUTES,
   DEFAULT_SETTINGS,
   FRESHNESS_OPTIONS,
+  MAX_TOKENS_BOUNDS,
   SETTINGS_SCHEMA_VERSION,
+  TEMPERATURE_BOUNDS,
+  defaultAiConnection,
 } from '@/constants/settings';
 
 import { parseStoredSettings, sanitizeSettings, settingsEnvelope } from './settingsSchema';
@@ -131,5 +137,237 @@ describe('settingsEnvelope', () => {
       version: SETTINGS_SCHEMA_VERSION,
       settings: DEFAULT_SETTINGS,
     });
+  });
+});
+
+/**
+ * The v4 -> v5 migration, which turns one shared `ai` connection into nine
+ * independent ones. It has to run correctly against *two* different payloads
+ * that both carry `version: 4` — v4 was never bumped when `saved` was added
+ * (commit 864c4dd) — so both are pinned here, not just the newer of the two.
+ */
+describe('ai provider migration (v4 -> v5)', () => {
+  it('shape (a) — the deployed build, flat fields and no `saved` — carries only the active provider forward', () => {
+    const settings = parseStoredSettings({
+      version: 4,
+      settings: {
+        ai: {
+          provider: 'openai',
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: 'openai-secret',
+          orgId: 'org-1',
+          model: 'gpt-6-astra',
+          timeoutMs: 120_000,
+          temperature: 0.5,
+          maxTokens: 8_192,
+        },
+      },
+    });
+
+    expect(settings.ai.provider).toBe('openai');
+    expect(settings.ai.providers.openai).toEqual({
+      ...defaultAiConnection('openai'),
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'openai-secret',
+      orgId: 'org-1',
+      model: 'gpt-6-astra',
+      timeoutMs: 120_000,
+      temperature: 0.5,
+      maxTokens: 8_192,
+    });
+
+    /* Nothing to recover for a provider the seller had switched away from in
+       this shape — v4 with no `saved` held only the active provider's data —
+       so every other provider gets its own fresh catalogue defaults, never a
+       trace of OpenAI's key or its sampling choices. */
+    for (const id of AI_PROVIDER_IDS) {
+      if (id === 'openai') continue;
+      expect(settings.ai.providers[id]).toEqual(defaultAiConnection(id));
+    }
+  });
+
+  it('shape (b) — with `saved` — restores every saved provider\'s own key, and carries the one shared sampling choice into each of them', () => {
+    const settings = parseStoredSettings({
+      version: 4,
+      settings: {
+        ai: {
+          provider: 'openai',
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: 'openai-secret',
+          orgId: 'org-1',
+          model: 'gpt-6-astra',
+          timeoutMs: 120_000,
+          temperature: 0.5,
+          maxTokens: 8_192,
+          saved: {
+            gemini: {
+              baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+              apiKey: 'gemini-secret',
+              orgId: '',
+              model: 'gemini-3.6-flash',
+            },
+          },
+        },
+      },
+    });
+
+    expect(settings.ai.provider).toBe('openai');
+
+    /* The active provider's own connection, complete, including the shared
+       sampling it was actually serving requests with. */
+    expect(settings.ai.providers.openai).toEqual({
+      ...defaultAiConnection('openai'),
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'openai-secret',
+      orgId: 'org-1',
+      model: 'gpt-6-astra',
+      timeoutMs: 120_000,
+      temperature: 0.5,
+      maxTokens: 8_192,
+    });
+
+    /* The saved provider's own key/endpoint/model survive, *and* it receives
+       the same shared timeout/temperature/maxTokens the active provider had —
+       v4 had exactly one value for those, applied to every provider it
+       actually governed, not only the one active when this step runs. */
+    expect(settings.ai.providers.gemini).toEqual({
+      ...defaultAiConnection('gemini'),
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKey: 'gemini-secret',
+      orgId: '',
+      model: 'gemini-3.6-flash',
+      timeoutMs: 120_000,
+      temperature: 0.5,
+      maxTokens: 8_192,
+    });
+
+    /* A provider that was neither active nor saved — never configured at
+       all — gets its own catalogue defaults, not the shared sampling that
+       never applied to it. */
+    expect(settings.ai.providers.claude).toEqual(defaultAiConnection('claude'));
+  });
+
+  it('chains a v3 store through the freshness step and the ai migration to v5', () => {
+    const settings = parseStoredSettings({
+      version: 3,
+      settings: {
+        api: { baseUrl: 'https://api.example.test', token: 'secret' },
+        ai: {
+          provider: 'gemini',
+          baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+          apiKey: 'gemini-secret',
+          orgId: '',
+          model: 'gemini-3.6-flash',
+          timeoutMs: 30_000,
+          temperature: 0.1,
+          maxTokens: 2_048,
+        },
+      },
+    });
+
+    expect(settings.data.freshnessMinutes).toBe(DEFAULT_FRESHNESS_MINUTES);
+    expect(settings.ai.provider).toBe('gemini');
+    expect(settings.ai.providers.gemini).toEqual({
+      ...defaultAiConnection('gemini'),
+      apiKey: 'gemini-secret',
+      timeoutMs: 30_000,
+      temperature: 0.1,
+      maxTokens: 2_048,
+    });
+    expect(settings.ai.providers.openai).toEqual(defaultAiConnection('openai'));
+  });
+});
+
+/**
+ * `sanitizeAi`/`sanitizeConnection` — every provider's connection is
+ * validated on its own, against its own catalogue defaults, never against
+ * another provider's or the generic app-wide ones.
+ */
+describe('sanitizeSettings — ai section', () => {
+  it('fills every provider with its own catalogue defaults when `providers` is absent entirely', () => {
+    const { ai } = sanitizeSettings({});
+
+    expect(ai.provider).toBe(DEFAULT_AI_PROVIDER);
+    for (const id of AI_PROVIDER_IDS) {
+      expect(ai.providers[id]).toEqual(defaultAiConnection(id));
+    }
+  });
+
+  it('falls a blank Claude anthropicVersion back to the required header value, never to empty', () => {
+    const { ai } = sanitizeSettings({
+      ai: { providers: { claude: { anthropicVersion: '' } } },
+    });
+
+    expect(ai.providers.claude.anthropicVersion).toBe(defaultAiConnection('claude').anthropicVersion);
+    expect(ai.providers.claude.anthropicVersion).not.toBe('');
+  });
+
+  it('rejects an out-of-range timeoutMs to that provider\'s own default', () => {
+    const { ai } = sanitizeSettings({
+      ai: { providers: { openai: { timeoutMs: 999 } } },
+    });
+
+    expect(AI_TIMEOUT_OPTIONS).not.toContain(999);
+    expect(ai.providers.openai.timeoutMs).toBe(defaultAiConnection('openai').timeoutMs);
+  });
+
+  it('rejects an unknown reasoningEffort/thinkingLevel value to that provider\'s own default', () => {
+    const { ai } = sanitizeSettings({
+      ai: {
+        providers: {
+          openai: { reasoningEffort: 'ultra' },
+          gemini: { thinkingLevel: 'extreme' },
+        },
+      },
+    });
+
+    expect(ai.providers.openai.reasoningEffort).toBe(defaultAiConnection('openai').reasoningEffort);
+    expect(ai.providers.gemini.thinkingLevel).toBe(defaultAiConnection('gemini').thinkingLevel);
+  });
+
+  it('honours a valid reasoningEffort/thinkingLevel value, including the empty "provider default" option', () => {
+    const { ai } = sanitizeSettings({
+      ai: {
+        providers: {
+          openai: { reasoningEffort: 'high' },
+          gemini: { thinkingLevel: '' },
+        },
+      },
+    });
+
+    expect(ai.providers.openai.reasoningEffort).toBe('high');
+    expect(ai.providers.gemini.thinkingLevel).toBe('');
+  });
+
+  it('clamps temperature and maxTokens to their bounds rather than rejecting to the default', () => {
+    const { ai } = sanitizeSettings({
+      ai: { providers: { gemini: { temperature: 5, maxTokens: 999_999 } } },
+    });
+
+    expect(ai.providers.gemini.temperature).toBe(TEMPERATURE_BOUNDS.max);
+    expect(ai.providers.gemini.maxTokens).toBe(MAX_TOKENS_BOUNDS.max);
+  });
+
+  it('drops a provider key the running build does not know about', () => {
+    const { ai } = sanitizeSettings({
+      ai: { providers: { martian: { apiKey: 'x' } } },
+    });
+
+    expect(Object.keys(ai.providers)).toEqual(AI_PROVIDER_IDS);
+    expect((ai.providers as Record<string, unknown>)['martian']).toBeUndefined();
+  });
+
+  it('falls a non-object provider entry back to that one provider\'s own defaults, and leaves its siblings alone', () => {
+    const { ai } = sanitizeSettings({
+      ai: { providers: { openai: 'not an object', gemini: { apiKey: 'kept' } } },
+    });
+
+    expect(ai.providers.openai).toEqual(defaultAiConnection('openai'));
+    expect(ai.providers.gemini.apiKey).toBe('kept');
+  });
+
+  it('falls back to the default provider on an unknown `provider` id', () => {
+    const { ai } = sanitizeSettings({ ai: { provider: 'not-a-real-provider' } });
+    expect(ai.provider).toBe(DEFAULT_AI_PROVIDER);
   });
 });

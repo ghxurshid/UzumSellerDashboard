@@ -64,7 +64,14 @@ export interface ModelRequestEvent {
   readonly provider: AiProvider;
   readonly model: string;
   readonly at: number;
+  /** Raw prompt as the provider counted it, cache included. `null` = not reported. */
   readonly inputTokens: number | null;
+  /** Subset of `inputTokens` served from the provider's cache. Absent on an event recorded before this field existed. */
+  readonly cachedInputTokens?: number | null;
+  /** Output as the provider counted it, reasoning included. Absent on an event recorded before this field existed. */
+  readonly outputTokens?: number | null;
+  /** Subset of `outputTokens` spent on reasoning. Absent on an event recorded before this field existed. */
+  readonly reasoningTokens?: number | null;
   readonly outcome: 'ok' | 'limited' | 'failed';
   readonly quota?: QuotaSignal;
 }
@@ -158,6 +165,9 @@ export function recordModelRequest(input: {
   readonly model: string;
   readonly at: number;
   readonly inputTokens: number | null;
+  readonly cachedInputTokens?: number | null;
+  readonly outputTokens?: number | null;
+  readonly reasoningTokens?: number | null;
   readonly outcome: ModelRequestEvent['outcome'];
   readonly quota?: QuotaSignal;
 }): void {
@@ -435,6 +445,11 @@ function isQuotaSignal(value: unknown): value is QuotaSignal {
   return axisOk && limitOk && retryOk;
 }
 
+/** `null` is always a valid "not reported"; otherwise a finite, non-negative count. */
+function isValidCount(value: unknown): boolean {
+  return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
+}
+
 /** Whether a value read back out of storage is still a request this meter can trust. */
 export function isModelRequestEvent(value: unknown): value is ModelRequestEvent {
   if (typeof value !== 'object' || value === null) return false;
@@ -444,14 +459,15 @@ export function isModelRequestEvent(value: unknown): value is ModelRequestEvent 
   if (typeof record['provider'] !== 'string' || !isAiProvider(record['provider'])) return false;
   if (typeof record['model'] !== 'string' || record['model'] === '') return false;
   if (typeof record['at'] !== 'number' || !Number.isFinite(record['at'])) return false;
-  if (
-    record['inputTokens'] !== null &&
-    (typeof record['inputTokens'] !== 'number' ||
-      !Number.isFinite(record['inputTokens']) ||
-      record['inputTokens'] < 0)
-  ) {
-    return false;
-  }
+  /* Required — unlike the three below, a stored event always had this field,
+     so `undefined` (the field missing outright) is rejected, not accepted as
+     "unreported". */
+  if (!isValidCount(record['inputTokens'])) return false;
+  /* Added after the first events were already on disk — `undefined` here
+     means a legacy event, not a malformed one, and is accepted as such. */
+  if (record['cachedInputTokens'] !== undefined && !isValidCount(record['cachedInputTokens'])) return false;
+  if (record['outputTokens'] !== undefined && !isValidCount(record['outputTokens'])) return false;
+  if (record['reasoningTokens'] !== undefined && !isValidCount(record['reasoningTokens'])) return false;
   if (
     typeof record['outcome'] !== 'string' ||
     !OUTCOMES.includes(record['outcome'] as ModelRequestEvent['outcome'])
@@ -737,4 +753,151 @@ export function summarizeUsage(
   }
 
   return { provider, model, rpm, tpm, rpd, remainingShare, bottleneck };
+}
+
+/* ── token totals, for the settings screen's spend read-out ───────────────
+ *
+ * `summarizeUsage` answers "how much of the rate limit is left" — a gauge
+ * against a published ceiling. This answers a different question a seller
+ * asks in Settings: "what have I actually spent". No ceiling, no exhaustion,
+ * just what the provider billed, summed over whichever window the caller
+ * asks for (today, this session, all of `USAGE_RETENTION_MS`) — the caller
+ * decides `since`, because "today" is a wall-clock, timezone-bearing idea
+ * this module has no business computing on every call the way it does for
+ * the Pacific quota day above.
+ */
+
+/** Sums over a window of events, restricted to the ones a cost figure can be trusted from. */
+export interface TokenTotals {
+  /** Events in the window, any outcome. */
+  readonly requests: number;
+  /** Of those, the ones that carried both `inputTokens` and `outputTokens` — see the fields below. */
+  readonly reported: number;
+  /** Summed over `reported` events only — an unreported event contributes nothing rather than a guess. */
+  readonly inputTokens: number;
+  readonly cachedInputTokens: number;
+  /**
+   * Of the `reported` events, how many also stated a cache figure at all —
+   * `0` means "this provider never said", not "nothing was cached". Claude
+   * and OpenAI always report it; DeepSeek and Mistral may not. Reading
+   * `cachedInputTokens` without checking this first turns a provider's
+   * silence into a false "0 cached".
+   */
+  readonly cachedReported: number;
+  readonly outputTokens: number;
+  readonly reasoningTokens: number;
+  /**
+   * Of the `reported` events, how many also stated a reasoning figure at all
+   * — `0` means "unknown", not "no reasoning spent". Claude's usage object
+   * never separates thinking tokens out of `outputTokens` at all, so this is
+   * `0` for every Claude model, always.
+   */
+  readonly reasoningReported: number;
+}
+
+export interface ModelTokenTotals extends TokenTotals {
+  readonly model: string;
+  /** This model's own most recent event in the window, reported or not. */
+  readonly lastAt: number;
+}
+
+export interface TokenUsageSummary {
+  readonly provider: AiProvider;
+  readonly since: number;
+  readonly total: TokenTotals;
+  /** Most recently used model first. */
+  readonly byModel: readonly ModelTokenTotals[];
+  /** The newest event of this provider that carried usage, or `null` if none did. */
+  readonly last: ModelRequestEvent | null;
+}
+
+type MutableTotals = { -readonly [K in keyof TokenTotals]: TokenTotals[K] };
+
+function emptyTotals(): MutableTotals {
+  return {
+    requests: 0,
+    reported: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    cachedReported: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    reasoningReported: 0,
+  };
+}
+
+/**
+ * Folds one already-`reported` event's token figures into a totals bucket —
+ * shared so the provider-wide sum and its per-model breakdown can never fold
+ * the same event two different ways.
+ *
+ * `cachedInputTokens`/`reasoningTokens` are summed only over the events that
+ * actually stated them (`typeof … === 'number'`), each counted apart in
+ * `cachedReported`/`reasoningReported` — a provider that never reports one
+ * (Claude's usage object has no reasoning-token field at all) must read as
+ * "unknown", not silently as a truthful "0".
+ */
+function addReportedEvent(totals: MutableTotals, event: ModelRequestEvent): void {
+  totals.reported += 1;
+  totals.inputTokens += event.inputTokens ?? 0;
+  totals.outputTokens += event.outputTokens ?? 0;
+
+  if (typeof event.cachedInputTokens === 'number') {
+    totals.cachedReported += 1;
+    totals.cachedInputTokens += event.cachedInputTokens;
+  }
+  if (typeof event.reasoningTokens === 'number') {
+    totals.reasoningReported += 1;
+    totals.reasoningTokens += event.reasoningTokens;
+  }
+}
+
+/**
+ * What this browser has recorded spending for one provider since `since`.
+ *
+ * Pure — no clock read — so the caller supplies "since" (typically local
+ * midnight, computed once by the settings screen) rather than this module
+ * guessing what "today" means for a seller it has no timezone for.
+ */
+export function summarizeTokens(
+  events: readonly ModelRequestEvent[],
+  provider: AiProvider,
+  since: number,
+): TokenUsageSummary {
+  const scoped = events.filter((event) => event.provider === provider && event.at >= since);
+
+  const total = emptyTotals();
+  const perModel = new Map<string, { totals: MutableTotals; lastAt: number }>();
+  let last: ModelRequestEvent | null = null;
+
+  /* Ascending order, so the final write to `last` — and to each model's
+     `lastAt` — is simply the most recent one, with no second pass needed. */
+  const ordered = [...scoped].sort((a, b) => a.at - b.at);
+
+  for (const event of ordered) {
+    total.requests += 1;
+
+    const bucket = perModel.get(event.model) ?? { totals: emptyTotals(), lastAt: event.at };
+    bucket.totals.requests += 1;
+    bucket.lastAt = event.at;
+
+    /* "Carried both" — an event missing either half (a legacy event with no
+       `outputTokens` field at all, or one where the provider stated only the
+       input side) cannot honestly contribute to a token total. */
+    const reported = event.inputTokens !== null && typeof event.outputTokens === 'number';
+
+    if (reported) {
+      addReportedEvent(total, event);
+      addReportedEvent(bucket.totals, event);
+      last = event;
+    }
+
+    perModel.set(event.model, bucket);
+  }
+
+  const byModel: ModelTokenTotals[] = [...perModel.entries()]
+    .map(([model, bucket]) => ({ model, lastAt: bucket.lastAt, ...bucket.totals }))
+    .sort((a, b) => b.lastAt - a.lastAt);
+
+  return { provider, since, total, byModel, last };
 }

@@ -1,8 +1,8 @@
 import {
   AI_PROVIDER_IDS,
   AI_TIMEOUT_OPTIONS,
+  DEFAULT_AI_PROVIDER,
   DEFAULT_FRESHNESS_MINUTES,
-  DEFAULT_REQUEST_TIMEOUT_MS,
   DEFAULT_SETTINGS,
   FRESHNESS_OPTIONS,
   MAX_TOKENS_BOUNDS,
@@ -11,17 +11,18 @@ import {
   TEMPERATURE_BOUNDS,
   TEMPERATURE_STEP,
   TEXT_LIMITS,
-  findProvider,
+  defaultAiConnection,
 } from '@/constants/settings';
 import type {
   AiConnection,
   AiProvider,
-  AiProviderDefinition,
-  AiSettings,
+  AiSection,
   AppSettings,
   DataSettings,
   FeatureFlags,
+  ReasoningEffort,
   SettingsEnvelope,
+  ThinkingLevel,
   UzumApiSettings,
 } from '@/types/settings';
 
@@ -101,80 +102,115 @@ function sanitizeApi(value: unknown): UzumApiSettings {
   };
 }
 
-/** One provider's saved connection — the same limits the active fields use. */
-function sanitizeConnection(value: unknown, definition: AiProviderDefinition): AiConnection {
+/**
+ * Every value `oneOf` may accept for a reasoning-effort field, across every
+ * vendor that offers one — '' first, so it is always the fallback a bad or
+ * absent value resolves to alongside whatever the provider's own default
+ * names. Kept here rather than in the catalogue: this is the sanitiser's own
+ * exhaustive list of the type it validates, not a fact about any one vendor.
+ */
+const REASONING_EFFORT_OPTIONS: readonly (ReasoningEffort | '')[] = [
+  '',
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+];
+
+/** Same reasoning as `REASONING_EFFORT_OPTIONS`, for Gemini's thinking level. */
+const THINKING_LEVEL_OPTIONS: readonly (ThinkingLevel | '')[] = [
+  '',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+];
+
+/**
+ * One provider's whole connection, field by field, against `provider`'s own
+ * catalogue defaults — never the generic app-wide ones — so e.g. Claude's
+ * blank `anthropicVersion` falls back to the required header value and not to
+ * ''. A `value` that is not an object at all (a provider the seller never
+ * configured, or a corrupt entry) sanitizes straight to that provider's own
+ * fresh defaults, and never borrows a field from another provider or from the
+ * currently active one.
+ */
+function sanitizeConnection(value: unknown, provider: AiProvider): AiConnection {
   const raw = asRecord(value);
+  const fallback = defaultAiConnection(provider);
 
   return {
     /* Blank falls back to the catalogue's own endpoint, which is legitimately
        '' for `custom` — there is nothing else to fall back to. */
-    baseUrl: requiredText(raw['baseUrl'], definition.baseUrl, TEXT_LIMITS.url),
-    apiKey: text(raw['apiKey'], '', TEXT_LIMITS.secret),
-    orgId: text(raw['orgId'], '', TEXT_LIMITS.identifier),
-    model: requiredText(raw['model'], definition.defaultModel, TEXT_LIMITS.identifier),
-  };
-}
-
-/**
- * The inactive providers' connections. Only known provider ids survive, never
- * the id that is about to be active — that connection lives in the flat
- * fields below, and a second copy here could only drift from it — and only
- * entries that are actually objects; anything else silently drops the one
- * provider it belongs to rather than the whole map.
- */
-function sanitizeSaved(
-  value: unknown,
-  activeProvider: AiProvider,
-): Readonly<Partial<Record<AiProvider, AiConnection>>> {
-  const raw = asRecord(value);
-  const saved: Partial<Record<AiProvider, AiConnection>> = {};
-
-  for (const id of AI_PROVIDER_IDS) {
-    if (id === activeProvider) continue;
-    const entry = raw[id];
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
-    saved[id] = sanitizeConnection(entry, findProvider(id));
-  }
-
-  return saved;
-}
-
-function sanitizeAi(value: unknown): AiSettings {
-  const raw = asRecord(value);
-  const defaults = DEFAULT_SETTINGS.ai;
-
-  const provider = oneOf<AiProvider>(raw['provider'], AI_PROVIDER_IDS, defaults.provider);
-  const definition = findProvider(provider);
-
-  /* The settings form offers three ways to name the active model: the
-     catalogue's suggested list, whatever the provider's own `/models`
-     endpoint returns for the seller's key, and free text. None of those is
-     ours to second-guess, so any non-blank id within the length limit is
-     accepted as-is; only a blank value falls back to the catalogue default. */
-  const model = requiredText(raw['model'], definition.defaultModel, TEXT_LIMITS.identifier);
-
-  return {
-    provider,
-    baseUrl: requiredText(raw['baseUrl'], definition.baseUrl, TEXT_LIMITS.url),
-    apiKey: text(raw['apiKey'], defaults.apiKey, TEXT_LIMITS.secret),
-    orgId: text(raw['orgId'], defaults.orgId, TEXT_LIMITS.identifier),
-    model,
-    timeoutMs: oneOf(toNumber(raw['timeoutMs']), AI_TIMEOUT_OPTIONS, DEFAULT_REQUEST_TIMEOUT_MS),
+    baseUrl: requiredText(raw['baseUrl'], fallback.baseUrl, TEXT_LIMITS.url),
+    apiKey: text(raw['apiKey'], fallback.apiKey, TEXT_LIMITS.secret),
+    /* The settings form offers three ways to name a model: the catalogue's
+       suggested list, whatever the provider's own `/models` endpoint returns
+       for the seller's key, and free text. None of those is ours to
+       second-guess, so any non-blank id within the length limit is accepted
+       as-is; only a blank value falls back to the catalogue default. */
+    model: requiredText(raw['model'], fallback.model, TEXT_LIMITS.identifier),
+    timeoutMs: oneOf(toNumber(raw['timeoutMs']), AI_TIMEOUT_OPTIONS, fallback.timeoutMs),
     temperature: decimal(
       raw['temperature'],
-      defaults.temperature,
+      fallback.temperature,
       TEMPERATURE_BOUNDS.min,
       TEMPERATURE_BOUNDS.max,
       TEMPERATURE_STEP,
     ),
     maxTokens: integer(
       raw['maxTokens'],
-      defaults.maxTokens,
+      fallback.maxTokens,
       MAX_TOKENS_BOUNDS.min,
       MAX_TOKENS_BOUNDS.max,
       MAX_TOKENS_STEP,
     ),
-    saved: sanitizeSaved(raw['saved'], provider),
+    orgId: text(raw['orgId'], fallback.orgId, TEXT_LIMITS.identifier),
+    projectId: text(raw['projectId'], fallback.projectId, TEXT_LIMITS.identifier),
+    reasoningEffort: oneOf(raw['reasoningEffort'], REASONING_EFFORT_OPTIONS, fallback.reasoningEffort),
+    /* Required — never plain `text` — so Claude, the one provider whose every
+       request needs this header, can never end up persisting a blank value
+       merely because a stored payload happened to carry one. Every other
+       provider's own default is already '', so this changes nothing for them. */
+    anthropicVersion: requiredText(
+      raw['anthropicVersion'],
+      fallback.anthropicVersion,
+      TEXT_LIMITS.identifier,
+    ),
+    thinkingLevel: oneOf(raw['thinkingLevel'], THINKING_LEVEL_OPTIONS, fallback.thinkingLevel),
+    appUrl: text(raw['appUrl'], fallback.appUrl, TEXT_LIMITS.url),
+    appTitle: text(raw['appTitle'], fallback.appTitle, TEXT_LIMITS.identifier),
+    thinking: flag(raw['thinking'], fallback.thinking),
+  };
+}
+
+/**
+ * Every provider's connection, independently sanitized against `provider`'s
+ * own catalogue id — never against whatever key the stored payload happens to
+ * carry. Iterating `AI_PROVIDER_IDS` rather than `Object.keys(raw)` means an
+ * id this build no longer knows about is silently dropped, and every id it
+ * does know about is always present: a card never has to fall back to a
+ * fabricated connection because its provider is missing from the map.
+ */
+function sanitizeProviders(value: unknown): Readonly<Record<AiProvider, AiConnection>> {
+  const raw = asRecord(value);
+  const entries = AI_PROVIDER_IDS.map((id) => [id, sanitizeConnection(raw[id], id)] as const);
+
+  /* Exhaustive by construction — one tuple per id in AI_PROVIDER_IDS, which
+     enumerates the whole AiProvider union — not a claim the compiler can
+     check from a `.map` over an array, hence the cast. */
+  return Object.fromEntries(entries) as Readonly<Record<AiProvider, AiConnection>>;
+}
+
+function sanitizeAi(value: unknown): AiSection {
+  const raw = asRecord(value);
+
+  return {
+    provider: oneOf<AiProvider>(raw['provider'], AI_PROVIDER_IDS, DEFAULT_AI_PROVIDER),
+    providers: sanitizeProviders(raw['providers']),
   };
 }
 
@@ -280,6 +316,73 @@ const MIGRATIONS: Readonly<Record<number, SettingsMigration>> = {
     if (data['freshnessMinutes'] !== 15) return root;
 
     return { ...root, data: { ...data, freshnessMinutes: DEFAULT_FRESHNESS_MINUTES } };
+  },
+
+  /**
+   * v4 → v5: one shared `ai` connection becomes nine independent ones.
+   *
+   * v4 never got its own version bump when `saved` was added (see commit
+   * 864c4dd), so two different payloads both carry version 4 and both must
+   * migrate cleanly here:
+   *
+   *   (a) the deployed shape — flat `provider`/`baseUrl`/`apiKey`/`orgId`/
+   *       `model`/`timeoutMs`/`temperature`/`maxTokens`, no `saved` at all.
+   *       This is the shape that let a provider switch leak the previous
+   *       vendor's key into the new one's fields — the bug this release
+   *       fixes — so there is nothing to recover for a provider the seller
+   *       had switched away from; only the active one carried real data.
+   *   (b) the shape with `saved`: the same flat fields, plus `saved[id]` for
+   *       every provider the seller had switched away from, holding that
+   *       provider's own `baseUrl`/`apiKey`/`orgId`/`model` (never its own
+   *       timeout or sampling — v4 had only one shared value for those).
+   *
+   * `providers[activeProvider]` gets the flat fields whole, including the
+   * shared timeout/temperature/maxTokens it was actually serving requests
+   * with. `providers[id]` for every `id` in `saved` gets that saved
+   * connection *plus* the same shared timeout/temperature/maxTokens — the
+   * seller's one choice applied to every provider it actually governed, not
+   * only the one active when this step runs. A provider that was never
+   * configured and never saved is left absent here; `sanitizeAi` fills it
+   * with its own catalogue defaults, never with another provider's values.
+   */
+  4: (settings) => {
+    const root = asRecord(settings);
+    const ai = asRecord(root['ai']);
+    const activeProvider = ai['provider'];
+    const saved = asRecord(ai['saved']);
+
+    /* Only the keys v4 actually shared across every provider — not the whole
+       `ai` record — so a field this step does not know about never rides
+       along into a provider it was never chosen for. */
+    const shared: Record<string, unknown> = {};
+    if ('timeoutMs' in ai) shared['timeoutMs'] = ai['timeoutMs'];
+    if ('temperature' in ai) shared['temperature'] = ai['temperature'];
+    if ('maxTokens' in ai) shared['maxTokens'] = ai['maxTokens'];
+
+    const providers: Record<string, unknown> = {};
+
+    if (typeof activeProvider === 'string') {
+      providers[activeProvider] = {
+        baseUrl: ai['baseUrl'],
+        apiKey: ai['apiKey'],
+        orgId: ai['orgId'],
+        model: ai['model'],
+        ...shared,
+      };
+    }
+
+    for (const [id, entry] of Object.entries(saved)) {
+      /* The active provider's connection was just built above, from the flat
+         fields — the live ones, not whatever a stale `saved` entry under the
+         same id might also hold. A healthy v4 payload never saved the active
+         provider in the first place, but a corrupt one is not allowed to
+         overwrite the connection that was actually in use. */
+      if (id === activeProvider) continue;
+      if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
+      providers[id] = { ...entry, ...shared };
+    }
+
+    return { ...root, ai: { provider: activeProvider, providers } };
   },
 };
 

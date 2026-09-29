@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_SETTINGS } from '@/constants/settings';
+import { DEFAULT_AI_SETTINGS, defaultAiConnection } from '@/constants/settings';
 import type { AiSettings } from '@/types/settings';
 
 const { complete } = vi.hoisted(() => ({ complete: vi.fn() }));
@@ -17,9 +17,12 @@ const { generateInsightCards } = await import('./ai');
  * the two can no longer disagree about the same connection.
  */
 
-const ask = (ai: Partial<AiSettings>) =>
+/* Every case names its provider, and the rest of its connection is that
+   provider's own defaults — not the app's default provider's values under
+   another id. */
+const ask = (ai: Partial<AiSettings> & Pick<AiSettings, 'provider'>) =>
   generateInsightCards({
-    ai: { ...DEFAULT_SETTINGS.ai, ...ai },
+    ai: { ...DEFAULT_AI_SETTINGS, ...defaultAiConnection(ai.provider), ...ai },
     digest: 'DATA',
     language: 'uz',
     covered: [],

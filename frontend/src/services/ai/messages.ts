@@ -5,15 +5,19 @@ import type { JsonSchema } from './jsonSchema';
 /**
  * One conversation, in a shape no provider uses.
  *
- * Three request formats, and they disagree about tool calling more than about
+ * Four request formats, and they disagree about tool calling more than about
  * anything else: Anthropic puts a `tool_use` block inside the assistant's
- * content and expects a `tool_result` block back in a *user* message; OpenAI
- * hangs `tool_calls` off the assistant message and expects a message with the
- * role `tool`; Gemini has neither role and carries `functionCall` and
- * `functionResponse` as parts.
+ * content and expects a `tool_result` block back in a *user* message; the
+ * OpenAI-compatible Chat Completions dialect hangs `tool_calls` off the
+ * assistant message and expects a message with the role `tool`; OpenAI's own
+ * Responses API drops both roles again for a flat list of typed items —
+ * `function_call` and `function_call_output` — that is neither the assistant
+ * nor the tool's "message" in either of the other senses; Gemini has no
+ * dedicated role either and carries `functionCall` and `functionResponse` as
+ * parts.
  *
- * Writing the agent against any one of those would make the other two the odd
- * ones out. So the agent speaks this, and each dialect in `stream.ts`
+ * Writing the agent against any one of those would make the other three the
+ * odd ones out. So the agent speaks this, and each dialect in `stream.ts`
  * translates on the way out. The translation is the only place that knows a
  * provider exists.
  */
@@ -31,6 +35,25 @@ import type { JsonSchema } from './jsonSchema';
 export type AnthropicReasoningBlock =
   | { readonly type: 'thinking'; readonly thinking: string; readonly signature: string }
   | { readonly type: 'redacted_thinking'; readonly data: string };
+
+/**
+ * One OpenAI Responses reasoning item, exactly as the wire sent it.
+ *
+ * With `store: false` — this application's choice, since it ships no server
+ * side for OpenAI to hold conversation state on — the reasoning behind a
+ * function call is not kept on OpenAI's side at all. OpenAI's own reasoning
+ * guide says to replay the item verbatim in the next request's `input`, ahead
+ * of the call it preceded, to keep that reasoning in scope for a later
+ * function-call turn. `encryptedContent` is opaque, sealed server-side state
+ * this application cannot and does not need to read — the same relationship
+ * `data` has on an Anthropic `redacted_thinking` block — and `summary` is
+ * carried along untouched for the same reason.
+ */
+export interface OpenAiReasoningItem {
+  readonly id: string;
+  readonly summary: readonly unknown[];
+  readonly encryptedContent: string | null;
+}
 
 /** A lookup the model asked for, as it came off the wire. */
 export interface ToolCall {
@@ -70,6 +93,15 @@ export interface ToolCall {
    * field.
    */
   readonly reasoning?: readonly AnthropicReasoningBlock[];
+  /**
+   * The OpenAI Responses reasoning items for the whole turn this call belongs
+   * to, attached to the first call of that turn only — the same convention
+   * `reasoning` uses for Claude's thinking blocks, and for the same reason:
+   * reasoning is a property of the *turn*, not of one call. See
+   * `OpenAiReasoningItem` for why it has to be replayed at all. Only the
+   * OpenAI Responses dialect in `stream.ts` reads this field.
+   */
+  readonly openAiReasoning?: readonly OpenAiReasoningItem[];
 }
 
 /** What the application answered with. */
@@ -98,26 +130,28 @@ export interface ToolSchema {
 /**
  * Whether this provider can be given tools rather than told about them.
  *
- * A deliberately short list, and OpenAI is deliberately off it. "OpenAI-
- * compatible" is a claim about the response shape, not a promise that `tools`
- * is accepted — a gateway that ignores the field silently produces a model
- * with no way to ask for anything, and one that rejects it produces a 400 on
- * every question. Both are worse than the text protocol, which works
- * everywhere because it is only text.
+ * Anthropic, Gemini, and now OpenAI. OpenAI's own reasoning guide is explicit
+ * that Chat Completions does not support function calling with GPT-6 Astra —
+ * the model OpenAI's own docs say to start with — and that Sol and Luna only
+ * take it there with `reasoning_effort: "none"`, a value Astra rejects with a
+ * 400. That restriction is Chat Completions' own, not the model's: Responses
+ * takes `tools` from all three GPT-6 models regardless of reasoning effort, so
+ * this transport speaks Responses for `openai` specifically — see the
+ * `openai` branch of `dialectFor` in `stream.ts` — and reserves Chat
+ * Completions, and the text protocol, for the rest of the OpenAI-compatible
+ * list.
  *
- * OpenAI itself is a sharper case than "unproven": its own reasoning guide
- * states plainly that Chat Completions does not support function calling with
- * GPT-6 Astra — the model OpenAI's own docs say to start with. Declaring
- * `tools` on that request would not silently degrade; it would make the
- * provider the seller is most likely to have configured unable to look
- * anything up. So only the two first-party APIs whose tool support is
- * verified — Anthropic and Gemini — get native tools; everything else,
- * OpenAI included, keeps the protocol that cannot break. The agent runs the
- * same conversation either way; what changes is whether a call arrives as a
- * parsed structure or as a line of JSON the application reads itself.
+ * That list stays off native tools on purpose. "OpenAI-compatible" is a claim
+ * about the response shape, not a promise that `tools` is accepted — a
+ * self-hosted runtime or an unfamiliar aggregator that ignores the field
+ * silently produces a model with no way to ask for anything, and one that
+ * rejects it produces a 400 on every question. Both are worse than the text
+ * protocol, which works everywhere because it is only text. The agent runs
+ * the same conversation either way; what changes is whether a call arrives as
+ * a parsed structure or as a line of JSON the application reads itself.
  */
 export function supportsNativeTools(provider: AiProvider): boolean {
-  return provider === 'claude' || provider === 'gemini';
+  return provider === 'claude' || provider === 'gemini' || provider === 'openai';
 }
 
 /* ── names ──────────────────────────────────────────────────────────────── */

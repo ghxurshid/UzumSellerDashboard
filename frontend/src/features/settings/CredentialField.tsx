@@ -41,6 +41,8 @@ interface CredentialFieldProps {
   readonly hint?: string;
   readonly masked: boolean;
   readonly copyable?: boolean;
+  /** Returns an error message to block Save, or `null` to allow it — see `CommitField`'s own doc for why this runs before `onCommit`, not after. */
+  readonly validate?: (value: string) => string | null;
   readonly onCommit: (value: string) => void;
   readonly onCopy?: () => void;
 }
@@ -53,6 +55,7 @@ export function CredentialField({
   hint,
   masked,
   copyable = false,
+  validate,
   onCommit,
   onCopy,
 }: CredentialFieldProps): ReactNode {
@@ -61,6 +64,7 @@ export function CredentialField({
   const [editing, setEditing] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [draft, setDraft] = useState(value);
+  const [error, setError] = useState<string | null>(null);
 
   /* Never leave a secret revealed once the flag says mask, and never keep a
      stale draft after the stored value changes underneath (reset, migration). */
@@ -71,7 +75,18 @@ export function CredentialField({
   useEffect(() => {
     setDraft(value);
     setEditing(false);
+    setError(null);
   }, [value]);
+
+  const save = (): void => {
+    const problem = validate?.(draft) ?? null;
+    if (problem !== null) {
+      setError(problem);
+      return;
+    }
+    setError(null);
+    onCommit(draft);
+  };
 
   const shown = revealed || !masked;
   const display = value === '' ? emptyLabel : shown ? value : maskSecret(value);
@@ -95,20 +110,22 @@ export function CredentialField({
             autoCapitalize="none"
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') onCommit(draft);
+              if (event.key === 'Enter') save();
               if (event.key === 'Escape') {
                 setDraft(value);
                 setEditing(false);
+                setError(null);
               }
             }}
             className={cn(
               CONTROL,
               'w-full min-w-140 flex-1 border-acc-line px-10 font-mono text-text outline-none sm:w-auto',
+              error !== null && 'border-neg',
             )}
           />
           <button
             type="button"
-            onClick={() => onCommit(draft)}
+            onClick={save}
             className={cn(
               CONTROL,
               'shrink-0 cursor-pointer border-acc bg-acc-soft px-12 font-medium text-acc-dim',
@@ -122,11 +139,17 @@ export function CredentialField({
             onClick={() => {
               setDraft(value);
               setEditing(false);
+              setError(null);
             }}
             className={TEXT_BUTTON}
           >
             {t('cancel')}
           </button>
+          {error !== null && (
+            <p role="alert" className="m-0 w-full text-tiny leading-[1.4] text-neg">
+              {error}
+            </p>
+          )}
         </div>
       ) : (
         <div className="flex gap-6">

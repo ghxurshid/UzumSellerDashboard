@@ -41,9 +41,16 @@ export function describeAiError(error: ApiError, provider: AiProvider, t: Transl
       return t('aiErrServer');
     case 'client':
     case 'notFound':
-      /* `error.message` already carries the provider's own short explanation
-         — an unknown model id, a malformed body — which is more useful here
-         than a generic sentence would be. */
+      /* Two OpenAI failures get their own sentence rather than the generic
+         one below: both are `kind: 'client'` (a retry cannot fix either) but
+         "the provider refused the request: response.incomplete" tells the
+         seller nothing they can act on, while naming the actual fix — raise
+         Max tokens, or ease off reasoning effort — does. */
+      if (error.code === 'incomplete') return t('aiErrIncomplete');
+      if (error.code === 'insufficient_quota') return t('aiErrInsufficientQuota');
+      /* Otherwise `error.message` already carries the provider's own short
+         explanation — an unknown model id, a malformed body — which is more
+         useful here than a generic sentence would be. */
       return t('aiErrRequest', { detail: error.message });
     default:
       // Safety net for a kind this switch has not been taught about yet.

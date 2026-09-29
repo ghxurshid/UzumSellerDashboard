@@ -53,9 +53,10 @@ interface AiModelFieldProps {
  * when it matches nothing here — an id this pane does not recognise is still
  * the seller's own choice, never silently replaced.
  *
- * `AiSettings` mounts one of these per provider with `key={provider.id}`, so
- * the free-text/picker toggle below always starts back at "picker" for a
- * newly selected provider rather than carrying the previous one's choice.
+ * `AiSettings` mounts a whole fresh `AiProviderCard` — this field included —
+ * with `key={selected}` for whichever provider is open, so the free-text/
+ * picker toggle below always starts back at "picker" for a newly opened card
+ * rather than carrying the previous one's choice.
  */
 export function AiModelField({
   label,

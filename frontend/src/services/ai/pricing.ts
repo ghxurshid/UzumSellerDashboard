@@ -1,4 +1,4 @@
-import type { AiSettings } from '@/types/settings';
+import type { AiProvider, AiSettings } from '@/types/settings';
 
 /**
  * What a question cost, when that can be said honestly.
@@ -42,6 +42,13 @@ const PRICES: ReadonlyArray<readonly [string, ModelPrice]> = [
   ['claude-sonnet-4', { input: 3, output: 15 }],
   ['claude-haiku-4', { input: 1, output: 5 }],
   ['claude-3-5-haiku', { input: 0.8, output: 4 }],
+  /* OpenAI's own model pages, checked 2026-09-28. Cached input is exactly a
+     tenth of the input rate on all three — the same ratio `costFromPrice`
+     already applies for every provider, so no per-model cache price is
+     needed here. */
+  ['gpt-6-astra', { input: 10, output: 50 }],
+  ['gpt-6-sol', { input: 2, output: 10 }],
+  ['gpt-6-luna', { input: 0.1, output: 0.5 }],
   ['gpt-4o-mini', { input: 0.15, output: 0.6 }],
   ['gpt-4o', { input: 2.5, output: 10 }],
   ['gpt-4.1-mini', { input: 0.4, output: 1.6 }],
@@ -79,11 +86,47 @@ function priceOf(model: string): ModelPrice | null {
 }
 
 /**
+ * A cached prefix is billed at about a tenth of the input rate.
+ *
+ * All the providers that cache converge on roughly that ratio, and the agent
+ * loop is where it matters: the toolkit document is re-sent on every round,
+ * and without this the cost line would charge full price for tokens the
+ * provider explicitly did not charge full price for — which is the one
+ * direction an estimate must not be wrong in, because it would make the
+ * caching work look like it had not.
+ *
+ * Shared by `estimateCost` and `costOfTokens` so the two can never price the
+ * same model two different ways; what differs between them is only which
+ * convention their caller's `inputTokens` already is (see each one's own
+ * doc).
+ */
+function costFromPrice(
+  price: ModelPrice,
+  uncachedInputTokens: number,
+  cachedInputTokens: number,
+  outputTokens: number,
+): number {
+  return (
+    (uncachedInputTokens * price.input +
+      cachedInputTokens * price.input * 0.1 +
+      outputTokens * price.output) /
+    1_000_000
+  );
+}
+
+/**
  * Dollars for one exchange, or `null` when this model's price is not known.
  *
  * A locally hosted model costs nothing per query and is reported as `0`, which
  * is a fact rather than an absence — the distinction the composer needs to
  * decide between showing "free" and showing nothing.
+ *
+ * `usage.inputTokens` here is the UNCACHED prompt — `stream.ts`'s accumulator
+ * already discounts the cached prefix out of it before this is called. The
+ * write side is folded into ordinary input rather than marked up, so a
+ * thread's first round reads slightly low and every round after it reads
+ * true. Hence the "≈" the composer prints. `costOfTokens` below takes the
+ * opposite, RAW convention — see its own doc for why.
  */
 export function estimateCost(
   settings: AiSettings,
@@ -99,28 +142,43 @@ export function estimateCost(
   const price = priceOf(settings.model);
   if (price === null) return null;
 
-  /**
-   * A cached prefix is billed at about a tenth of the input rate.
-   *
-   * All three providers that cache converge on roughly that ratio, and the
-   * agent loop is where it matters: the toolkit document is re-sent on every
-   * round, and without this the cost line would charge full price for tokens
-   * the provider explicitly did not charge full price for — which is the one
-   * direction an estimate must not be wrong in, because it would make the
-   * caching work look like it had not.
-   *
-   * The write side is folded into ordinary input rather than marked up, so a
-   * thread's first round reads slightly low and every round after it reads
-   * true. Hence the "≈" the composer prints.
-   */
-  const cached = usage.cachedInputTokens ?? 0;
+  return costFromPrice(price, usage.inputTokens, usage.cachedInputTokens ?? 0, usage.outputTokens);
+}
 
-  return (
-    (usage.inputTokens * price.input +
-      cached * price.input * 0.1 +
-      usage.outputTokens * price.output) /
-    1_000_000
-  );
+/**
+ * Dollars for one request, from the usage ledger's own numbers.
+ *
+ * Unlike `estimateCost`, `usage.inputTokens` here is RAW — cache included,
+ * the same convention `ModelRequestEvent.inputTokens` uses — because that is
+ * what `summarizeTokens` sums, and re-deriving the uncached figure from a
+ * total that already dropped it would need information this call site does
+ * not have. The uncached portion is recovered here instead:
+ * `inputTokens - cachedInputTokens`.
+ *
+ * `usage.cachedInputTokens` has no room for "the provider never said" —
+ * `0` reads as a fact, not an absence. A caller summing `TokenTotals` must
+ * check `cachedReported` first: passing `0` for a provider that simply never
+ * reports its cache (DeepSeek, Mistral) prices the *whole* prompt at the full
+ * input rate, which is a real number — an upper bound on the true cost, not a
+ * wrong one — but only true when the caller already knows it is an upper
+ * bound and says so, rather than printing it as the answer.
+ */
+export function costOfTokens(
+  provider: AiProvider,
+  model: string,
+  usage: {
+    readonly inputTokens: number;
+    readonly cachedInputTokens: number;
+    readonly outputTokens: number;
+  },
+): number | null {
+  if (provider === 'ollama') return 0;
+
+  const price = priceOf(model);
+  if (price === null) return null;
+
+  const uncached = Math.max(0, usage.inputTokens - usage.cachedInputTokens);
+  return costFromPrice(price, uncached, usage.cachedInputTokens, usage.outputTokens);
 }
 
 /** `≈ $0.004` — three decimals, because a query is rarely more than cents. */
