@@ -1,17 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
+import { AI_PROVIDERS, MAX_TOKENS_BOUNDS, MAX_TOKENS_STEP } from '@/constants/settings';
 import { ApiError } from '@/services/api/client';
 
 import {
   anthropicHeaders,
+  AUTO_MAX_TOKENS_DEFAULT,
+  AUTO_MAX_TOKENS_OPENAI,
+  balancedMaxTokens,
   canListModels,
   classifyOpenAiFailure,
   claudeSamplingFields,
   claudeSupportsEffort,
   claudeSupportsTemperature,
+  effectiveMaxTokens,
   geminiHeaders,
   geminiThinkingLevel,
   isAiConfigured,
+  isAutoMaxTokens,
   isHeaderSafe,
   openAiCompatibleHeaders,
   openAiCompatibleSamplingFields,
@@ -19,11 +25,155 @@ import {
   openAiIsReasoningModel,
   openAiResponsesFields,
   openAiSendsTemperature,
+  outputTokenCeiling,
   reasoningEffortOptions,
   requiresApiKey,
   samplingSupported,
   thinkingLevelOptions,
+  UNKNOWN_CEILING_MAX_TOKENS,
+  UNKNOWN_CEILING_SLIDER_TOP,
 } from './modelRules';
+
+describe('outputTokenCeiling', () => {
+  it('knows the published figure of a listed model', () => {
+    expect(outputTokenCeiling('gemini', 'gemini-3.6-flash')).toBe(65_536);
+    expect(outputTokenCeiling('claude', 'claude-haiku-4-5')).toBe(64_000);
+    expect(outputTokenCeiling('claude', 'claude-opus-5')).toBe(128_000);
+    expect(outputTokenCeiling('deepseek', 'deepseek-flash')).toBe(393_216);
+    expect(outputTokenCeiling('openai', 'gpt-6-sol')).toBe(128_000);
+    expect(outputTokenCeiling('grok', 'grok-4.7')).toBe(128_000);
+  });
+
+  it('does not guess for a provider or id with no published figure', () => {
+    expect(outputTokenCeiling('mistral', 'mistral-large-latest')).toBeNull();
+    expect(outputTokenCeiling('ollama', 'gemini-3.6-flash')).toBeNull();
+    expect(outputTokenCeiling('openrouter', 'claude-opus-5')).toBeNull();
+    expect(outputTokenCeiling('grok', 'grok-4.3')).toBeNull();
+    expect(outputTokenCeiling('gemini', 'constructor')).toBeNull();
+  });
+});
+
+/* The settings slider uses the ceiling as its max, with min MAX_TOKENS_BOUNDS.min
+   and step MAX_TOKENS_STEP, so a figure the thumb can sit on must be reachable
+   from the minimum in whole steps. */
+function isSliderReachable(value: number): boolean {
+  return value >= MAX_TOKENS_BOUNDS.min && (value - MAX_TOKENS_BOUNDS.min) % MAX_TOKENS_STEP === 0;
+}
+
+describe('slider-reachable budgets', () => {
+  it('the fixed figures sit on a slider step', () => {
+    for (const value of [
+      UNKNOWN_CEILING_SLIDER_TOP,
+      AUTO_MAX_TOKENS_OPENAI,
+      AUTO_MAX_TOKENS_DEFAULT,
+      UNKNOWN_CEILING_MAX_TOKENS,
+    ]) {
+      expect(isSliderReachable(value), String(value)).toBe(true);
+    }
+  });
+});
+
+describe('outputTokenCeiling — table invariant', () => {
+  /* Auto is stored as MAX_TOKENS_BOUNDS.max; a ceiling at or above it would
+     collide with that sentinel, so an explicit value equal to the ceiling could
+     not be told apart from Auto. Walked through the public API
+     because the table itself is not exported. */
+  it('every listed model has either no ceiling or a positive integer strictly below the Auto sentinel, and reachable from the slider', () => {
+    let known = 0;
+    for (const provider of AI_PROVIDERS) {
+      for (const model of provider.models) {
+        const ceiling = outputTokenCeiling(provider.id, model.id);
+        if (ceiling === null) continue;
+        known += 1;
+        expect(Number.isInteger(ceiling), `${provider.id}/${model.id}`).toBe(true);
+        expect(ceiling, `${provider.id}/${model.id}`).toBeGreaterThan(0);
+        expect(ceiling, `${provider.id}/${model.id}`).toBeLessThan(MAX_TOKENS_BOUNDS.max);
+        expect(ceiling, `${provider.id}/${model.id}`).toBeGreaterThanOrEqual(MAX_TOKENS_BOUNDS.min);
+        expect(isSliderReachable(ceiling), `${provider.id}/${model.id}`).toBe(true);
+      }
+    }
+    /* Guards the loop itself from passing vacuously. */
+    expect(known).toBeGreaterThan(0);
+  });
+});
+
+describe('isAutoMaxTokens', () => {
+  it('is true at and above the sentinel, false below', () => {
+    expect(isAutoMaxTokens(MAX_TOKENS_BOUNDS.max)).toBe(true);
+    expect(isAutoMaxTokens(MAX_TOKENS_BOUNDS.max + 1)).toBe(true);
+    expect(isAutoMaxTokens(MAX_TOKENS_BOUNDS.max - 1)).toBe(false);
+    expect(isAutoMaxTokens(65_536)).toBe(false);
+  });
+});
+
+describe('balancedMaxTokens', () => {
+  it('OpenAI tier: min(ceiling, 16,384)', () => {
+    expect(AUTO_MAX_TOKENS_OPENAI).toBe(16_384);
+    expect(balancedMaxTokens('openai', 'gpt-6-sol')).toBe(16_384);
+  });
+
+  it('every other provider: min(ceiling, 32,000)', () => {
+    expect(AUTO_MAX_TOKENS_DEFAULT).toBe(32_000);
+    expect(balancedMaxTokens('claude', 'claude-opus-5')).toBe(32_000);
+    expect(balancedMaxTokens('gemini', 'gemini-3.6-flash')).toBe(32_000);
+    expect(balancedMaxTokens('deepseek', 'deepseek-flash')).toBe(32_000);
+    expect(balancedMaxTokens('grok', 'grok-4.7')).toBe(32_000);
+  });
+
+  it('a ceiling below the budget wins', () => {
+    expect(outputTokenCeiling('claude', 'claude-haiku-4-5')).toBe(64_000);
+    expect(Math.min(64_000, AUTO_MAX_TOKENS_DEFAULT)).toBe(32_000);
+    /* No catalogue model has a ceiling under 32,000 today, so the min() is pinned
+       through the budget being at most the ceiling for every known model. */
+    for (const provider of AI_PROVIDERS) {
+      for (const model of provider.models) {
+        const ceiling = outputTokenCeiling(provider.id, model.id);
+        if (ceiling === null) continue;
+        expect(balancedMaxTokens(provider.id, model.id)).toBeLessThanOrEqual(ceiling);
+      }
+    }
+  });
+
+  it('unknown ceiling -> 4,096 for any provider', () => {
+    expect(balancedMaxTokens('mistral', 'mistral-large-latest')).toBe(UNKNOWN_CEILING_MAX_TOKENS);
+    expect(balancedMaxTokens('openai', 'some-unlisted-model')).toBe(4_096);
+    expect(balancedMaxTokens('ollama', 'x')).toBe(4_096);
+  });
+});
+
+describe('effectiveMaxTokens', () => {
+  const auto = MAX_TOKENS_BOUNDS.max;
+
+  it('Auto + known ceiling -> the balanced budget, not the ceiling', () => {
+    expect(effectiveMaxTokens({ provider: 'gemini', model: 'gemini-3.6-flash', maxTokens: auto })).toBe(32_000);
+    expect(effectiveMaxTokens({ provider: 'openai', model: 'gpt-6-astra', maxTokens: auto })).toBe(16_384);
+  });
+
+  it('known ceiling + explicit value below it -> the explicit value', () => {
+    expect(effectiveMaxTokens({ provider: 'gemini', model: 'gemini-3.6-flash', maxTokens: 8_192 })).toBe(8_192);
+  });
+
+  it('explicit value equal to the ceiling -> the ceiling (how a seller asks for the maximum)', () => {
+    expect(effectiveMaxTokens({ provider: 'gemini', model: 'gemini-3.6-flash', maxTokens: 65_536 })).toBe(65_536);
+    expect(effectiveMaxTokens({ provider: 'openai', model: 'gpt-6-sol', maxTokens: 128_000 })).toBe(128_000);
+  });
+
+  it('known ceiling + explicit value above it -> the ceiling', () => {
+    expect(effectiveMaxTokens({ provider: 'claude', model: 'claude-haiku-4-5', maxTokens: 100_000 })).toBe(64_000);
+  });
+
+  it('Auto + unknown ceiling -> the previous default', () => {
+    expect(effectiveMaxTokens({ provider: 'mistral', model: 'mistral-large-latest', maxTokens: auto })).toBe(
+      UNKNOWN_CEILING_MAX_TOKENS,
+    );
+    expect(UNKNOWN_CEILING_MAX_TOKENS).toBe(4_096);
+  });
+
+  it('unknown ceiling + explicit value -> capped at the old slider top', () => {
+    expect(effectiveMaxTokens({ provider: 'ollama', model: 'x', maxTokens: 40_000 })).toBe(UNKNOWN_CEILING_SLIDER_TOP);
+    expect(effectiveMaxTokens({ provider: 'ollama', model: 'x', maxTokens: 8_192 })).toBe(8_192);
+  });
+});
 
 /**
  * These rules are what stand between a seller pressing "send" and a 400 that

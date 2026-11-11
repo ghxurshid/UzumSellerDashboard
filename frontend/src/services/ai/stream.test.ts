@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ApiError } from '@/services/api/client';
-import { DEFAULT_AI_SETTINGS, defaultAiConnection } from '@/constants/settings';
+import { DEFAULT_AI_SETTINGS, defaultAiConnection, MAX_TOKENS_BOUNDS } from '@/constants/settings';
 import type { AiProvider, AiSettings } from '@/types/settings';
 
 import type { OpenAiReasoningItem, ToolCall } from './messages';
@@ -489,6 +489,53 @@ describe('dialectFor', () => {
       },
     });
     expect(dialect.headers).toEqual({ 'content-type': 'application/json', 'x-goog-api-key': 'test-key' });
+  });
+
+  /* The stored sentinel MAX_TOKENS_BOUNDS.max means Auto — each wire spelling must
+     carry the balanced budget, never the sentinel itself. */
+  describe('an Auto setting sends the balanced budget', () => {
+    const sentinel = MAX_TOKENS_BOUNDS.max;
+
+    it('Gemini maxOutputTokens', () => {
+      const dialect = dialectFor(
+        settingsFor({ provider: 'gemini', model: 'gemini-3.6-flash', maxTokens: sentinel }),
+        request,
+      );
+      const config = (dialect.body as { generationConfig: Record<string, unknown> }).generationConfig;
+      expect(config['maxOutputTokens']).toBe(32_000);
+    });
+
+    it('Claude max_tokens', () => {
+      const dialect = dialectFor(
+        settingsFor({ provider: 'claude', model: 'claude-opus-5', maxTokens: sentinel }),
+        request,
+      );
+      expect((dialect.body as Record<string, unknown>)['max_tokens']).toBe(32_000);
+    });
+
+    it('OpenAI Responses max_output_tokens', () => {
+      const dialect = dialectFor(
+        settingsFor({ provider: 'openai', model: 'gpt-6-astra', maxTokens: sentinel }),
+        request,
+      );
+      expect((dialect.body as Record<string, unknown>)['max_output_tokens']).toBe(16_384);
+    });
+
+    it('DeepSeek max_tokens', () => {
+      const dialect = dialectFor(
+        settingsFor({ provider: 'deepseek', model: 'deepseek-flash', maxTokens: sentinel }),
+        request,
+      );
+      expect((dialect.body as Record<string, unknown>)['max_tokens']).toBe(32_000);
+    });
+
+    it('never puts the sentinel on the wire, even for a model of unknown ceiling', () => {
+      const dialect = dialectFor(
+        settingsFor({ provider: 'mistral', model: 'mistral-large-latest', maxTokens: sentinel }),
+        request,
+      );
+      expect((dialect.body as Record<string, unknown>)['max_tokens']).toBe(4_096);
+    });
   });
 });
 

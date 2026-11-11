@@ -1,7 +1,7 @@
 # Savdo Copilot — Texnik spetsifikatsiya
 
-**Versiya:** 2.8.0
-**Hujjat sanasi:** 2026-09-29
+**Versiya:** 2.9.0
+**Hujjat sanasi:** 2026-11-11
 **Maqsad:** [FUNCTIONAL-SPECIFICATION.md](./FUNCTIONAL-SPECIFICATION.md) dagi har bir
 talab texnik jihatdan qanday amalga oshirilganini ifodalash.
 
@@ -692,16 +692,16 @@ Ikki muallif, bitta karta tili:
   DeepSeek, Mistral, Grok, Ollama, `custom`) uchun OpenAI-mos
   `/chat/completions`.
   - **OpenAI — Responses API**
-    ([`dialectFor`](./frontend/src/services/ai/stream.ts#L1004)ning `openai`
-    bo'limi — oqim; [`client.ts`](./frontend/src/services/ai/client.ts#L354) —
+    ([`dialectFor`](./frontend/src/services/ai/stream.ts#L1005)ning `openai`
+    bo'limi — oqim; [`client.ts`](./frontend/src/services/ai/client.ts#L355) —
     bir martalik so'rov): ikkalasi ham `/v1/responses`ga, `store:false` bilan
     boradi — ilovada OpenAI uchun suhbat holatini saqlaydigan server yo'q.
     Fikrlash modeliga (`gpt-5*`, `gpt-6*`, `o1`/`o3`/`o4`) shuning uchun
     `include: ["reasoning.encrypted_content"]` so'raladi
-    ([`openAiResponsesFields`](./frontend/src/services/ai/modelRules.ts#L343)):
+    ([`openAiResponsesFields`](./frontend/src/services/ai/modelRules.ts#L453)):
     keyingi tool raundida faqat **shu fikrlash elementi**, chaqiruvdan oldin,
     qayta yuboriladi
-    ([`openAiResponsesInput`](./frontend/src/services/ai/stream.ts#L494)), va
+    ([`openAiResponsesInput`](./frontend/src/services/ai/stream.ts#L495)), va
     shifrlanmagan (`encrypted_content`siz) element tashlab yuboriladi — uni
     `store:false`da qayta tiklab bo'lmaydi. Tool'lar `strict:false` bilan
     e'lon qilinadi: zod'dan chiqqan sxemalarda ixtiyoriy maydonlar bor, ular
@@ -716,8 +716,8 @@ Ikki muallif, bitta karta tili:
   birga qaytariladi.
 - **Provayderga xos parametrlar** — har biri o'z kartasida ko'rinadi va
   simning aynan qayeriga tushishi karta ostida yoziladi
-  ([`openAiCompatibleHeaders`](./frontend/src/services/ai/modelRules.ts#L503),
-  [`anthropicHeaders`](./frontend/src/services/ai/modelRules.ts#L471)):
+  ([`openAiCompatibleHeaders`](./frontend/src/services/ai/modelRules.ts#L613),
+  [`anthropicHeaders`](./frontend/src/services/ai/modelRules.ts#L581)):
 
   | Provayder | Parametr | Simda |
   |---|---|---|
@@ -732,7 +732,7 @@ Ikki muallif, bitta karta tili:
 
   Model qabul qilmaydigan qiymat — yoki `''` — hech qachon yuborilmaydi, jimgina
   tashlab ketiladi
-  ([`validReasoningEffort`](./frontend/src/services/ai/modelRules.ts#L227));
+  ([`validReasoningEffort`](./frontend/src/services/ai/modelRules.ts#L337));
   karta menyusi va transport aynan shu tekshiruvdan o'qiydi, shuning uchun
   ular bir model uchun ikki xil javob berolmaydi.
 - **Sarlavha xavfsizligi.** `fetch`ning `Headers`i bosiladigan ASCII'dan
@@ -740,11 +740,11 @@ Ikki muallif, bitta karta tili:
   atributsiya) xavfsiz bo'lmasa jimgina tashlab ketiladi; kalitning o'zi
   xavfsiz bo'lmasa esa so'rov hech qachon `fetch`ga yetmasdan `unauthorized`
   bilan rad etiladi
-  ([`isHeaderSafe`](./frontend/src/services/ai/modelRules.ts#L447)).
+  ([`isHeaderSafe`](./frontend/src/services/ai/modelRules.ts#L557)).
 - **`stream_options.include_usage`** faqat OpenRouter, DeepSeek va Ollama
   uchun so'raladi — uchalasi ham buni o'z hujjatida tasdiqlagan; Mistral esa
   oqimda usage umuman qaytarmasligini aytadi, shuning uchun undan so'ralmaydi
-  ([`stream.ts`](./frontend/src/services/ai/stream.ts#L1056)). OpenAI bu
+  ([`stream.ts`](./frontend/src/services/ai/stream.ts#L1057)). OpenAI bu
   ro'yxatdan chiqib ketgan — uning usage'si Responses'ning
   `response.completed` hodisasidan keladi.
 - **Qayta urinish** (`RETRIES = 3`): `429`/`5xx`/tarmoq xatosida, `Retry-After`
@@ -761,7 +761,7 @@ Ikki muallif, bitta karta tili:
     sababni va tiklanish vaqtini ko'rsatadi, **Davom ettirish** tugmasisiz
     ([`features/chat/useCopilotAnswers.ts`](./frontend/src/features/chat/useCopilotAnswers.ts#L36)).
   - **OpenAI Responses'ning o'z rad javoblari kod bo'yicha ajratiladi**
-    ([`classifyOpenAiFailure`](./frontend/src/services/ai/modelRules.ts#L580)):
+    ([`classifyOpenAiFailure`](./frontend/src/services/ai/modelRules.ts#L690)):
     `insufficient_quota` — `client`, takrorlanmaydi (hisobga pul qo'shish
     kerak, kutish emas); `rate_limit`/`quota` — `rateLimited`, oddiy qoida
     bo'yicha takrorlanadi; nomsiz yoki `server` so'zli kod — `server`,
@@ -769,7 +769,7 @@ Ikki muallif, bitta karta tili:
     yozmasdan tugasa — odatda `max_output_tokens` fikrlashga sarflanib
     bo'lgani uchun — `client`/`incomplete` bilan rad etiladi va **hech
     qachon** takrorlanmaydi: bir xil so'rov bir xil devorga urilaveradi
-    ([`openAiIncompleteError`](./frontend/src/services/ai/modelRules.ts#L551)).
+    ([`openAiIncompleteError`](./frontend/src/services/ai/modelRules.ts#L661)).
     Sozlamalar paneli `incomplete` va `insufficient_quota` kodlarini o'z
     tiliga tarjima qilingan gap bilan ko'rsatadi
     ([`aiErrors.ts`](./frontend/src/features/settings/aiErrors.ts#L49)).
@@ -831,12 +831,12 @@ Ikki muallif, bitta karta tili:
 - **Kalit va konfiguratsiya — har bir provayder alohida.** Ilova kalit olib
   kelmaydi — Sozlamalardagi kalit ishlatiladi, u bo'sh bo'lsa (Ollama va
   `custom`dan tashqari, ularga kalit shart emas) Copilot o'sha provayderga
-  so'rov yubormaydi. Sozlamalar sxemasi **v5**da `ai = { provider, providers }`
+  so'rov yubormaydi. Sozlamalar sxemasi **v6**da `ai = { provider, providers }`
   — `providers` to'qqizta provayderning **har biri** uchun to'liq, mustaqil
   konfiguratsiya saqlaydi (kalit, endpoint, model, timeout, harorat,
   maksimal token, yuqoridagi jadvaldagi o'ziga xos parametrlar), `provider`
   esa ulardan qaysi biri ishlatilayotganini ko'rsatadi
-  ([`AiSection`](./frontend/src/types/settings.ts#L132)). Yozish ikki atom
+  ([`AiSection`](./frontend/src/types/settings.ts#L143)). Yozish ikki atom
   amal orqali boradi —
   [`updateAiConnection(provider, patch)`](./frontend/src/services/storage/settings.service.ts#L290)
   faqat nomlangan provayderning yozuvini o'zgartiradi,
@@ -850,6 +850,65 @@ Ikki muallif, bitta karta tili:
   testlarda soxta kalitlar bilan tekshirilgan
   ([`aiConnections.test.ts`](./frontend/src/services/storage/aiConnections.test.ts)),
   haqiqiy ikkita kalit bilan qo'lda emas.
+- **Chiqish tokenlari byudjeti — odatiy qiymat "Avto".** `maxTokens`
+  ning saqlangan **belgisi**
+  ([`MAX_TOKENS_BOUNDS.max`](./frontend/src/constants/settings.ts), 1 048 576)
+  "Avto" degani — ilovaning muvozanatli byudjeti; modelning o'z maksimumi
+  **emas** va so'rovga hech qachon o'zi ketmaydi
+  ([`isAutoMaxTokens()`](./frontend/src/services/ai/modelRules.ts#L134)).
+  So'rovga ketadigan sonni
+  [`effectiveMaxTokens()`](./frontend/src/services/ai/modelRules.ts#L155) hisoblaydi
+  va u oqim yo'lida ham, bir martalik `complete()` yo'lida ham, barcha
+  dialektlar uchun bitta. "Avto" —
+  [`balancedMaxTokens()`](./frontend/src/services/ai/modelRules.ts#L143):
+
+  | Holat | Yuboriladigan son |
+  |---|---|
+  | "Avto", OpenAI, chegara ma'lum | `min(chegara, 16 384)` ([`AUTO_MAX_TOKENS_OPENAI`](./frontend/src/services/ai/modelRules.ts#L119)) |
+  | "Avto", boshqa provayder, chegara ma'lum | `min(chegara, 32 000)` ([`AUTO_MAX_TOKENS_DEFAULT`](./frontend/src/services/ai/modelRules.ts#L131)) |
+  | "Avto", chegara noma'lum | 4 096 (avvalgi odatiy qiymat) |
+  | Aniq qiymat, chegara ma'lum | `min(qiymat, chegara)` |
+  | Aniq qiymat, chegara noma'lum | `min(qiymat, 32 000)` (eski slayder cheti) |
+
+  Modelning o'z maksimumi endi alohida belgi bilan emas, **chegaraning o'ziga
+  teng aniq qiymat** bilan so'raladi: slayderning yuqori qadami — chegaraning
+  o'zi. Nega shunday: avvalgi "modelning maksimumi" odatiy qiymati har bir
+  so'rovda eng katta byudjetni zaxiralar edi, balans esa ikkalasini ham
+  istaydi — yaxshi javob va limitni bekorga sarflamaslik. OpenAI byudjeti
+  pastroq, chunki OpenAI'ning limitlar qo'llanmasi (2026-11-11 o'qilgan)
+  limit `max_tokens` va so'rovning taxminiy token soni **kattasi** bo'yicha
+  hisoblanishini aytadi — ya'ni so'ralgan maksimum model yozmasa ham
+  daqiqalik (TPM) limitdan zaxiralanadi. Claude uchun
+  Anthropic'ning limitlar sahifasi (platform.claude.com/docs/en/api/rate-limits,
+  2026-11-11 o'qilgan) OTPM faqat haqiqatan yaratilgan tokenlarni sanashini va
+  `max_tokens` OTPM hisobiga kirmasligini aytadi. Gemini va DeepSeek uchun
+  bu avvalroq hujjatlarini **o'qishdan** kelgan xulosa — bugun qayta
+  o'qilmagan, loyiha buni o'lchamagan. Shuning uchun boshqa provayderlarda
+  32 000 limitni emas, to'xtamay ketgan generatsiya va uning narxini cheklaydi. Chegaralar
+  [`OUTPUT_CEILINGS`](./frontend/src/services/ai/modelRules.ts#L84) jadvalida
+  (fikrlash tokenlari hisobga kirgan): Gemini 3.x/2.5 Flash oilasi 65 536, GPT-6
+  Astra/Sol/Luna 128 000, Claude Opus 5 / Sonnet 5 128 000 va Haiku 4.5 64 000,
+  DeepSeek V4 Pro/Flash 393 216, Grok 4.7 128 000 (xAI chegara e'lon qilmaydi —
+  bu uning hujjatlashtirilgan odatiy qiymati). Mistral, Grok 4.3, OpenRouter,
+  Ollama, `custom` va boshqa har qanday id uchun chegara **noma'lum** — taxmin
+  qilinmaydi. Karta
+  ([`AiProviderCard.tsx`](./frontend/src/features/settings/AiProviderCard.tsx#L111))
+  har doim **haqiqatan yuboriladigan** sonni ko'rsatadi: "Avto"da uning yonida
+  "avto" belgisi, aniq qiymat chegaraga teng bo'lsa "modelning maksimumi"
+  belgisi; qiymat aniq bo'lganda "«Avto»ga qaytarish" tugmasi chiqadi; bitta
+  izoh satri holatni aytadi ("Avto" / OpenAI'dagi "Avto" / chegara e'lon
+  qilinmagan / aniq qiymat — oxirgisi neytral: bu sotuvchining o'z qiymati, "Avto"ga
+  qaytish muvozanatli byudjetni qaytaradi); slayder yuboriladigan son va belgini
+  `aria-valuetext` bilan ham aytadi. v5 → v6 migratsiyasi
+  ([`settingsSchema.ts`](./frontend/src/services/storage/settingsSchema.ts#L397))
+  saqlangan 4 096'ni "Avto"ga o'tkazadi: u tegilmagan eski odatiy qiymatdan
+  farq qilmaydi; boshqa har qanday qiymat ongli tanlov sifatida saqlanadi
+  (v3 → v4 yangilik muddatidagi mulohazaning o'zi). **Dalil kuchsiz:**
+  chegaralar vendorlarning hujjat sahifalaridan
+  ([`OUTPUT_CEILINGS_AS_OF`](./frontend/src/services/ai/modelRules.ts#L59) —
+  2026-11-04) olingan, 16 384 va 32 000 byudjetlari esa hech bir jonli hisob
+  bilan sinab ko'rilmagan — ikkalasi ham tanlangan boshlang'ich qiymat, o'lchangan
+  natija emas.
 
 ---
 
@@ -870,8 +929,8 @@ npm run test:watch # vitest
 uchun. Tekshiruv modul nomida qism-satr bo'yicha, shuning uchun tartib muhim:
 `vendor-markdown` `vendor-react` dan oldin turadi.
 
-**Hozirgi holat (2026-09-29):** typecheck ✅ · lint ✅ · test ✅ (611 ta) · build ✅
-(asosiy bundle 527 KB / gzip 173 KB)
+**Hozirgi holat (2026-11-11):** typecheck ✅ · lint ✅ · test ✅ (639 ta) · build ✅
+(asosiy bundle 528 KB / gzip 173 KB)
 
 **Ishlab chiqish jamoasi.** Loyiha ustida ishlaydigan agentlar tuzilmasi
 [CLAUDE.md](./CLAUDE.md) va [`.claude/agents/`](./.claude/agents/) da:
@@ -902,12 +961,13 @@ uchun. Tekshiruv modul nomida qism-satr bo'yicha, shuning uchun tartib muhim:
 | `insights/pins.test.ts` | Saqlangan kartani o'qish — eski `ref`li kartalar tashlanadi |
 | `insights/alerts.test.ts` | Qoidalar — imzo, sovish vaqti, har bir tur |
 | `ai/jsonSchema.test.ts` | Zod → JSON Schema konvertatsiyasi |
-| `ai/stream.test.ts` | Qayta urinish qarori — qaysi xato takrorlanadi, `Retry-After`, chekinish oralig'i, kunlik (RPD) `429` hech qachon takrorlanmasligi |
+| `ai/stream.test.ts` | Qayta urinish qarori — qaysi xato takrorlanadi, `Retry-After`, chekinish oralig'i, kunlik (RPD) `429` hech qachon takrorlanmasligi; "Avto" har bir yozuv shaklida muvozanatli byudjetni beradi, belgi qiymatni esa hech qachon |
 | `ai/usage.test.ts` | Kvota o'lchagichi — `readQuotaFailure`/`isKeyRejection`ning himoyalangan o'qishi, RPM/TPM/RPD gauge arifmetikasi, Tinch okean yarim tunining DST'dagi holati, `summarizeTokens` |
 | `ai/client.test.ts` | OpenAI Responses'ning bir martalik javobi — `firstOpenAiResponsesText`, `usageOf` provayder bo'yicha, `incomplete`/`failed` klassifikatsiyasi |
 | `ai/connection.test.ts` | Ulanish testi va model ro'yxati — CORS orqasidagi 401'ni tarmoq xatosidan ajratish, OpenAI'ning chat bo'lmagan modellarini filtrlash |
 | `ai/pricing.test.ts` | Narx jadvali — eng uzun prefiks g'olib, kesh chegirmasi, GPT-6 narxlari |
-| `storage/settingsSchema.test.ts` | v4 → v5 migratsiyasi — ikkala eski v4 shaklidan ham (umumiy maydon, oraliq `saved` yon jadval) to'g'ri o'tish |
+| `ai/modelRules.test.ts` | Chiqish tokenlari chegaralari jadvali va `effectiveMaxTokens()`ning har bir shoxi ("Avto" — OpenAI/boshqa/noma'lum chegara, aniq qiymat — chegaragacha/noma'lum chegara) |
+| `storage/settingsSchema.test.ts` | v4 → v5 migratsiyasi — ikkala eski v4 shaklidan ham (umumiy maydon, oraliq `saved` yon jadval) to'g'ri o'tish; v5 → v6 (4 096 → "Avto", boshqa qiymat saqlanadi), v4 → v6 zanjiri, v6 tegilmasligi |
 | `storage/aiConnections.test.ts` | Provayderlar orasidagi izolyatsiya — bitta kartaning tahriri boshqa provayderning yozuviga tegmasligi |
 | `store/modelUsage.store.test.ts` | Voqealar jurnali — restore va kelayotgan hodisa orasidagi poyga, `BroadcastChannel` orqali qo'shilish |
 | `insights/session.test.ts` | Javob sessiyasi — to'xtagan joydan davom ettirish, ochilgan hujjatlar nusxasi |
@@ -937,7 +997,7 @@ uchun. Tekshiruv modul nomida qism-satr bo'yicha, shuning uchun tartib muhim:
 | Model Uzum'ga yozmaydi | Yopiq amallar registri, xavf darajasi, tugma + tasdiq oynasi (10.4) |
 | Provayder band bo'lsa davom ettirish | `RETRIES`, `Retry-After`, sessiya `checkpoint` dan davom etadi; kunlik (RPD) limitda takrorlanmaydi (10.1, 10.7) |
 | Gemini modeli tanlanganda qolgan limitni bilish | `AI_PROVIDERS[…].limits` katalogi + so'ralgan har bir javobdan hisob (`ai/usage.ts`), model tanlash va "Qolgan limit" paneli (10.7) |
-| Provayder almashtirilganda kalit boshqasiga o'tib ketmasligi | Sozlamalar sxemasi v5 — `AiSection.providers`, har biri mustaqil; `updateAiConnection`/`setActiveAiProvider` atom yozuvlari (10.7) |
+| Provayder almashtirilganda kalit boshqasiga o'tib ketmasligi | Sozlamalar sxemasi v6 — `AiSection.providers`, har biri mustaqil; `updateAiConnection`/`setActiveAiProvider` atom yozuvlari (10.7) |
 | Sotuvchi bugungi token sarfini ko'rishi | `summarizeTokens()` va har bir provayder kartasidagi "Token sarfi" paneli, qo'lda kiritilgan narx jadvalidan taxminiy xarajat (10.7) |
 | Javobni panelga qadash | Sana va davr bilan surat, "qayta so'rash" tugmasi (10.5) |
 
@@ -962,7 +1022,7 @@ Ustuvorlik tartibida:
   [ENDPOINTS.md](./frontend/src/services/uzum/ENDPOINTS.md), 12.3-bo'lim.
 
 ### 2. Testlar bor, lekin saqlash qatlami qoplanmagan
-Sof funksiyalar qoplandi (611 ta test): `coverage.ts` interval algebrasi,
+Sof funksiyalar qoplandi (639 ta test): `coverage.ts` interval algebrasi,
 Copilot protokoli, toolkit arifmetikasi, AI provayder transporti va
 sozlamalar sxemasi. Qolgani: `archivePlan.ts`, `paginate()`, wire→row
 mapperlar, `missingRanges()` va v2→v3 migratsiyasi. Bular IndexedDB talab

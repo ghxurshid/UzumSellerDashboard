@@ -15,6 +15,7 @@ import {
   anthropicHeaders,
   classifyOpenAiFailure,
   claudeSamplingFields,
+  effectiveMaxTokens,
   geminiHeaders,
   geminiThinkingLevel,
   isAiConfigured,
@@ -928,7 +929,7 @@ export function dialectFor(settings: AiSettings, request: StreamRequest): Dialec
       url: `${base}/messages`,
       body: {
         model: settings.model,
-        max_tokens: settings.maxTokens,
+        max_tokens: effectiveMaxTokens(settings),
         ...claudeSamplingFields(settings),
         /* An array rather than a string, so the whole instruction can carry a
            cache marker of its own. */
@@ -979,7 +980,7 @@ export function dialectFor(settings: AiSettings, request: StreamRequest): Dialec
         contents: geminiContents(request.messages),
         generationConfig: {
           temperature: settings.temperature,
-          maxOutputTokens: settings.maxTokens,
+          maxOutputTokens: effectiveMaxTokens(settings),
           ...(thinkingLevel === null ? {} : { thinkingConfig: { thinkingLevel } }),
         },
         ...(tools.length === 0

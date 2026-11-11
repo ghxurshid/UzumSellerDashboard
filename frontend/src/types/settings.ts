@@ -89,6 +89,17 @@ export interface AiConnection {
   readonly model: string;
   readonly timeoutMs: number;
   readonly temperature: number;
+  /**
+   * The seller's output-token ceiling, not the figure sent. The top of
+   * `MAX_TOKENS_BOUNDS` (the default) means "Auto": the app's balanced output
+   * budget for the chosen model, enough for a complete answer without spending
+   * the provider's limits for nothing. Any other value is the seller's own
+   * ceiling, clamped to the model's published ceiling, so asking for exactly
+   * that ceiling is how the model's maximum is requested; where no ceiling is
+   * published it is capped at `UNKNOWN_CEILING_SLIDER_TOP` instead. The transport
+   * resolves the stored value per model through `effectiveMaxTokens` /
+   * `balancedMaxTokens` in `services/ai/modelRules.ts`, which own the figures.
+   */
   readonly maxTokens: number;
   /** OpenAI `OpenAI-Organization` header; '' = not sent. */
   readonly orgId: string;
@@ -266,7 +277,8 @@ export interface AiProviderDefinition {
   readonly params: readonly AiParam[];
   /**
    * This provider's own defaults over the app-wide ones (temperature 0.2,
-   * maxTokens 4096, timeout 60 s, '' / false for params).
+   * maxTokens "Auto" — the balanced per-model budget from
+   * `services/ai/modelRules.ts`, timeout 60 s, '' / false for params).
    */
   readonly defaults?: Partial<Omit<AiConnection, 'baseUrl' | 'apiKey' | 'model'>>;
 }

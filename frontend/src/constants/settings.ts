@@ -31,10 +31,12 @@ export const SETTINGS_STORAGE_KEY = 'savdo.settings';
  * every AI provider its own complete configuration (a `providers` map keyed
  * by provider, with the active one named by `provider`), migrated from v4's
  * flat active-provider fields plus the `saved` side-table of the ones the
- * seller had switched away from. See `MIGRATIONS` in
- * `services/storage/settingsSchema.ts`.
+ * seller had switched away from. v6 moved the default output-token budget from
+ * 4,096 to the top of `MAX_TOKENS_BOUNDS`, which means "Auto" — the balanced
+ * per-model budget resolved in `services/ai/modelRules.ts`. See
+ * `MIGRATIONS` in `services/storage/settingsSchema.ts`.
  */
-export const SETTINGS_SCHEMA_VERSION = 5;
+export const SETTINGS_SCHEMA_VERSION = 6;
 
 /* ── Uzum seller API ────────────────────────────────────────────────────── */
 
@@ -74,10 +76,20 @@ export const DEFAULT_FRESHNESS_MINUTES = 60;
 /** The design offers three fixed timeouts rather than a free-text field. */
 export const AI_TIMEOUT_OPTIONS = [30_000, 60_000, 120_000] as const;
 
-/** Sampling ranges, matching the design's slider `min`/`max`/`step`. */
+/** Temperature range, matching the design's slider `min`/`max`/`step`. */
 export const TEMPERATURE_BOUNDS = { min: 0, max: 1 } as const;
 export const TEMPERATURE_STEP = 0.05;
-export const MAX_TOKENS_BOUNDS = { min: 1_024, max: 32_000 } as const;
+/**
+ * The output-token range of the sanitiser's clamp. `max` is a stored meaning,
+ * not a figure: it reads "Auto" — the app's balanced budget for the model — and
+ * is never sent as-is; the transport resolves it per model through
+ * `effectiveMaxTokens` in `services/ai/modelRules.ts`. The slider never writes
+ * it (it stops at the model's own ceiling, or at `UNKNOWN_CEILING_SLIDER_TOP`
+ * when none is published); only "back to Auto" does. Keep
+ * `max` above every output ceiling the transport knows, so no real ceiling can
+ * collide with the sentinel.
+ */
+export const MAX_TOKENS_BOUNDS = { min: 1_024, max: 1_048_576 } as const;
 export const MAX_TOKENS_STEP = 256;
 
 /** Upper bounds for free-text fields, so a corrupt store cannot hold a novel. */
@@ -407,7 +419,8 @@ export function describeModel(ai: Pick<AiSettings, 'provider' | 'model'>): strin
 export const AI_CONNECTION_DEFAULTS: Omit<AiConnection, 'baseUrl' | 'apiKey' | 'model'> = {
   timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
   temperature: 0.2,
-  maxTokens: 4_096,
+  // The top of the range means "Auto", the balanced per-model budget (see MAX_TOKENS_BOUNDS).
+  maxTokens: MAX_TOKENS_BOUNDS.max,
   orgId: '',
   projectId: '',
   reasoningEffort: '',

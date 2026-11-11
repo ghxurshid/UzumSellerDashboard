@@ -279,6 +279,72 @@ describe('ai provider migration (v4 -> v5)', () => {
 });
 
 /**
+ * The v5 -> v6 migration: the default output budget rose from 4,096 to "Auto"
+ * (the `MAX_TOKENS_BOUNDS.max` sentinel, resolved to a balanced budget by the transport). Only a stored 4,096 moves; anything else is a
+ * deliberate choice.
+ */
+describe('output-token default migration (v5 -> v6)', () => {
+  it('moves a stored 4,096 to Auto and leaves every other value alone', () => {
+    const settings = parseStoredSettings({
+      version: 5,
+      settings: {
+        ai: {
+          provider: 'gemini',
+          providers: {
+            gemini: { apiKey: 'g-key', maxTokens: 4_096 },
+            openai: { apiKey: 'o-key', maxTokens: 8_192 },
+            claude: { apiKey: 'c-key' },
+            deepseek: 'not an object',
+          },
+        },
+      },
+    });
+
+    expect(settings.ai.providers.gemini.maxTokens).toBe(MAX_TOKENS_BOUNDS.max);
+    expect(settings.ai.providers.gemini.apiKey).toBe('g-key');
+    expect(settings.ai.providers.openai.maxTokens).toBe(8_192);
+    expect(settings.ai.providers.claude.maxTokens).toBe(defaultAiConnection('claude').maxTokens);
+    expect(settings.ai.providers.claude.maxTokens).toBe(MAX_TOKENS_BOUNDS.max);
+    expect(settings.ai.providers.deepseek).toEqual(defaultAiConnection('deepseek'));
+  });
+
+  it('chains a v4 flat payload through the ai step and this one', () => {
+    const settings = parseStoredSettings({
+      version: 4,
+      settings: { ai: { provider: 'openai', apiKey: 'o-key', maxTokens: 4_096 } },
+    });
+
+    expect(settings.ai.providers.openai.apiKey).toBe('o-key');
+    expect(settings.ai.providers.openai.maxTokens).toBe(MAX_TOKENS_BOUNDS.max);
+  });
+
+  it('does not touch a 4,096 stored by a v6 build — the seller chose it after the step ran', () => {
+    const settings = parseStoredSettings({
+      version: SETTINGS_SCHEMA_VERSION,
+      settings: { ai: { provider: 'gemini', providers: { gemini: { maxTokens: 4_096 } } } },
+    });
+
+    expect(settings.ai.providers.gemini.maxTokens).toBe(4_096);
+  });
+
+  it('survives a payload with no ai section or a malformed providers value', () => {
+    /* `migrate()` swallows a step's exception, so "does not throw" alone can
+       never fail. The real check is the outcome: every provider lands on its
+       own catalogue default, whose maxTokens is the Auto sentinel. */
+    for (const stored of [{}, { ai: { providers: 7 } }]) {
+      const settings = parseStoredSettings({ version: 5, settings: stored });
+
+      expect(settings.ai.provider).toBe(DEFAULT_AI_PROVIDER);
+      for (const id of AI_PROVIDER_IDS) {
+        expect(settings.ai.providers[id].maxTokens).toBe(defaultAiConnection(id).maxTokens);
+        expect(settings.ai.providers[id].maxTokens).toBe(MAX_TOKENS_BOUNDS.max);
+        expect(settings.ai.providers[id]).toEqual(defaultAiConnection(id));
+      }
+    }
+  });
+});
+
+/**
  * `sanitizeAi`/`sanitizeConnection` — every provider's connection is
  * validated on its own, against its own catalogue defaults, never against
  * another provider's or the generic app-wide ones.
@@ -341,7 +407,7 @@ describe('sanitizeSettings — ai section', () => {
 
   it('clamps temperature and maxTokens to their bounds rather than rejecting to the default', () => {
     const { ai } = sanitizeSettings({
-      ai: { providers: { gemini: { temperature: 5, maxTokens: 999_999 } } },
+      ai: { providers: { gemini: { temperature: 5, maxTokens: MAX_TOKENS_BOUNDS.max + 1_000_000 } } },
     });
 
     expect(ai.providers.gemini.temperature).toBe(TEMPERATURE_BOUNDS.max);

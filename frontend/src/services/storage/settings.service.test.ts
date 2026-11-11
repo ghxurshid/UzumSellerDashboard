@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { DEFAULT_SETTINGS } from '@/constants/settings';
+import { DEFAULT_SETTINGS, MAX_TOKENS_BOUNDS } from '@/constants/settings';
 
 import {
   getSettings,
@@ -45,8 +45,8 @@ describe('updateAiConnection — the seller\'s reported bug, pinned', () => {
   });
 
   it('sanitises the patch the same way a full write would — an out-of-range value is clamped, not stored raw', () => {
-    const settings = updateAiConnection('gemini', { maxTokens: 999_999 });
-    expect(settings.ai.providers.gemini.maxTokens).toBeLessThanOrEqual(32_000);
+    const settings = updateAiConnection('gemini', { maxTokens: MAX_TOKENS_BOUNDS.max + 1_000_000 });
+    expect(settings.ai.providers.gemini.maxTokens).toBe(MAX_TOKENS_BOUNDS.max);
   });
 
   it('reads `snapshot` at call time, not a value the caller captured earlier', () => {

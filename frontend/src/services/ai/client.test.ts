@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_AI_SETTINGS, defaultAiConnection } from '@/constants/settings';
+import { DEFAULT_AI_SETTINGS, MAX_TOKENS_BOUNDS, defaultAiConnection } from '@/constants/settings';
 import type { AiProvider, AiSettings } from '@/types/settings';
 
 /**
@@ -130,6 +130,72 @@ describe('usageOf', () => {
       outputTokens: null,
       reasoningTokens: null,
     });
+  });
+});
+
+describe('complete — the Auto sentinel never reaches the wire', () => {
+  const request = { system: 's', messages: [{ role: 'user' as const, content: 'hi' }] };
+
+  /** Every number anywhere in a JSON body, so a leak cannot hide under a renamed field. */
+  function numbersIn(value: unknown): number[] {
+    if (typeof value === 'number') return [value];
+    if (Array.isArray(value)) return value.flatMap(numbersIn);
+    if (value !== null && typeof value === 'object') return Object.values(value).flatMap(numbersIn);
+    return [];
+  }
+
+  function sentBody(): Record<string, unknown> {
+    return (post.mock.calls[0] as [string, Record<string, unknown>])[1];
+  }
+
+  it('sends claude-opus-5 the balanced 32,000 as max_tokens on Auto', async () => {
+    post.mockResolvedValue({ data: { content: [{ type: 'text', text: 'ok' }] } });
+
+    await complete(
+      settingsFor({ provider: 'claude', model: 'claude-opus-5', maxTokens: MAX_TOKENS_BOUNDS.max }),
+      request,
+    );
+
+    expect(sentBody()['max_tokens']).toBe(32_000);
+    expect(numbersIn(sentBody())).not.toContain(MAX_TOKENS_BOUNDS.max);
+  });
+
+  it('sends gemini-3.6-flash the balanced 32,000 as generationConfig.maxOutputTokens', async () => {
+    post.mockResolvedValue({ data: { candidates: [{ content: { parts: [{ text: 'ok' }] } }] } });
+
+    await complete(
+      settingsFor({ provider: 'gemini', model: 'gemini-3.6-flash', maxTokens: MAX_TOKENS_BOUNDS.max }),
+      request,
+    );
+
+    const config = sentBody()['generationConfig'] as Record<string, unknown>;
+    expect(config['maxOutputTokens']).toBe(32_000);
+    expect(numbersIn(sentBody())).not.toContain(MAX_TOKENS_BOUNDS.max);
+  });
+
+  it('keeps the sentinel off the OpenAI Responses body', async () => {
+    post.mockResolvedValue({
+      data: { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'ok' }] }] },
+    });
+
+    await complete(
+      settingsFor({ provider: 'openai', model: 'gpt-6-sol', maxTokens: MAX_TOKENS_BOUNDS.max }),
+      request,
+    );
+
+    expect(sentBody()['max_output_tokens']).toBe(16_384);
+    expect(numbersIn(sentBody())).not.toContain(MAX_TOKENS_BOUNDS.max);
+  });
+
+  it('keeps the sentinel off an OpenAI-compatible body', async () => {
+    post.mockResolvedValue({ data: { choices: [{ message: { content: 'ok' } }] } });
+
+    await complete(
+      settingsFor({ provider: 'deepseek', model: 'deepseek-flash', maxTokens: MAX_TOKENS_BOUNDS.max }),
+      request,
+    );
+
+    expect(numbersIn(sentBody())).not.toContain(MAX_TOKENS_BOUNDS.max);
   });
 });
 

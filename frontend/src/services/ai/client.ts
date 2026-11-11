@@ -7,6 +7,7 @@ import {
   anthropicHeaders,
   classifyOpenAiFailure,
   claudeSamplingFields,
+  effectiveMaxTokens,
   geminiHeaders,
   geminiThinkingLevel,
   isAiConfigured,
@@ -311,7 +312,7 @@ export async function complete(
       `${base}/messages`,
       {
         model: settings.model,
-        max_tokens: settings.maxTokens,
+        max_tokens: effectiveMaxTokens(settings),
         ...claudeSamplingFields(settings),
         system: request.system,
         messages: request.messages,
@@ -338,7 +339,7 @@ export async function complete(
         })),
         generationConfig: {
           temperature: settings.temperature,
-          maxOutputTokens: settings.maxTokens,
+          maxOutputTokens: effectiveMaxTokens(settings),
           ...(thinkingLevel === null ? {} : { thinkingConfig: { thinkingLevel } }),
         },
       },

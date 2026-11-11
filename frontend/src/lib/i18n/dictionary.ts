@@ -430,10 +430,38 @@ const TUPLES = {
     'Низкая — аналитичные ответы',
     'Past — tahliliy, takrorlanuvchi javoblar',
   ],
-  tokHint: [
-    'Enough for a full P&L narrative with tables',
-    'Хватает на полный отчёт с таблицами',
-    "Jadvalli to'liq hisobot uchun yetarli",
+  tokExplicitHint: [
+    'Your own value: a request never asks for more than this. "Reset to Auto" returns to the balanced budget.',
+    'Ваше значение: запрос никогда не просит больше этого. «Вернуть „Авто“» возвращает сбалансированный бюджет.',
+    "O'zingizning qiymatingiz: so'rov bundan ortig'ini hech qachon so'ramaydi. «Avto»ga qaytarish muvozanatli byudjetni tiklaydi.",
+  ],
+  tokModelMax: ['model maximum', 'максимум модели', 'modelning maksimumi'],
+  tokAuto: ['auto', 'авто', 'avto'],
+  tokBackToAuto: ['Reset to Auto', 'Вернуть «Авто»', "«Avto»ga qaytarish"],
+  tokBackToAutoLabel: [
+    'Reset output tokens to Auto, the balanced budget',
+    'Вернуть для токенов ответа режим «Авто» — сбалансированный бюджет',
+    "Javob tokenlarini «Avto» rejimiga, ya'ni muvozanatli byudjetga qaytarish",
+  ],
+  tokAutoHint: [
+    'Auto: a balanced budget the app picks for this model. Move the slider to override it.',
+    'Авто: сбалансированный бюджет, который приложение выбирает для этой модели. Ползунок переопределяет его.',
+    "Avto: ilova shu model uchun tanlagan muvozanatli byudjet. Slayderni siljitsangiz, u bekor bo'ladi.",
+  ],
+  tokAutoHintOpenai: [
+    "Auto: a balanced budget the app picks for this model, kept lower for OpenAI because its rate limit counts the larger of the maximum and the estimated request size, so a high maximum uses up the per-minute token limit even when the answer is short. Move the slider to override it.",
+    'Авто: сбалансированный бюджет, который приложение выбирает для этой модели; для OpenAI он ниже, потому что лимит считается по большему из максимума и оценки размера запроса, и высокий максимум расходует минутный лимит токенов, даже если ответ короткий. Ползунок переопределяет его.',
+    "Avto: ilova shu model uchun tanlagan muvozanatli byudjet; OpenAI uchun past, chunki limit maksimum va so'rov hajmi bahosidan kattasi bo'yicha hisoblanadi, shuning uchun yuqori maksimum javob qisqa bo'lsa ham daqiqalik token limitini sarflaydi. Slayderni siljitsangiz, u bekor bo'ladi.",
+  ],
+  tokUnknownCeilingHint: [
+    "Auto: this model's output limit is not published, so {n} is sent. Move the slider to choose a value yourself.",
+    'Авто: лимит вывода этой модели не опубликован, поэтому отправляется {n}. Выберите значение сами ползунком.',
+    "Avto: bu modelning chiqish limiti e'lon qilinmagan, shuning uchun {n} yuboriladi. Qiymatni slayder bilan o'zingiz tanlang.",
+  ],
+  tokCeilingSource: [
+    "Model limit from the vendor's docs, as of {date}",
+    'Лимит модели по документации разработчика, по состоянию на {date}',
+    "Model limiti ishlab chiqaruvchi hujjatidan, {date} holatiga ko'ra",
   ],
   keysSub: ['Everything reachable without the mouse.', 'Всё доступно без мыши.', 'Sichqonchasiz hammasi mavjud.'],
 

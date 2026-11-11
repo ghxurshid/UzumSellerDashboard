@@ -1,3 +1,4 @@
+import { MAX_TOKENS_BOUNDS } from '@/constants/settings';
 import { ApiError } from '@/services/api/client';
 import type { AiProvider, AiSettings, ReasoningEffort, ThinkingLevel } from '@/types/settings';
 
@@ -47,6 +48,115 @@ function matchPrefix<T>(id: string, table: ReadonlyArray<readonly [string, T]>, 
   }
 
   return best;
+}
+
+/* ── output-token ceilings ──────────────────────────────────────────────── */
+
+/**
+ * When the ceilings below were last checked against each vendor's own model
+ * page. They change with every model release — re-verify before editing.
+ */
+export const OUTPUT_CEILINGS_AS_OF = '2026-11-04';
+
+/** What Auto sends when the model's ceiling is not known: the previous default. */
+export const UNKNOWN_CEILING_MAX_TOKENS = 4_096;
+
+/** Largest explicit value sent to a model of unknown ceiling: the old slider top, the most this app ever sent before. */
+export const UNKNOWN_CEILING_SLIDER_TOP = 32_000;
+
+/**
+ * Published maximum output tokens, thinking/reasoning included. Exact ids
+ * only: a provider that publishes no figure (Mistral publishes context
+ * windows only, `grok-4.3`) or a gateway that proxies arbitrary models
+ * (OpenRouter, Ollama, custom) is absent on purpose — never a guess.
+ *
+ * Sources, as of OUTPUT_CEILINGS_AS_OF:
+ * - Gemini: ai.google.dev/gemini-api/docs/models/<id> and /docs/tokens
+ *   ("Gemini 3 and 2.5: 65,536 output"); the thinking guide says the cap
+ *   includes thinking tokens and a synchronous request above it is a 400.
+ * - OpenAI: developers.openai.com/api/docs/models/<id>.
+ * - Claude: Anthropic's models overview table.
+ * - DeepSeek: api-docs.deepseek.com/quick_start/pricing (max_tokens 1..393,216).
+ * - Grok: docs.x.ai/developers/models/grok-4.7 states no text output limit;
+ *   xAI's best-practices guide gives 128,000 as the unset default, so it is
+ *   a documented, accepted value.
+ */
+const OUTPUT_CEILINGS: Readonly<Partial<Record<AiProvider, Readonly<Record<string, number>>>>> = {
+  gemini: {
+    'gemini-3.8-flash': 65_536,
+    'gemini-3.7-flash': 65_536,
+    'gemini-3.6-flash': 65_536,
+    'gemini-3.5-flash': 65_536,
+    'gemini-3.5-flash-lite': 65_536,
+    'gemini-3.1-flash-lite': 65_536,
+    'gemini-3-flash-preview': 65_536,
+    'gemini-2.5-flash': 65_536,
+    'gemini-2.5-flash-lite': 65_536,
+  },
+  openai: { 'gpt-6-astra': 128_000, 'gpt-6-sol': 128_000, 'gpt-6-luna': 128_000 },
+  claude: { 'claude-opus-5': 128_000, 'claude-sonnet-5': 128_000, 'claude-haiku-4-5': 64_000 },
+  deepseek: { 'deepseek-v4-pro': 393_216, 'deepseek-flash': 393_216 },
+  grok: { 'grok-4.7': 128_000 },
+};
+
+/** Published max output tokens (thinking/reasoning included), or null when not published. */
+export function outputTokenCeiling(provider: AiProvider, model: string): number | null {
+  const id = model.trim().toLowerCase();
+  // Own-property lookup so an id like "constructor" cannot hit the prototype.
+  const table = OUTPUT_CEILINGS[provider];
+  if (table === undefined || !Object.prototype.hasOwnProperty.call(table, id)) return null;
+  return table[id] ?? null;
+}
+
+/**
+ * The Auto budget for OpenAI. Smaller than the others because OpenAI's
+ * rate-limit guide (developers.openai.com/api/docs/guides/rate-limits, read
+ * 2026-11-11) says the limit is calculated as the maximum of `max_tokens` and
+ * the estimated tokens of the request, and advises setting `max_tokens` close
+ * to the expected response size: the requested maximum is reserved against
+ * TPM whether or not the model writes it, so a large value brings 429s sooner.
+ */
+export const AUTO_MAX_TOKENS_OPENAI = 16_384;
+
+/**
+ * The Auto budget for every other provider. Claude: Anthropic's rate-limits
+ * page (platform.claude.com/docs/en/api/rate-limits, read 2026-11-11) says OTPM
+ * limits are evaluated as output tokens are produced, "counting only the actual
+ * tokens generated", and that `max_tokens` does not factor in. Gemini and
+ * DeepSeek: an earlier session's reading of their docs, not re-read today and
+ * not measured by this project. So this cap exists to bound a runaway
+ * generation and its cost, not to protect a rate limit — hence a higher figure
+ * than OpenAI's.
+ */
+export const AUTO_MAX_TOKENS_DEFAULT = 32_000;
+
+/** Whether the stored value is the Auto sentinel, `MAX_TOKENS_BOUNDS.max` (or above). */
+export function isAutoMaxTokens(maxTokens: number): boolean {
+  return maxTokens >= MAX_TOKENS_BOUNDS.max;
+}
+
+/**
+ * What Auto sends: the app's balanced budget — enough for a good answer,
+ * never more than the model can write, and nothing like the model's own
+ * maximum. A model whose ceiling is unknown keeps the old 4,096 default.
+ */
+export function balancedMaxTokens(provider: AiProvider, model: string): number {
+  const ceiling = outputTokenCeiling(provider, model);
+  if (ceiling === null) return UNKNOWN_CEILING_MAX_TOKENS;
+  return Math.min(ceiling, provider === 'openai' ? AUTO_MAX_TOKENS_OPENAI : AUTO_MAX_TOKENS_DEFAULT);
+}
+
+/**
+ * The one budget every dialect sends. The stored sentinel `MAX_TOKENS_BOUNDS.max`
+ * means Auto (`balancedMaxTokens`) and must never reach the wire as-is; an
+ * explicit value is honoured up to the model's ceiling, so choosing the
+ * ceiling itself is how a seller asks for the model's maximum.
+ */
+export function effectiveMaxTokens(ai: Pick<AiSettings, 'provider' | 'model' | 'maxTokens'>): number {
+  if (isAutoMaxTokens(ai.maxTokens)) return balancedMaxTokens(ai.provider, ai.model);
+  const ceiling = outputTokenCeiling(ai.provider, ai.model);
+  if (ceiling !== null) return Math.min(ai.maxTokens, ceiling);
+  return Math.min(ai.maxTokens, UNKNOWN_CEILING_SLIDER_TOP);
 }
 
 /* ── Claude sampling ────────────────────────────────────────────────────── */
@@ -318,7 +428,7 @@ export function openAiCompatibleSamplingFields(
 
   return {
     ...(samplingSupported(ai) ? { temperature: ai.temperature } : {}),
-    max_tokens: ai.maxTokens,
+    max_tokens: effectiveMaxTokens(ai),
     /* DeepSeek's own toggle — the seller's choice, no longer hard-coded. */
     ...(ai.provider === 'deepseek' ? { thinking: { type: ai.thinking ? 'enabled' : 'disabled' } } : {}),
     ...(grokEffort === null ? {} : { reasoning_effort: grokEffort }),
@@ -346,7 +456,7 @@ export function openAiResponsesFields(
   const effort = validReasoningEffort('openai', ai.model, ai.reasoningEffort);
 
   return {
-    max_output_tokens: ai.maxTokens,
+    max_output_tokens: effectiveMaxTokens({ provider: 'openai', model: ai.model, maxTokens: ai.maxTokens }),
     store: false,
     ...(openAiSendsTemperature(ai.model) ? { temperature: ai.temperature } : {}),
     ...(openAiIsReasoningModel(ai.model) ? { include: ['reasoning.encrypted_content'] } : {}),

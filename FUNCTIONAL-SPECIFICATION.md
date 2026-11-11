@@ -1,7 +1,7 @@
 # Savdo Copilot — Funksional spetsifikatsiya
 
-**Versiya:** 2.7.0
-**Hujjat sanasi:** 2026-09-29
+**Versiya:** 2.8.0
+**Hujjat sanasi:** 2026-11-11
 **Maqsad:** Mahsulot oddiy foydalanuvchi — Uzum Market sotuvchisi — nuqtai nazaridan
 nima qilishini ifodalash. Bu yerda texnik yechim yo'q; u
 [TECHNICAL-SPECIFICATION.md](./TECHNICAL-SPECIFICATION.md) da.
@@ -237,7 +237,11 @@ ochib ko'rsatadi — provayderni ishlatishga **o'tkazmaydi**. Har bir kartada
 o'sha provayderning butunlay o'z sozlamasi bor: kalit, manzil (aksariyat
 provayderlarda o'zgartirib bo'lmaydi), model ("Modellarni yuklash" tugmasi
 bilan kalit ko'rgan ro'yxatdan tanlab yoki qo'lda kiritib), so'rov kutish
-muddati, qo'llab-quvvatlansa — harorat va maksimal token, va o'sha
+muddati, qo'llab-quvvatlansa — harorat va maksimal token (odatda "Avto" —
+ilova shu model uchun tanlagan muvozanatli byudjet: javob sifati yetarli
+bo'lsin, limit va tokenlar bekorga ketmasin; sotuvchi slayder bilan aniq son
+tanlashi, hatto modelning o'z maksimumigacha ko'tarishi, so'ng "Avto"ga
+qaytishi mumkin; karta haqiqatan yuboriladigan sonni ko'rsatadi), va o'sha
 provayderga xos qo'shimcha parametrlar (masalan, OpenAI'ning tashkilot va
 loyiha identifikatori, Claude'ning API versiyasi, Gemini'ning fikrlash
 chuqurligi, DeepSeek'ning fikrlash rejimi) — har biri qaysi so'rov maydoniga

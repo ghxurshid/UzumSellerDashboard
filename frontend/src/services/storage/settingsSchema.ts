@@ -384,6 +384,36 @@ const MIGRATIONS: Readonly<Record<number, SettingsMigration>> = {
 
     return { ...root, ai: { provider: activeProvider, providers } };
   },
+
+  /* v5 → v6: the default output-token budget rose from 4,096 to "Auto" (the
+     app's balanced output budget for the model, stored as the sentinel
+     `MAX_TOKENS_BOUNDS.max`, which is never sent as-is — the transport resolves
+     it in `effectiveMaxTokens` / `balancedMaxTokens`, services/ai/modelRules.ts).
+     A stored 4,096 is
+     indistinguishable from a seller who never touched the slider, and is
+     exactly the value the new default replaces, so it moves forward with it.
+     Any other stored value — including a 4,096 chosen on purpose after this
+     step has already run once — is a deliberate choice and is left alone. */
+  5: (settings) => {
+    const root = asRecord(settings);
+    const ai = asRecord(root['ai']);
+    const providers = asRecord(ai['providers']);
+
+    const next: Record<string, unknown> = {};
+    for (const [id, entry] of Object.entries(providers)) {
+      if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+        next[id] = entry;
+        continue;
+      }
+      const connection = entry as Record<string, unknown>;
+      next[id] =
+        connection['maxTokens'] === 4_096
+          ? { ...connection, maxTokens: MAX_TOKENS_BOUNDS.max }
+          : connection;
+    }
+
+    return { ...root, ai: { ...ai, providers: next } };
+  },
 };
 
 function migrate(payload: unknown, fromVersion: number): unknown {

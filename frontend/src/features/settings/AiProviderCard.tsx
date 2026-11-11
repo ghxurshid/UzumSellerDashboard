@@ -13,15 +13,21 @@ import {
   TEMPERATURE_STEP,
   findProvider,
 } from '@/constants/settings';
-import { formatNumber } from '@/lib/format';
+import { formatCalendarDate, formatNumber } from '@/lib/format';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { cn } from '@/lib/utils';
 import { ApiError } from '@/services/api/client';
 import { testConnection } from '@/services/ai/connection';
 import {
+  OUTPUT_CEILINGS_AS_OF,
+  UNKNOWN_CEILING_MAX_TOKENS,
+  UNKNOWN_CEILING_SLIDER_TOP,
   canListModels,
+  effectiveMaxTokens,
   isAiConfigured,
+  isAutoMaxTokens,
   isHeaderSafe,
+  outputTokenCeiling,
   requiresApiKey,
   samplingSupported,
 } from '@/services/ai/modelRules';
@@ -95,6 +101,15 @@ export function AiProviderCard({ id, active, loadState, onLoadModels }: AiProvid
   const commit = (patch: Partial<AiConnection>): void => {
     updateConnection(id, patch);
   };
+
+  /* The label always shows what goes on the wire. Every slider position is an
+     explicit stored number — the top step is the model's own ceiling — and the
+     sentinel ("Auto") is written only by the reset button, so the thumb sitting
+     at the sent figure never contradicts what is stored. */
+  const tokenCeiling = outputTokenCeiling(id, resolved.model);
+  const sentTokens = effectiveMaxTokens(resolved);
+  const tokensAuto = isAutoMaxTokens(resolved.maxTokens);
+  const atModelMax = !tokensAuto && tokenCeiling !== null && sentTokens === tokenCeiling;
 
   /* A real round trip to this card's own configured endpoint and key, through
      the exact request the chat itself would send — whether or not this
@@ -271,23 +286,49 @@ export function AiProviderCard({ id, active, loadState, onLoadModels }: AiProvid
             </div>
 
             <div className="flex flex-col gap-5">
-              <label htmlFor={`ai-max-tokens-${id}`} className="flex items-center gap-6 text-xs text-dim">
-                {t('maxTok')}
-                <span data-numeric className="ml-auto text-text">
-                  {formatNumber(resolved.maxTokens)}
+              <div className="flex items-center gap-6 text-xs text-dim">
+                <label htmlFor={`ai-max-tokens-${id}`}>{t('maxTok')}</label>
+                {!tokensAuto && (
+                  <button
+                    type="button"
+                    aria-label={t('tokBackToAutoLabel')}
+                    onClick={() => commit({ maxTokens: MAX_TOKENS_BOUNDS.max })}
+                    className="tap ml-auto cursor-pointer border-0 bg-transparent p-0 text-mini text-acc-dim hover:underline"
+                  >
+                    {t('tokBackToAuto')}
+                  </button>
+                )}
+                <span data-numeric className={cn('text-text', tokensAuto && 'ml-auto')}>
+                  {tokensAuto && <span className="mr-5 text-tiny text-faint">{t('tokAuto')}</span>}
+                  {atModelMax && <span className="mr-5 text-tiny text-faint">{t('tokModelMax')}</span>}
+                  {formatNumber(sentTokens)}
                 </span>
-              </label>
+              </div>
               <input
                 id={`ai-max-tokens-${id}`}
                 type="range"
+                aria-valuetext={[tokensAuto ? t('tokAuto') : null, atModelMax ? t('tokModelMax') : null, formatNumber(sentTokens)]
+                  .filter((part) => part !== null)
+                  .join(' ')}
                 min={MAX_TOKENS_BOUNDS.min}
-                max={MAX_TOKENS_BOUNDS.max}
+                max={tokenCeiling ?? UNKNOWN_CEILING_SLIDER_TOP}
                 step={MAX_TOKENS_STEP}
-                value={resolved.maxTokens}
+                value={sentTokens}
                 onChange={(event) => commit({ maxTokens: Number(event.target.value) })}
                 className="w-full cursor-pointer bg-transparent"
               />
-              <span className="text-tiny text-faint">{t('tokHint')}</span>
+              <span className="text-tiny text-faint">
+                {!tokensAuto
+                  ? t('tokExplicitHint')
+                  : tokenCeiling === null
+                    ? t('tokUnknownCeilingHint', { n: formatNumber(UNKNOWN_CEILING_MAX_TOKENS) })
+                    : t(id === 'openai' ? 'tokAutoHintOpenai' : 'tokAutoHint')}
+              </span>
+              {tokenCeiling !== null && (
+                <span className="text-tiny text-faint">
+                  {t('tokCeilingSource', { date: formatCalendarDate(OUTPUT_CEILINGS_AS_OF) })}
+                </span>
+              )}
             </div>
           </div>
 
