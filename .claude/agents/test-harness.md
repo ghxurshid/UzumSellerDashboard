@@ -1,6 +1,6 @@
 ---
 name: test-harness
-description: Grows the automated test suite (Vitest, node environment, *.test.ts beside the subject) and its fixtures. Use to add coverage for pure logic that has none yet — sync planning (archivePlan), paginate() in uzum/http.ts, mappers, missingRanges, derive formulas, block/tool schemas, dataset arithmetic — to build fixtures from the recorded live API samples, or to add IndexedDB tests with fake-indexeddb. Examples - "write tests for archivePlan", "pin the expenses pagination bug with a test", "test the v2 to v3 migration", "cover net profit". Use PROACTIVELY after a change to interval algebra, planning, mappers, a financial formula or a Copilot schema that its owner did not cover.
+description: Grows the automated test suite (Vitest, node environment, *.test.ts beside the subject, in `frontend/`, `core/` and `extension/`) and its fixtures. Use to add coverage for pure logic that has none yet — sync planning (archivePlan), paginate() in uzum/http.ts, mappers, missingRanges, derive formulas, block/tool schemas, dataset arithmetic — to build fixtures from the recorded live API samples, or to add IndexedDB tests with fake-indexeddb. Examples - "write tests for archivePlan", "pin the expenses pagination bug with a test", "test the v2 to v3 migration", "cover net profit". Use PROACTIVELY after a change to interval algebra, planning, mappers, a financial formula or a Copilot schema that its owner did not cover.
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 color: green
@@ -13,11 +13,16 @@ prevent are not.
 
 ## The suite as it stands
 
-Vitest runs in the `node` environment (`vitest.config.ts`), with the `@/` alias,
-tests beside their subject as `*.test.ts`. Covered today: `storage/archive/coverage`,
-`storage/idb/aggregation`, `ai/stream`, `ai/jsonSchema`, and in
-`services/insights/`: `actions`, `agent` (protocol), `agent.loop`, `session`,
-`ndjson`, `plaintext`, `datasets`, `figures`, `pins`, `alerts`. Check the current
+Vitest runs in the `node` environment, tests beside their subject as `*.test.ts`, in
+three places: `frontend/src/` (with the `@/` and `@core/` aliases), `core/src/` and
+`extension/src/` (+ `extension/manifests/`). **Core's tests run from `frontend/`**
+(`frontend/vitest.config.ts` includes `../core/src/**/*.test.ts`); the extension's own
+config does not repeat them. Covered today: in `frontend/src/services/`
+`storage/archive/coverage`, `storage/idb/aggregation`, `sync/`, `queries/` and
+`insights/` (`actions`, `agent.loop`, `ai`, `alerts`, `datasets`, `digest`, `pins`,
+`sitePrompt`, `toolkit`); in `core/src/`: `ai/`, `agent/`, `tools/`, `settings/`,
+`state/`, `lib/format`, `ui/blocks/`, `ui/settings/`; in `extension/src/`: the bridge
+(`uzum/`), `content/`, `host/`, `panel/`, `tools/`, `storage/`, and the manifest test. Check the current
 list with `git ls-files '*.test.ts'` before planning — it grows.
 
 ## Priority order for what is missing
@@ -32,8 +37,9 @@ list with `git ls-files '*.test.ts'` before planning — it grows.
 4. **`storage/idb/metadata.repo.ts` `missingRanges()`**.
 5. **`derive/`** — finance and series formulas, status normalisation, bucketing at
    period edges, the rule cards in `derive/insights.ts`.
-6. **`insights/blocks.ts` schema** — every kind's limits and refinements (line
-   series length, donut sign), and **`insights/toolkit.ts`** argument schemas.
+6. **`core/src/agent/blocks.ts` schema** — every kind's limits and refinements (line
+   series length, donut sign), and the toolkit argument schemas
+   (`frontend/src/services/insights/toolkit.ts`, `extension/src/tools/`).
 7. **Schema and migration** with `fake-indexeddb` (a dev dependency to request
    from `platform-tooling`): stores and indexes created, the period index does not
    mix shops, a v2 database upgrades to v3 without losing coverage.

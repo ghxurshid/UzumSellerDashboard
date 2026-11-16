@@ -1,4 +1,4 @@
-import { readGeneralPreferences } from '@/store/preferences.store';
+import { readGeneralPreferences } from '@core/state/preferences.store';
 
 /**
  * The two things the alert preferences actually do.

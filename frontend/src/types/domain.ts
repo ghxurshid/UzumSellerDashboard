@@ -54,11 +54,18 @@ export type StateKind = 'ok' | 'skel' | 'block';
 
 export type NetworkState = 'online' | 'offline';
 export type SessionState = 'ok' | 'expired';
-export type ThemeMode = 'dark' | 'light' | 'system';
-export type Language = 'uz' | 'en' | 'ru';
+/* Host-agnostic vocabulary lives in core so the engine and both hosts share it. */
+import type { ChatRole, Tone, Trend } from '@core/types/common';
 
-export type Trend = 'up' | 'down' | 'flat';
-export type Tone = 'positive' | 'negative' | 'warning' | 'neutral' | 'accent';
+export type {
+  ChatRole,
+  Language,
+  ThemeMode,
+  Toast,
+  ToastKind,
+  Tone,
+  Trend,
+} from '@core/types/common';
 
 /* ── stores & range ─────────────────────────────────────────────────────── */
 
@@ -355,8 +362,6 @@ export interface Notification {
  */
 export type InsightSeverity = 'critical' | 'high' | 'watch' | 'idea';
 
-export type ChatRole = 'user' | 'assistant';
-
 export interface ChatMessage {
   readonly id: string;
   readonly role: ChatRole;
@@ -366,16 +371,6 @@ export interface ChatMessage {
 }
 
 /* ── toasts, progress, confirmations ────────────────────────────────────── */
-
-export type ToastKind = 'ok' | 'err' | 'warn' | 'info' | 'load';
-
-export interface Toast {
-  readonly id: string;
-  readonly text: string;
-  readonly kind: ToastKind;
-  readonly actionLabel?: string;
-  readonly sticky?: boolean;
-}
 
 /**
  * A long-running operation the user can watch.

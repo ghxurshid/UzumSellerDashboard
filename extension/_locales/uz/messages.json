@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Savdo Copilot",
+    "description": "Extension name shown in the browser"
+  },
+  "extDescription": {
+    "message": "Uzum sotuvchilari uchun AI yordamchi: savdo, qoldiq va buyurtmalar haqida to'g'ridan-to'g'ri seller.uzum.uz saytida so'rang.",
+    "description": "Extension description shown in the store and on the extensions page"
+  }
+}

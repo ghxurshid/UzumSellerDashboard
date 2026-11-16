@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@core/ui/kit/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Dialog } from '@/components/ui/Dialog';
-import { formatNumber } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { formatNumber } from '@core/lib/format';
+import { useTranslation } from '@core/i18n/useTranslation';
 import type { ResolvedAction } from '@/services/insights/actions';
 
 import type { InsightActionRunner } from './useInsightActionRunner';

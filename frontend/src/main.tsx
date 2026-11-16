@@ -4,9 +4,9 @@ import { RouterProvider } from 'react-router-dom';
 
 import { bootstrap } from '@/app/bootstrap';
 import { QueryProvider } from '@/app/providers/QueryProvider';
-import { ThemeProvider } from '@/app/providers/ThemeProvider';
+import { ThemeProvider } from '@core/ui/shell/ThemeProvider';
 import { router } from '@/app/routes/router';
-import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { ErrorBoundary } from '@core/ui/shell/ErrorBoundary';
 import { RootErrorFallback } from '@/app/RootErrorFallback';
 import { notify } from '@/store/notifications.store';
 import { watchBrowserConnectivity } from '@/store/session.store';

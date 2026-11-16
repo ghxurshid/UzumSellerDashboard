@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Savdo Copilot",
+    "description": "Extension name shown in the browser"
+  },
+  "extDescription": {
+    "message": "AI assistant for Uzum sellers: ask about your sales, stock and orders right on seller.uzum.uz.",
+    "description": "Extension description shown in the store and on the extensions page"
+  }
+}

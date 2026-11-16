@@ -1,9 +1,9 @@
 import { Info } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { Panel } from '@/components/ui/Panel';
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { Panel } from '@core/ui/kit/Panel';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { useTranslation } from '@core/i18n/useTranslation';
 import type { HeatCell } from '@/types/domain';
 
 const WEEKDAY_KEYS = ['wdMon', 'wdTue', 'wdWed', 'wdThu', 'wdFri', 'wdSat', 'wdSun'] as const;

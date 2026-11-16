@@ -54,8 +54,6 @@ export const WINDOW = {
   insightsMinAvailable: 900,
 } as const;
 
-export const TOAST_TIMEOUT_MS = 3600;
-
 export const PRODUCT_PAGE_SIZES = [10, 25, 50, 100] as const;
 export const MODULE_PAGE_SIZES = [10, 25, 50] as const;
 

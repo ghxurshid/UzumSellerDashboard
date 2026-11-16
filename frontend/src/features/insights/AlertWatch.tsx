@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { useTranslation } from '@core/i18n/useTranslation';
 import { summariseFinance } from '@/services/derive/finance';
 import { toProducts } from '@/services/derive/products';
 import { evaluateAlerts, type AlertRule } from '@/services/insights/alerts';
@@ -9,7 +9,7 @@ import { expensesQuery, financeQuery, ordersQuery, productsQuery } from '@/servi
 import { useScope } from '@/services/queries/useScope';
 import { useAlertsStore } from '@/store/alerts.store';
 import { useNotificationsStore } from '@/store/notifications.store';
-import { useToastStore } from '@/store/toast.store';
+import { useToastStore } from '@core/state/toast.store';
 
 /**
  * The standing rules, checked wherever the seller happens to be.

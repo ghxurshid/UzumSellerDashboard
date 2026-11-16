@@ -1,9 +1,9 @@
 import { Database, Info } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { Panel, PanelKicker } from '@/components/ui/Panel';
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { Panel, PanelKicker } from '@core/ui/kit/Panel';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { useTranslation } from '@core/i18n/useTranslation';
 import type { EconomicsRow, Tone } from '@/types/domain';
 
 const TONE_TEXT: Record<Tone, string> = {

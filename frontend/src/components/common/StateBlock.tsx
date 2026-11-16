@@ -12,10 +12,10 @@ import {
 } from 'lucide-react';
 import type { ComponentType, ReactNode } from 'react';
 
-import { Button } from '@/components/ui/Button';
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { Button } from '@core/ui/kit/Button';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useUiStore } from '@/store/ui.store';
 import type { ScreenState } from '@/types/domain';
 

@@ -1,8 +1,8 @@
 import { ZoomIn } from 'lucide-react';
 import { useId, useMemo, type ReactNode } from 'react';
 
-import { Panel } from '@/components/ui/Panel';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { Panel } from '@core/ui/kit/Panel';
+import { useTranslation } from '@core/i18n/useTranslation';
 import type { SeriesPoint } from '@/types/domain';
 
 const VIEW_WIDTH = 900;

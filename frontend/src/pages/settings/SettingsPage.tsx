@@ -1,22 +1,23 @@
 import { Cpu, Database, Keyboard, Loader2, Plug, RotateCcw, Settings2 } from 'lucide-react';
 import { useCallback, useState, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/Button';
-import { AiSettings } from '@/features/settings/AiSettings';
+import { Button } from '@core/ui/kit/Button';
+import { AiSettings } from '@core/ui/settings/AiSettings';
 import { AlertRules } from '@/features/settings/AlertRules';
 import { ApiSettings } from '@/features/settings/ApiSettings';
 import { DataSettings } from '@/features/settings/DataSettings';
-import { GeneralSettings } from '@/features/settings/GeneralSettings';
-import { KeyboardSettings } from '@/features/settings/KeyboardSettings';
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { GeneralSettings } from '@core/ui/settings/GeneralSettings';
+import { KeyboardSettings } from '@core/ui/settings/KeyboardSettings';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { SITE_SHORTCUTS } from '@/constants/shortcuts';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useConnection } from '@/services/queries/useConnection';
 import { useSync } from '@/services/sync/useSync';
 import { useDialogStore } from '@/store/dialog.store';
-import { useSettingsStore } from '@/store/settings.store';
+import { useSettingsStore } from '@core/state/settings.store';
 import { selectProgress, useFailedSources, useSyncStore } from '@/store/sync.store';
-import { useToastStore } from '@/store/toast.store';
+import { useToastStore } from '@core/state/toast.store';
 
 type SettingsTab = 'general' | 'api' | 'data' | 'ai' | 'keys';
 
@@ -190,7 +191,7 @@ export default function SettingsPage(): ReactNode {
             <AlertRules />
           </div>
         )}
-        {tab === 'keys' && <KeyboardSettings />}
+        {tab === 'keys' && <KeyboardSettings shortcuts={SITE_SHORTCUTS} />}
       </div>
     </div>
   );

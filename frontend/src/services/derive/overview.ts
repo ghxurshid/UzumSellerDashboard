@@ -1,4 +1,4 @@
-import { formatCompactMoney, formatDelta, formatNumber, formatPercent, trendOf } from '@/lib/format';
+import { formatCompactMoney, formatDelta, formatNumber, formatPercent, trendOf } from '@core/lib/format';
 import type { DateWindow } from '@/services/uzum/endpoints';
 import type { FinanceOrderItem, SellerPayment } from '@/services/uzum/types';
 import type {

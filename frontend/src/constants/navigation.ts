@@ -8,7 +8,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import type { TranslationKey } from '@/lib/i18n/dictionary';
+import type { TranslationKey } from '@core/i18n/dictionary';
 import type { ScreenKey } from '@/types/domain';
 
 export interface NavItem {

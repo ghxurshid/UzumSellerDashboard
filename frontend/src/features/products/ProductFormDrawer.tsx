@@ -4,11 +4,11 @@ import { AlertCircle } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@core/ui/kit/Button';
 import { Drawer } from '@/components/ui/Drawer';
-import { SelectField, TextField } from '@/components/ui/Field';
+import { SelectField, TextField } from '@core/ui/kit/Field';
 import { useActionGuard } from '@/hooks/useActionGuard';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { useTranslation } from '@core/i18n/useTranslation';
 import { queryKeys } from '@/services/api/queryKeys';
 import { useUzumActions } from '@/services/queries/useUzumActions';
 import { fetchBarcodeTypes } from '@/services/uzum/endpoints';

@@ -1,10 +1,12 @@
-import { complete } from '@/services/ai/client';
-import { isAiConfigured } from '@/services/ai/modelRules';
-import type { AiSettings } from '@/types/settings';
+import { complete } from '@core/ai/client';
+import { isAiConfigured } from '@core/ai/modelRules';
+import type { AiSettings } from '@core/types/settings';
 import type { Language } from '@/types/domain';
 
 import { resolveAction, INSIGHT_ACTIONS, ACTION_IDS } from './actions';
-import { aiDocumentSchema, WIDGET_LIMITS, type Block, type InsightCard } from './blocks';
+import { WIDGET_LIMITS, type Block } from '@core/agent/blocks';
+import { aiDocumentSchema, type InsightCard } from './cards';
+import { LANGUAGE_NAME } from '@core/agent/systemPrompt';
 
 /**
  * The model as a card author.
@@ -32,13 +34,6 @@ import { aiDocumentSchema, WIDGET_LIMITS, type Block, type InsightCard } from '.
  * return nothing at all if it does not parse. Returning nothing is safe — the
  * rail still has its rule-derived cards.
  */
-
-/** Written out for the prompt so the model names a real language, not a code. */
-const LANGUAGE_NAME: Record<Language, string> = {
-  en: 'English',
-  ru: 'Russian (русский)',
-  uz: 'Uzbek, Latin script (o‘zbekcha)',
-};
 
 export interface GenerateOptions {
   readonly ai: AiSettings;

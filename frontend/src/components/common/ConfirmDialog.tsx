@@ -2,9 +2,9 @@ import { HelpCircle, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Dialog } from '@/components/ui/Dialog';
-import { Button } from '@/components/ui/Button';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { Button } from '@core/ui/kit/Button';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useDialogStore } from '@/store/dialog.store';
 
 /**

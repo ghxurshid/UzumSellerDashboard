@@ -3,8 +3,8 @@ import type { ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 
 import { NAV_ITEMS } from '@/constants/navigation';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 
 /**
  * How many sections get a tab of their own.

@@ -5,6 +5,8 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
+import { resolveCoreFromHost } from '../core/tooling/hostResolve';
+
 /** Vendor chunks are split by concern so a topbar tweak never invalidates the chart or query cache bundle. */
 const MANUAL_CHUNKS: Record<string, readonly string[]> = {
   /* Ahead of vendor-react on purpose: the check is a substring one, and
@@ -29,19 +31,27 @@ const MANUAL_CHUNKS: Record<string, readonly string[]> = {
   'vendor-forms': ['react-hook-form', 'zod', '@hookform/resolvers'],
 };
 
+const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+const coreSrc = fileURLToPath(new URL('../core/src', import.meta.url));
+
 const { version } = createRequire(import.meta.url)('./package.json') as { version: string };
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  /* `resolveCoreFromHost` first: files under core/ have no node_modules of
+     their own and must find react, zod, clsx… in this host's. */
+  plugins: [resolveCoreFromHost(fileURLToPath(new URL('.', import.meta.url)), coreSrc), react(), tailwindcss()],
   /* The label in the title bar is the build's real version, not a string a
      release can forget to update. */
   define: { __APP_VERSION__: JSON.stringify(version) },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@core': coreSrc,
     },
   },
   server: {
+    /* core/ lives next to this package, outside the Vite root. */
+    fs: { allow: [repoRoot] },
     port: 5173,
     strictPort: false,
     /**

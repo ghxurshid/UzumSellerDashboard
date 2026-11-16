@@ -1,22 +1,22 @@
 import { RefreshCw, Stethoscope } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { Icon } from '@/components/ui/Icon';
-import { formatClock } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { Icon } from '@core/ui/kit/Icon';
+import { formatClock } from '@core/lib/format';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { ApiError } from '@/services/api/client';
 import { useConnection, type ConnectionStatus } from '@/services/queries/useConnection';
 import { clearArchive } from '@/services/storage/archive/archive.service';
 import { resetLazySync } from '@/services/sync/lazySync';
 import { fetchShops } from '@/services/uzum/endpoints';
 import { useArchiveStore } from '@/store/archive.store';
-import { useApiSettings, useFeatureFlags, useSettingsStore } from '@/store/settings.store';
+import { useApiSettings, useFeatureFlags, useSettingsStore } from '@core/state/settings.store';
 import { useSessionStore } from '@/store/session.store';
 import { useSyncStore } from '@/store/sync.store';
-import { useToastStore } from '@/store/toast.store';
+import { useToastStore } from '@core/state/toast.store';
 
-import { CredentialField } from './CredentialField';
+import { CredentialField } from '@core/ui/settings/CredentialField';
 import { SyncPanel } from './SyncPanel';
 
 /**

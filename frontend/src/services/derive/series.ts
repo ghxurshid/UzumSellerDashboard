@@ -1,4 +1,4 @@
-import { formatDay, hourInZone, weekdayInZone } from '@/lib/format';
+import { formatDay, hourInZone, weekdayInZone } from '@core/lib/format';
 import type { DateWindow } from '@/services/uzum/endpoints';
 import type { FinanceOrderItem } from '@/services/uzum/types';
 import type { HeatCell, SeriesPoint } from '@/types/domain';

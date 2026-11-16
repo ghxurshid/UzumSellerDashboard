@@ -19,11 +19,11 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { APP_VERSION_LABEL } from '@/constants/app';
 import { NAV_ITEMS, SETTINGS_PATH } from '@/constants/navigation';
 import { RANGE_KEYS, describeWindow, resolveWindow } from '@/lib/dateRange';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useConnection } from '@/services/queries/useConnection';
 import { ALL_STORES, useFiltersStore } from '@/store/filters.store';
-import { usePreferencesStore } from '@/store/preferences.store';
+import { usePreferencesStore } from '@core/state/preferences.store';
 import { useSyncStore } from '@/store/sync.store';
 import { useUiStore } from '@/store/ui.store';
 

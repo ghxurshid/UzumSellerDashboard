@@ -2,10 +2,10 @@ import { Archive, Ban, CircleCheck, CircleDashed, Loader2, TriangleAlert } from 
 import type { ReactNode } from 'react';
 
 import { SyncProgress } from '@/components/common/SyncProgress';
-import { formatClock, formatNumber, formatPercent } from '@/lib/format';
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { formatClock, formatNumber, formatPercent } from '@core/lib/format';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { SOURCE_IDS } from '@/services/queries/sources';
 import {
   selectProgress,

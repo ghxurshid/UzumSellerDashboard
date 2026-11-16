@@ -1,0 +1,7 @@
+{
+  "name": "@savdo/core",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Source-only Copilot engine shared by the site (frontend/) and the browser extension (extension/). No dependencies and no node_modules of its own: every host compiles this tree against its own node_modules."
+}

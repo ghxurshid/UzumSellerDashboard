@@ -1,3 +1,5 @@
+import type { KvBackend } from '@core/storage/kv';
+
 import { deleteWhere, request, withStore } from './db';
 import { STORES, type KvKey, type KvRecord } from './schema';
 
@@ -37,6 +39,18 @@ export async function removeKv(key: KvKey): Promise<void> {
     store.delete(key);
   });
 }
+
+/**
+ * The site's implementation of the host-agnostic port in `../kv.ts`.
+ * `bootstrap()` registers it before anything reads settings. A port key is a
+ * plain string; the port's own key type already restricts callers to slots
+ * this store knows, so the cast only bridges the two declarations.
+ */
+export const idbKvBackend: KvBackend = {
+  read: <T>(key: string) => readKv<T>(key as KvKey),
+  write: (key, value) => writeKv(key as KvKey, value),
+  remove: (key) => removeKv(key as KvKey),
+};
 
 /** When a slot was last written — what "settings saved at" reads. */
 export async function kvStamp(key: KvKey): Promise<number | null> {

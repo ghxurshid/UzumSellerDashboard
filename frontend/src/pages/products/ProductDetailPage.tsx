@@ -3,17 +3,17 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { ScreenFrame } from '@/components/common/ScreenFrame';
-import { Button } from '@/components/ui/Button';
-import { Panel } from '@/components/ui/Panel';
-import { Pill } from '@/components/ui/Pill';
-import { SkeletonTable } from '@/components/ui/Skeleton';
+import { Button } from '@core/ui/kit/Button';
+import { Panel } from '@core/ui/kit/Panel';
+import { Pill } from '@core/ui/kit/Pill';
+import { SkeletonTable } from '@core/ui/kit/Skeleton';
 import {
   ProductFormDrawer,
   type ProductFormKind,
 } from '@/features/products/ProductFormDrawer';
 import { useScreenStatus } from '@/hooks/useScreenStatus';
-import { formatNumber } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { formatNumber } from '@core/lib/format';
+import { useTranslation } from '@core/i18n/useTranslation';
 import { useProduct, useProductsQuery } from '@/services/queries/useProductsQuery';
 import type { Product, Sku } from '@/types/domain';
 

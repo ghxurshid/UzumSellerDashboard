@@ -1,6 +1,6 @@
 ---
 name: uzum-api
-description: Uzum Seller OpenAPI integration — owns frontend/src/services/uzum/ (endpoints, wire types, envelope, pagination) and frontend/src/services/api/ (axios client, error taxonomy, rate limit; queryKeys.ts belongs to data-queries). Use when wiring a new route, when a response arrives empty or in an unexpected shape, when 401/403/429/timeout handling needs work, or when the code disagrees with ENDPOINTS.md or the recorded samples. Examples - "add the drop-off-points endpoint", "expenses only return 50 rows", "orders come back empty for March", "verify fetchOrderLabel against the spec", "we are getting rate limited". Do NOT use for IndexedDB writes, sync planning, derive math, the Copilot, or UI.
+description: Uzum Seller OpenAPI integration — owns frontend/src/services/uzum/ (endpoints, wire types, envelope, pagination), frontend/src/services/api/ (axios client, rate limit; queryKeys.ts belongs to data-queries), core/src/errors/ and core/src/net/ (error taxonomy, header and HTTP-failure classification) and extension/src/uzum/ (the cabinet bridge: closed route table, content-script request path, serial queue). Use when wiring a new route, when a response arrives empty or in an unexpected shape, when 401/403/429/timeout handling needs work, or when the code disagrees with ENDPOINTS.md or the recorded samples. Examples - "add the drop-off-points endpoint", "expenses only return 50 rows", "orders come back empty for March", "verify fetchOrderLabel against the spec", "we are getting rate limited". Do NOT use for IndexedDB writes, sync planning, derive math, the Copilot, or UI.
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 color: yellow
@@ -16,9 +16,14 @@ permissions, which is why the base URL is a **setting**, not a constant.
 
 ## What you own
 
-- `src/services/uzum/` — `endpoints.ts`, `http.ts`, `types.ts` (and
+- `frontend/src/services/uzum/` — `endpoints.ts`, `http.ts`, `types.ts` (and
   `ENDPOINTS.md`, which you read as evidence and which `spec-scribe` edits)
-- `src/services/api/` — `client.ts`, `errors.ts`, `rateLimit.ts`
+- `frontend/src/services/api/` — `client.ts`, `rateLimit.ts`
+- `core/src/errors/apiError.ts` (`ApiError`, `ApiFailureKind`) and
+  `core/src/net/` — `httpError.ts` (`toApiError`, `readRetryAfter`), `headers.ts`;
+  the LLM transport and both hosts import them from there
+- `extension/src/uzum/` — `routes.ts`, `bridge.content.ts`, `client.ts`,
+  `protocol.ts`, `queue.ts`, `session.ts`
 
 If a change needs a new IndexedDB store, a new sync plan, or a new screen, stop
 and report what the upper layer must do.
@@ -74,6 +79,19 @@ the Copilot branch on that union, so never collapse a case into `client`.
    many sample rows support a reading, never "verified" from one example.
 5. Pin envelope and pagination behaviour with a test beside `http.ts` when you
    change it.
+
+## The extension's bridge
+
+`extension/src/uzum/` is a second boundary with its own rules, written in the module
+headers. `routes.ts`: the table of cabinet routes is closed and imports nothing; the
+panel asks for a route id plus params, the content script builds the URL from the
+table itself, so the seller's token can only ever travel to a URL that file can
+produce. Adding an endpoint is one key in `UzumRouteParamsMap` and one entry in
+`UZUM_ROUTES`. `bridge.content.ts`: the content script is the only place the token is
+held and the only place a cabinet request is made; the token is read at the moment of
+each request and never stored, logged, echoed in an error or sent over the port; the
+frame's URL carries no secret (nonce handshake, see `protocol.ts`); imports stay
+limited to sibling dependency-free modules (no zod, axios, react).
 
 ## Report
 

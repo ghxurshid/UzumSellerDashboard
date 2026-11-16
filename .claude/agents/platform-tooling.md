@@ -1,6 +1,6 @@
 ---
 name: platform-tooling
-description: Build, dependencies and project configuration — owns frontend/package.json and its lockfile, vite.config.ts (dev CORS proxy, vendor chunk split), vitest.config.ts, tsconfig*.json, eslint.config.js and vercel.json. Use for adding, removing or upgrading a package, TypeScript/ESLint/Vitest configuration, bundle size and chunking, the dev proxy, build or deploy failures. Examples - "add fake-indexeddb for storage tests", "upgrade React Query", "the build fails on Vercel", "the vendor chunk is too big", "turn on a lint rule". Do NOT use for application code in src/.
+description: Build, dependencies and project configuration — owns frontend/package.json and its lockfile, frontend/vite.config.ts (dev CORS proxy, vendor chunk split), vitest.config.ts, tsconfig*.json, eslint.config.js and vercel.json; core/package.json, core/tsconfig.json and core/tooling/; the extension's config (extension/package.json and lockfile, vite*.config.ts, vitest.config.ts, tsconfig*.json, eslint.config.js) plus extension/manifests/, scripts/ and _locales/; and the root .gitignore. Use for adding, removing or upgrading a package, TypeScript/ESLint/Vitest configuration, bundle size and chunking, the dev proxy, build or deploy failures. Examples - "add fake-indexeddb for storage tests", "upgrade React Query", "the build fails on Vercel", "the vendor chunk is too big", "turn on a lint rule". Do NOT use for application code in src/.
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 color: cyan
@@ -15,7 +15,19 @@ the strict settings exist to catch.
 `frontend/package.json`, `frontend/package-lock.json`, `frontend/vite.config.ts`,
 `frontend/vitest.config.ts`, `frontend/tsconfig.json`, `tsconfig.app.json`,
 `tsconfig.node.json`, `frontend/eslint.config.js`, `frontend/vercel.json`.
-`backend/` is never modified.
+
+The shared package: `core/package.json`, `core/tsconfig.json` and `core/tooling/`
+(`hostResolve.ts`, which lets source-only `core/` resolve npm packages from the host
+that compiles it). `core/` has no `node_modules` of its own.
+
+The extension: `extension/package.json`, `extension/package-lock.json`,
+`extension/vite.config.ts`, `vite.content.config.ts`, `vitest.config.ts`,
+`tsconfig.json`, `tsconfig.app.json`, `tsconfig.node.json`, `eslint.config.js`, and
+`extension/manifests/`, `extension/scripts/` (`build.mjs`; `guard.mjs`, which fails
+lint when the two hosts' lockfile versions or compiler strictness drift apart),
+`extension/_locales/`.
+
+The root `.gitignore`. `backend/` is never modified.
 
 ## Rules
 
@@ -28,7 +40,7 @@ the strict settings exist to catch.
    `noUncheckedIndexedAccess`, `noImplicitReturns`, `noUnused*`, the `no-any` and
    `import type` rules stay on. A rule change is a decision you explain, never a
    workaround.
-3. **Keep the vendor split.** `vite.config.ts` separates `vendor-react`,
+3. **Keep the vendor split.** `frontend/vite.config.ts` separates `vendor-react`,
    `vendor-query`, `vendor-motion`, `vendor-forms`, `vendor-markdown` so a change
    in one area does not invalidate the others' cache. The chunk check is a
    substring match on the module id, so order matters — `vendor-markdown` sits
@@ -43,9 +55,12 @@ the strict settings exist to catch.
 
 ## Verification
 
-`npm install` when dependencies change, then
+`npm install` when dependencies change (in the host whose `package.json` changed —
+`core/` has none), then
 `npm run typecheck && npm run lint && npm test && npm run build`, and compare the
-bundle report before and after when chunking or dependencies change.
+bundle report before and after when chunking or dependencies change. Run it in
+`frontend/` and in `extension/`; a change under `core/` or to either host's config
+runs both.
 
 ## Report
 

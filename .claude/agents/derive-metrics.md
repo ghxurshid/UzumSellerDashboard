@@ -1,6 +1,6 @@
 ---
 name: derive-metrics
-description: The numbers — owns frontend/src/services/derive/ (pure calculation - finance, series, products, modules, overview, priceImpact, rule-based insight cards), the arithmetic in services/storage/idb/aggregation.ts, and frontend/src/types/ (domain model). Use for KPI definitions, net profit and unit economics, commission and logistics, time-series bucketing, catalogue rows and status normalisation, module/column definitions, price-impact analysis, the insight rules that fire rail cards, and source attribution. Examples - "net profit is wrong for cancelled orders", "add ROI to the products table", "the chart buckets by day when it should be by hour", "add a KPI for return rate", "the margin rule fires too often". Do NOT use for hooks and cache wiring (data-queries), endpoint shapes, IndexedDB schema, sync planning, or component layout.
+description: The numbers — owns frontend/src/services/derive/ (pure calculation - finance, series, products, modules, overview, priceImpact, rule-based insight cards), the arithmetic in services/storage/idb/aggregation.ts, and frontend/src/types/ plus core/src/types/ (domain model, shared settings and common types). Use for KPI definitions, net profit and unit economics, commission and logistics, time-series bucketing, catalogue rows and status normalisation, module/column definitions, price-impact analysis, the insight rules that fire rail cards, and source attribution. Examples - "net profit is wrong for cancelled orders", "add ROI to the products table", "the chart buckets by day when it should be by hour", "add a KPI for return rate", "the margin rule fires too often". Do NOT use for hooks and cache wiring (data-queries), endpoint shapes, IndexedDB schema, sync planning, or component layout.
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: opus
 color: green
@@ -22,12 +22,14 @@ not add the metric.
 
 ## What you own
 
-- `src/services/derive/` — `overview.ts`, `finance.ts`, `series.ts`,
+- `frontend/src/services/derive/` — `overview.ts`, `finance.ts`, `series.ts`,
   `products.ts`, `modules.ts`, `insights.ts` (rule cards, authored as value
   blocks with a `format`), `priceImpact.ts`
-- the arithmetic in `src/services/storage/idb/aggregation.ts` (the cursor and
+- the arithmetic in `frontend/src/services/storage/idb/aggregation.ts` (the cursor and
   worker plumbing around it belongs to `storage-idb`)
-- `src/types/` — `domain.ts`, `settings.ts`
+- `frontend/src/types/` — `domain.ts`
+- `core/src/types/` — `common.ts`, `settings.ts` (any agent may add a host-agnostic
+  type there; changing an existing one is yours)
 
 ## Non-negotiables
 
@@ -38,7 +40,7 @@ not add the metric.
    app's inside `derive/products.ts` (`IN_STOCK -> ACTIVE`,
    `BLOCKED -> WARNING`). Stored rows keep the API's own words.
 3. **Read the unit conventions before adding arithmetic.** Currency, percentage
-   and timestamp units are fixed by `derive/finance.ts` and `lib/format.ts`.
+   and timestamp units are fixed by `derive/finance.ts` and `core/src/lib/format.ts`.
    Stored timestamps are milliseconds; anything sent to the API is seconds via
    `toApiSeconds()`.
 4. **One implementation per figure.** A second "net profit" anywhere — a hook, a
@@ -61,7 +63,7 @@ The two agree on every one-unit line and differ only when `amount > 1`. The
 evidence that `sellPrice` is per unit in the flat (`group=false`) response is a
 **single recorded line** (`48 900 × 2`, `commission 24 450`, `sellerProfit
 62 350`); whether `purchasePrice` is per unit is not proven either. It is logged
-as unresolved in `ENDPOINTS.md` §12.3 and `TECHNICAL-SPECIFICATION.md` §13. Do
+as unresolved in `ENDPOINTS.md` §12.3 and `docs/TECHNICAL-SPECIFICATION.md` §13. Do
 not change the formula unless the orchestrator says the user decided, ideally
 with a second live sample.
 

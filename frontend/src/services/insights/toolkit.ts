@@ -1,8 +1,6 @@
 import { z } from 'zod';
 
-import { hourInZone, weekdayInZone } from '@/lib/format';
-import { toJsonSchema } from '@/services/ai/jsonSchema';
-import { safeToolName, type ToolSchema } from '@/services/ai/messages';
+import { hourInZone, weekdayInZone } from '@core/lib/format';
 import type { Scope } from '@/services/api/queryKeys';
 import {
   readExpenses,
@@ -26,11 +24,12 @@ import type { Granularity } from '@/services/storage/idb/aggregation';
 import { loadExpenseTotals, loadProductTotals } from '@/services/storage/idb/analytics.client';
 import { toCoverage } from '@/services/storage/idb/metadata.repo';
 import { WINDOWED_ENTITIES } from '@/services/storage/idb/schema';
-import { readGeneralPreferences } from '@/store/preferences.store';
+import { readGeneralPreferences } from '@core/state/preferences.store';
 import { useAlertsStore } from '@/store/alerts.store';
-import type { Language, Product } from '@/types/domain';
+import type { Product } from '@/types/domain';
 
-import { INSIGHT_ACTIONS, ACTION_IDS } from './actions';
+import { runLookup } from '@core/tools/createToolkit';
+import type { BaseToolContext, ToolResult, ToolSpec } from '@core/tools/contract';
 import {
   bucketLabel,
   bucketStarts,
@@ -58,7 +57,7 @@ import {
   parseDay,
   table,
   windowLabel,
-} from './plaintext';
+} from '@core/tools/plaintext';
 
 /**
  * What the model may go and look up, and what a lookup hands back.
@@ -71,8 +70,9 @@ import {
  * can be precomputed alongside every other thing a seller might ask.
  *
  * So the model starts with nothing and asks. The base prompt tells it that a
- * toolkit exists; `describeToolkit()` writes the toolkit out when it asks for
- * it; and each entry below is one thing it can then do.
+ * toolkit exists; the document `siteToolkit.ts` generates from this registry
+ * writes the toolkit out when it asks for it; and each entry below is one thing
+ * it can then do.
  *
  * ## Three properties every tool holds to
  *
@@ -96,42 +96,22 @@ import {
 
 /* ── context and result ─────────────────────────────────────────────────── */
 
-export interface ToolContext {
+/**
+ * What every site lookup is handed: the host-independent base (language, clock,
+ * the question's abort signal) plus what only the site has.
+ *
+ * `ToolSpec` takes arguments as a bag because `schema` has already validated
+ * them; a per-tool type parameter could not be called through a registry lookup.
+ */
+export interface ToolContext extends BaseToolContext {
   /** The scope the seller has selected — the default window for every read. */
   readonly scope: Scope;
   /** The catalogue already in the query cache. No request is made for it. */
   readonly products: readonly Product[];
   readonly shops: ReadonlyArray<{ readonly id: number; readonly name: string }>;
-  readonly language: Language;
-  readonly now: number;
-  readonly signal: AbortSignal | undefined;
 }
 
-export interface ToolResult {
-  /** What the model reads. Plain text, self-describing. */
-  readonly text: string;
-  /** Routes or stores touched, for the answer's context chip. */
-  readonly routes?: readonly string[];
-  /** One short line for the tool chip in the transcript. */
-  readonly trace?: string;
-}
-
-interface ToolSpec {
-  /** Where the rows come from, shown in the result header. */
-  readonly route: string;
-  /** The argument shape, for the toolkit document. */
-  readonly args: string;
-  /** One to three lines telling the model when this is the right lookup. */
-  readonly summary: readonly string[];
-  readonly schema: z.ZodTypeAny;
-  /**
-   * Arguments arrive already validated by `schema`, which is why this takes a
-   * bag rather than a generic: the alternative is a per-tool type parameter
-   * that TypeScript then cannot call through a registry lookup, and the small
-   * readers below cost less than that machinery.
-   */
-  readonly run: (args: Record<string, unknown>, context: ToolContext) => Promise<ToolResult>;
-}
+export type { ToolResult };
 
 /* ── argument readers ───────────────────────────────────────────────────── */
 
@@ -355,7 +335,7 @@ async function financeFor(
 
 /* ── the read registry ──────────────────────────────────────────────────── */
 
-export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
+export const READ_TOOLS: Readonly<Record<string, ToolSpec<ToolContext>>> = {
   'window.totals': {
     route: 'archive → GET /v1/finance/orders + /v1/finance/expenses',
     args: '{from?, to?, fresh?}',
@@ -1628,233 +1608,14 @@ export const READ_TOOLS: Readonly<Record<string, ToolSpec>> = {
 
 export const READ_TOOL_IDS = Object.keys(READ_TOOLS);
 
-/* ── the same registries, as native tools ───────────────────────────────── */
-
 /**
- * The one tool a thread starts with.
+ * Run one lookup of the site's registry, or explain why it did not run.
  *
- * Progressive disclosure has to survive native tool calling, and the naive way
- * to bolt the two together loses it: declaring every tool on the first request
- * means their schemas are in the prompt whether the question needed them or
- * not, which is exactly the cost the redesign removed.
- *
- * So the first request declares one tool — this one. The model calls it, gets
- * the toolkit document, and *from that round on* the real tools are declared
- * alongside it. Same conversation as the text protocol, same "ask for what you
- * need", with the provider doing the parsing.
+ * The mechanism — own-property lookup, validation, failures as text for the
+ * model, a cancelled question rethrown — is `runLookup` in core; this binds it
+ * to the site's table. The toolkit document and the native declarations are
+ * assembled in `siteToolkit.ts` from the same table.
  */
-export const OPEN_TOOLKIT = 'open_toolkit';
-
-const openToolkitSchema: ToolSchema = {
-  name: OPEN_TOOLKIT,
-  description:
-    'Ask for a capability document before using it. "tools" returns every lookup and action ' +
-    'available over this shop, with arguments and what each returns — and makes those ' +
-    'tools callable. "widgets" returns how to draw an answer on screen. Ask once per thread.',
-  parameters: {
-    type: 'object',
-    properties: {
-      capability: {
-        type: 'string',
-        enum: ['tools', 'widgets'],
-        description: 'Which document to open.',
-      },
-    },
-    required: ['capability'],
-    additionalProperties: false,
-  },
-};
-
-/**
- * Safe name → registry id.
- *
- * Built from the registries rather than by undoing the substitution, because
- * `open_toolkit` would reverse into `open.toolkit` and name nothing. A lookup
- * cannot drift the way a rule can.
- */
-const ID_BY_SAFE_NAME: ReadonlyMap<string, string> = new Map([
-  ...READ_TOOL_IDS.map((id) => [safeToolName(id), id] as const),
-  ...ACTION_IDS.map((id) => [safeToolName(id), id] as const),
-]);
-
-/** The registry id a provider's tool call refers to, or the name unchanged. */
-export function toolIdOfName(name: string): string {
-  return ID_BY_SAFE_NAME.get(name) ?? name;
-}
-
-/** What calling an action does, in the words the model is told. */
-function actionGate(id: (typeof ACTION_IDS)[number]): string {
-  const definition = INSIGHT_ACTIONS[id];
-  /* A follow-up question is the one `none` action that does not run: asking it
-     outright would start a second question underneath the answer to the first. */
-  if (id === 'copilot.ask') return 'Places a follow-up question chip under your answer.';
-  if (definition.risk === 'none') return 'Runs immediately; changes nothing at Uzum.';
-  return `Places a button for the seller to press — it is NOT performed by you. ${definition.endpoint ?? ''} (risk ${definition.risk}).`;
-}
-
-/**
- * What the provider is told it may call, given what the thread has been handed.
- *
- * Before the toolkit is opened this is one tool. After, it is everything —
- * described from the same `summary` lines the text document is generated from,
- * so the two disclosures cannot disagree about what a lookup does.
- */
-export function nativeToolSchemas(granted: ReadonlySet<string>): readonly ToolSchema[] {
-  if (!granted.has('tools')) return [openToolkitSchema];
-
-  const reads = READ_TOOL_IDS.flatMap((id) => {
-    const spec = READ_TOOLS[id];
-    if (spec === undefined) return [];
-    return [
-      {
-        name: safeToolName(id),
-        description: spec.summary.join(' '),
-        parameters: toJsonSchema(spec.schema),
-      },
-    ];
-  });
-
-  const actions = ACTION_IDS.map((id) => ({
-    name: safeToolName(id),
-    description: `${INSIGHT_ACTIONS[id].summary} ${actionGate(id)}`,
-    parameters: toJsonSchema(INSIGHT_ACTIONS[id].params),
-  }));
-
-  return [openToolkitSchema, ...reads, ...actions];
-}
-
-/* ── running one ────────────────────────────────────────────────────────── */
-
-/**
- * Run one lookup, or explain why it did not run.
- *
- * A failure is returned rather than thrown, and it is returned *to the model* —
- * a bad argument is something it can correct on the next round, and a tool that
- * failed silently is one it will call again the same way. The text is the same
- * plain-text envelope as a success, so nothing downstream has to tell them
- * apart.
- */
-export async function runReadTool(
-  id: string,
-  args: unknown,
-  context: ToolContext,
-): Promise<ToolResult> {
-  const spec = READ_TOOLS[id];
-  if (spec === undefined) {
-    return {
-      trace: `unknown lookup ${id}`,
-      text: `[${id}] no such lookup. Available: ${READ_TOOL_IDS.join(', ')}`,
-    };
-  }
-
-  const parsed = spec.schema.safeParse(args ?? {});
-  if (!parsed.success) {
-    const why = parsed.error.issues
-      .slice(0, 4)
-      .map((issue) => `${issue.path.join('.') || 'args'}: ${issue.message}`)
-      .join('; ');
-    return { trace: `${id} rejected`, text: `[${id}] arguments rejected — ${why}. Expected ${spec.args}` };
-  }
-
-  try {
-    return await spec.run(parsed.data as Record<string, unknown>, context);
-  } catch (error) {
-    /* A cancelled question is not a failed lookup. Reporting it as one would
-       hand the model an error to narrate about a conversation the seller has
-       already walked away from, so it goes back up and ends the run. */
-    if (context.signal?.aborted === true) throw error;
-
-    const reason = error instanceof Error ? error.message : 'the lookup failed';
-    return {
-      trace: `${id} failed`,
-      text: `[${id}] failed — ${reason}. Say what you could not read rather than estimating it.`,
-    };
-  }
-}
-
-/* ── the document ───────────────────────────────────────────────────────── */
-
-/**
- * The toolkit, written out when the model asks for it.
- *
- * Generated from the registries rather than maintained beside them, so a tool
- * or an action that exists is a tool or an action the model is told about — the
- * failure mode where a prompt describes a capability that was renamed six
- * months ago cannot happen here.
- */
-export function describeToolkit(context: ToolContext): string {
-  const reads = READ_TOOL_IDS.map((id) => {
-    const spec = READ_TOOLS[id];
-    if (spec === undefined) return '';
-    return [`  ${id} ${spec.args}`, ...spec.summary.map((line) => `      ${line}`)].join('\n');
-  }).filter((entry) => entry !== '');
-
-  const actions = ACTION_IDS.map((id) => {
-    const definition = INSIGHT_ACTIONS[id];
-    const route = definition.endpoint ?? 'no request — the app does it locally';
-    return [
-      `  ${id} ${definition.argsDoc}`,
-      `      ${definition.summary}`,
-      `      ${route} · risk ${definition.risk} · ${actionGate(id)}`,
-    ].join('\n');
-  });
-
-  return [
-    'TOOLKIT — what you may read and what you may offer.',
-    '',
-    'CALLING',
-    '  One object per line, nothing else in that turn:',
-    '    {"call":"window.totals","args":{}}',
-    '  Several lines are allowed and run in order; I answer with every result in one message',
-    '  and you carry on with the same question. Do not guess at a result before it arrives.',
-    '',
-    'WHAT A RESULT IS',
-    '  The data itself: a header saying what was read, then tables whose first line names the',
-    '  columns and whose cells are separated by "|". An empty cell is a value the row does not',
-    '  have. Read the header before the rows — it states the window, the shops, the units, and',
-    '  whether the rows are TRUNCATED or only one page of more.',
-    '',
-    'CONVENTIONS',
-    `  from/to   whole UTC days, "YYYY-MM-DD", both ends included. Omit them and I use the`,
-    `            period the seller has selected: ${windowLabel(context.scope.fromMs, context.scope.toMs)}.`,
-    `            "the last 7 days" ending today is from ${isoDay(context.now - 6 * DAY_MS)} to ${isoDay(context.now)}.`,
-    '  fresh     true forces a re-read from Uzum whatever the age of what is stored — slow, and it',
-    '            spends the seller\'s hourly request budget. Ask for it only on the seller\'s own',
-    '            explicit request for the very latest from Uzum, never by habit or because a',
-    '            figure feels important; the stored copy answers otherwise and refreshes itself.',
-    "  money     so'm, whole numbers, no grouping. Pct columns are percentages (23.5 means 23.5%).",
-    '  paging    data.rows returns one page; its header says "next page: offset N" when there is more.',
-    '',
-    'CHOOSING A LOOKUP',
-    '  Computing lookups did the arithmetic over every row: window.totals, period.compare,',
-    '  sales.timeline, sales.pattern, products.rank, product.find, expenses.breakdown. Use them',
-    '  whenever they answer the question — their totals are exact, and a column you add up',
-    '  yourself from three hundred rows is not. data.rows is for what they do not cover; when you',
-    '  compute from it, keep the arithmetic small and say what you counted.',
-    '',
-    'WHERE THE DATA COMES FROM',
-    '  A lookup answers from this machine\'s archive. A period already held is answered with no',
-    '  request at all; if part of it is missing, I fetch exactly that part from the Uzum seller',
-    '  API, store it, and then answer — so a period read before costs nothing and an unseen one',
-    '  costs one fetch. Beyond that, the store refreshes itself from Uzum on its own schedule once',
-    '  a table has gone past its freshness window — not because you asked, and not on every',
-    '  question. You do not manage any of this and should not try to; fresh above is the one lever,',
-    '  and only for the seller\'s own explicit ask.',
-    '',
-    'LOOKUPS',
-    ...reads,
-    '',
-    'ACTIONS',
-    '  You never send a write to Uzum. Naming one places a button in your answer, filled in with',
-    '  the parameters you gave; the seller sees the route and the risk and presses it, or does',
-    '  not. Say what the button would do — never that it has been done.',
-    ...actions,
-    '',
-    'NOT AVAILABLE',
-    '  The Uzum seller API has no route for renaming a product or editing its description, and',
-    '  none for reading or replying to customer reviews — the catalogue reports rating and',
-    '  feedbackQuantity and nothing further. It publishes no forecast, no score and no',
-    '  competitor data. If the seller asks for one of these, say plainly that the API does not',
-    '  offer it and what you can do instead.',
-  ].join('\n');
+export function runReadTool(id: string, args: unknown, context: ToolContext): Promise<ToolResult> {
+  return runLookup(READ_TOOLS, id, args, context);
 }

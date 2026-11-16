@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@core/ui/kit/Button';
 import { Drawer } from '@/components/ui/Drawer';
-import { Icon } from '@/components/ui/Icon';
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { Icon } from '@core/ui/kit/Icon';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import type { ModuleRow, ModuleRowAction, Tone } from '@/types/domain';
 
 const TONE_TEXT: Record<Tone, string> = {

@@ -2,13 +2,13 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { memo, type ReactNode } from 'react';
 
 import { Checkbox } from '@/components/ui/Checkbox';
-import { Icon } from '@/components/ui/Icon';
-import { Pill } from '@/components/ui/Pill';
+import { Icon } from '@core/ui/kit/Icon';
+import { Pill } from '@core/ui/kit/Pill';
 import { RowActionsMenu } from '@/components/ui/RowActionsMenu';
 import { RowContextMenu, type RowMenuAction } from '@/components/ui/RowContextMenu';
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import type { ModuleColumn, ModuleRow, ModuleRowAction, Tone } from '@/types/domain';
 
 const TONE_TEXT: Record<Tone, string> = {

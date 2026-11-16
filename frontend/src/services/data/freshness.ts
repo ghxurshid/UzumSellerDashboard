@@ -8,7 +8,7 @@ import {
 import { bounds } from '@/services/storage/archive/coverage';
 import { toCoverage } from '@/services/storage/idb/metadata.repo';
 import { isWindowed } from '@/services/storage/idb/schema';
-import { readDataSettings } from '@/services/storage/settings.service';
+import { readDataSettings } from '@core/settings/settings.service';
 
 /**
  * When each table was last read from Uzum — and nothing else.

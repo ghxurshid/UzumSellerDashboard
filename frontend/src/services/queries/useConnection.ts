@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 
 import { ApiError } from '@/services/api/client';
 import type { UzumShop } from '@/services/uzum/types';
-import { useApiSettings } from '@/store/settings.store';
+import { useApiSettings } from '@core/state/settings.store';
 
 import { shopsQuery } from './sources';
 

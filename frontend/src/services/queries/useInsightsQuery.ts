@@ -1,16 +1,16 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { isAiConfigured } from '@/services/ai/modelRules';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { isAiConfigured } from '@core/ai/modelRules';
 import { ApiError } from '@/services/api/client';
 import { summariseFinance } from '@/services/derive/finance';
 import { buildInsights } from '@/services/derive/insights';
 import { toProducts } from '@/services/derive/products';
 import { generateInsightCards } from '@/services/insights/ai';
-import { SEVERITY_ORDER, type InsightCard } from '@/services/insights/blocks';
+import { SEVERITY_ORDER, type InsightCard } from '@/services/insights/cards';
 import { buildDigest, digestKey } from '@/services/insights/digest';
-import { useAiSettings } from '@/store/settings.store';
+import { useAiSettings } from '@core/state/settings.store';
 
 import { expensesQuery, financeQuery, invoicesQuery, productsQuery, stocksQuery } from './sources';
 import { useScope, useScopeReady } from './useScope';

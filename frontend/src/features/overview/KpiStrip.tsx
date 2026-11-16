@@ -1,10 +1,10 @@
 import { ArrowDown, ArrowRight, ArrowUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import type { Kpi, Trend } from '@/types/domain';
-import type { TranslationKey } from '@/lib/i18n/dictionary';
+import type { TranslationKey } from '@core/i18n/dictionary';
 
 const TREND_STYLE: Record<Trend, { readonly text: string; readonly bg: string }> = {
   up: { text: 'text-pos', bg: 'bg-pos-soft' },

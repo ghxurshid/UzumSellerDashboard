@@ -2,10 +2,10 @@ import { Copy, ExternalLink, EyeOff, FileSpreadsheet, RefreshCw } from 'lucide-r
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
 import { ScreenFrame } from '@/components/common/ScreenFrame';
-import { Button } from '@/components/ui/Button';
-import { Icon } from '@/components/ui/Icon';
-import { resolveIcon } from '@/components/ui/iconRegistry';
-import { SkeletonTable, SkeletonTiles } from '@/components/ui/Skeleton';
+import { Button } from '@core/ui/kit/Button';
+import { Icon } from '@core/ui/kit/Icon';
+import { resolveIcon } from '@core/ui/kit/iconRegistry';
+import { SkeletonTable, SkeletonTiles } from '@core/ui/kit/Skeleton';
 import type { RowMenuAction } from '@/components/ui/RowContextMenu';
 import { ActionDrawer } from '@/features/module/ActionDrawer';
 import { isFormAction, type ActionContext } from '@/features/module/actionContext';
@@ -19,13 +19,13 @@ import { useRowSelection } from '@/features/module/useRowSelection';
 import { useActionGuard } from '@/hooks/useActionGuard';
 import { useProgressTask } from '@/hooks/useProgressTask';
 import { useScreenStatus } from '@/hooks/useScreenStatus';
-import { buildCsv, downloadBlob, timestampedName } from '@/lib/download';
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { buildCsv, downloadBlob, timestampedName } from '@core/lib/download';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { useTranslation } from '@core/i18n/useTranslation';
 import { useModuleQuery } from '@/services/queries/useModuleQuery';
 import { useUzumActions } from '@/services/queries/useUzumActions';
 import { useDialogStore } from '@/store/dialog.store';
-import { useToastStore } from '@/store/toast.store';
+import { useToastStore } from '@core/state/toast.store';
 import type { ModuleKey, ModuleRow, ModuleRowAction } from '@/types/domain';
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FRESHNESS_OPTIONS } from '@/constants/settings';
+import { FRESHNESS_OPTIONS } from '@core/constants/settings';
 import { trustsEmptyAnswer } from '@/services/storage/archive/archive.service';
 import { emptyMetadata, missingRanges } from '@/services/storage/idb/metadata.repo';
 import { ENTITY_TYPES, type SyncMetadataRecord } from '@/services/storage/idb/schema';

@@ -2,13 +2,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Database, History, Layers, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { Panel } from '@/components/ui/Panel';
+import { Panel } from '@core/ui/kit/Panel';
 import { queryKeys } from '@/services/api/queryKeys';
-import { FRESHNESS_OPTIONS } from '@/constants/settings';
-import { formatDelta, formatNumber, formatPercent, formatStamp } from '@/lib/format';
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { FRESHNESS_OPTIONS } from '@core/constants/settings';
+import { formatDelta, formatNumber, formatPercent, formatStamp } from '@core/lib/format';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useArchiveAnalysis } from '@/services/queries/useArchiveAnalysis';
 import { useConnection } from '@/services/queries/useConnection';
 import {
@@ -24,8 +24,8 @@ import { formatBytes } from '@/services/storage/retention';
 import { SETTLEMENT_LAG_MS } from '@/services/sync/archivePlan';
 import { useArchiveStore, selectTotalRows, type ShopArchiveView } from '@/store/archive.store';
 import { useDialogStore } from '@/store/dialog.store';
-import { useSettingsStore } from '@/store/settings.store';
-import { useToastStore } from '@/store/toast.store';
+import { useSettingsStore } from '@core/state/settings.store';
+import { useToastStore } from '@core/state/toast.store';
 
 import { LazySyncPanel } from './LazySyncPanel';
 

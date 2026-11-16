@@ -20,19 +20,19 @@ search, run commands, plan, delegate, verify, and talk to the user.
 
 | Agent | Owns | Reach for it when the request is about |
 |---|---|---|
-| `uzum-api` | `services/api/`, `services/uzum/` | a new or broken Uzum route, envelopes, pagination, 401/403/429, rate limit, wire types |
-| `storage-idb` | `services/storage/idb/` (schema, repos, mappers, worker plumbing), `services/storage/*.ts` | object stores, `DB_VERSION` and migrations, mappers, retention, deterministic ids, `store_id`, the analytics worker |
+| `uzum-api` | `services/api/`, `services/uzum/`, `core/src/errors/`, `core/src/net/`, `extension/src/uzum/` | a new or broken Uzum route, envelopes, pagination, 401/403/429, rate limit, wire types |
+| `storage-idb` | `services/storage/idb/` (schema, repos, mappers, worker plumbing), `services/storage/*.ts`, `core/src/settings/`, `core/src/storage/`, `extension/src/storage/` | object stores, `DB_VERSION` and migrations, mappers, retention, deterministic ids, `store_id`, the analytics worker |
 | `archive-sync` | `services/sync/`, `storage/archive/`, `services/data/` | lazy sync, coverage, backfill, settlement lag, truncation, abort/resume, the collections door |
-| `derive-metrics` | `services/derive/`, `aggregation.ts` arithmetic, `types/` | a figure's formula: net profit, margins, commission, series bucketing, module/KPI definitions, rule-based insight cards |
+| `derive-metrics` | `services/derive/`, `aggregation.ts` arithmetic, `types/`, `core/src/types/` | a figure's formula: net profit, margins, commission, series bucketing, module/KPI definitions, rule-based insight cards |
 | `data-queries` | `services/queries/`, `api/queryKeys.ts` | TanStack Query hooks, query keys and invalidation, read-through wiring, write actions (`useUzumActions`) |
-| `ai-providers` | `services/ai/` | an LLM provider adapter, streaming, tool-call wire formats, token/cost pricing, provider errors |
-| `copilot-engine` | `insights/` agent loop, prompts, widget guide, blocks, actions, pins, export, rail card author | how the Copilot converses, what it may draw, block schema, action registry, rewrite turns, pins |
-| `copilot-data` | `insights/toolkit`, `datasets`, `digest`, `plaintext` | what the Copilot can look up: tools, their data format, raw rows, computed timelines/rankings, token economy |
-| `ui-surface` | `pages/`, `features/`, `components/`, `store/`, `lib/`, `styles/`, `app/`, `hooks/`, `constants/` | anything the seller sees or clicks: screens, chat panel, rail, charts, tables, i18n, Zustand, mobile, a11y |
-| `platform-tooling` | build, lint, type and test config, dependencies, deploy config | adding/upgrading a package, Vite/TS/ESLint/Vitest config, bundle splitting, Vercel |
+| `ai-providers` | `core/src/ai/` | an LLM provider adapter, streaming, tool-call wire formats, token/cost pricing, provider errors |
+| `copilot-engine` | `core/src/agent/` (loop, system prompt, widget guide, blocks, figures, action registry, export), the site's `insights/` prompt, actions, cards, alerts, pins, rail card author, `extension/src/host/` | how the Copilot converses, what it may draw, block schema, action registry, rewrite turns, pins |
+| `copilot-data` | `core/src/tools/`, the site's `insights/` toolkit, siteToolkit, datasets, digest, `extension/src/tools/` | what the Copilot can look up: tools, their data format, raw rows, computed timelines/rankings, token economy |
+| `ui-surface` | `pages/`, `features/`, `components/`, `store/`, `lib/`, `styles/`, `app/`, `hooks/`, `constants/`, `core/src/{ui,state,i18n,lib,hooks,styles,constants}/`, `extension/src/content/`, `extension/src/panel/` | anything the seller sees or clicks: screens, chat panel, rail, charts, tables, i18n, Zustand, mobile, a11y |
+| `platform-tooling` | build, lint, type and test config, dependencies, deploy config — `frontend/`, `core/` (`package.json`, `tsconfig.json`, `tooling/`) and `extension/` (config, `manifests/`, `scripts/`, `_locales/`), root `.gitignore` | adding/upgrading a package, Vite/TS/ESLint/Vitest config, bundle splitting, Vercel |
 | `test-harness` | the test suite's growth and fixtures | new test coverage, fixtures from recorded samples, IndexedDB tests |
 | `invariant-reviewer` | nothing — read-only | reviewing a diff against project invariants before commit |
-| `spec-scribe` | the four spec documents | documentation — when a change made a spec section untrue, or the user asks |
+| `spec-scribe` | the spec documents (`docs/`, `ENDPOINTS.md`, `STORAGE.md`) | documentation — when a change made a spec section untrue, or the user asks |
 | `Explore` | nothing — read-only | a broad search across many files when you only need the conclusion |
 | `claude-code-guide` | nothing | questions about Claude Code itself (agents, hooks, settings) |
 
@@ -82,6 +82,10 @@ uzum-api -> storage-idb -> archive-sync -> derive-metrics -> copilot-data / copi
 - Run specialists **in parallel only when their paths are disjoint and neither
   consumes the other's output**; otherwise run them in order and pass each
   report's *Contract changes* forward.
+- There are two hosts over one shared package: `frontend/` (the site) and
+  `extension/` (the browser extension) both import `core/`, which never imports back.
+  A change under `core/` reaches both, so verification runs in `frontend/` (which also
+  checks and tests `core/`) **and** in `extension/`.
 - Keep each delegation to one owner's paths. If a specialist reports that the fix
   belongs elsewhere, route that part to the owner — do not ask the first agent to
   reach across.

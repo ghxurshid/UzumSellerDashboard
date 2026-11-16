@@ -1,6 +1,6 @@
-import { formatNumber, formatPercent } from '@/lib/format';
-import type { Block, InsightCard } from '@/services/insights/blocks';
-import { SEVERITY_ORDER } from '@/services/insights/blocks';
+import { formatNumber, formatPercent } from '@core/lib/format';
+import type { Block } from '@core/agent/blocks';
+import { SEVERITY_ORDER, type InsightCard } from '@/services/insights/cards';
 import type { InvoicesSource, StocksSource } from '@/services/queries/sources';
 import type { Product } from '@/types/domain';
 

@@ -27,8 +27,10 @@
 
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@core/*": ["../core/src/*"],
+      "*": ["./node_modules/@types/*", "./node_modules/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "../core/src"]
 }

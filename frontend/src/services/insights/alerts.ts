@@ -1,4 +1,4 @@
-import type { TranslationKey } from '@/lib/i18n/dictionary';
+import type { TranslationKey } from '@core/i18n/dictionary';
 import type { FinanceTotals } from '@/services/derive/finance';
 import { flattenSkus } from '@/services/derive/products';
 import type { FbsOrder } from '@/services/uzum/types';

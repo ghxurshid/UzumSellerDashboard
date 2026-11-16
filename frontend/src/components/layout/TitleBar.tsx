@@ -1,10 +1,10 @@
 import { Cpu, Minus, PanelRight, Maximize2, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { IconButton } from '@/components/ui/IconButton';
+import { IconButton } from '@core/ui/kit/IconButton';
 import { APP_VERSION_LABEL } from '@/constants/app';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { useAiModelLabel } from '@/store/settings.store';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { useAiModelLabel } from '@core/state/settings.store';
 import { useUiStore } from '@/store/ui.store';
 
 import { BrandMark } from './BrandMark';

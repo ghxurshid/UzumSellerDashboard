@@ -1,9 +1,9 @@
 import { Activity } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import type { TickerItem } from '@/types/domain';
 
 const TREND_TEXT = { up: 'text-pos', down: 'text-neg', flat: 'text-faint' } as const;

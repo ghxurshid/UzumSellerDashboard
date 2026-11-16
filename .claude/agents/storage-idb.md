@@ -1,6 +1,6 @@
 ---
 name: storage-idb
-description: IndexedDB schema, repositories, mappers, retention and the analytics worker plumbing — owns frontend/src/services/storage/idb/ (schema, db, records/metadata/kv repos, mappers, analytics client/runner/worker; the arithmetic in aggregation.ts belongs to derive-metrics, missingRanges() to archive-sync) and frontend/src/services/storage/*.ts (retention, account, localStorage, settings service and schema). Use when adding or changing an object store, bumping DB_VERSION, writing a wire-to-row mapper, fixing a store_id or deterministic-id problem, tuning retention, or when aggregation blocks the main thread. Examples - "add a table for FBS invoice items", "products from two shops mix together", "the archive keeps growing", "migrate an old database". Do NOT use for sync planning or coverage (archive-sync), endpoint wiring, or UI.
+description: IndexedDB schema, repositories, mappers, retention, settings persistence and the analytics worker plumbing — owns frontend/src/services/storage/idb/ (schema, db, records/metadata/kv repos, mappers, analytics client/runner/worker; the arithmetic in aggregation.ts belongs to derive-metrics, missingRanges() to archive-sync), frontend/src/services/storage/*.ts (retention, account, localStorage), core/src/settings/ (settings service and schema, AI connections), core/src/storage/ (the key/value port) and extension/src/storage/ (the extension's chrome.storage backend and panel preferences). Use when adding or changing an object store, bumping DB_VERSION, writing a wire-to-row mapper, fixing a store_id or deterministic-id problem, tuning retention, or when aggregation blocks the main thread. Examples - "add a table for FBS invoice items", "products from two shops mix together", "the archive keeps growing", "migrate an old database". Do NOT use for sync planning or coverage (archive-sync), endpoint wiring, or UI.
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 color: yellow
@@ -12,12 +12,16 @@ cannot recover from another device.
 
 ## What you own
 
-- `src/services/storage/idb/` — `schema.ts`, `db.ts`, `records.repo.ts`,
+- `frontend/src/services/storage/idb/` — `schema.ts`, `db.ts`, `records.repo.ts`,
   `metadata.repo.ts` (except `missingRanges()`), `kv.repo.ts`, `mappers.ts`,
   `analytics.client.ts`, `analytics.runner.ts`, `analytics.worker.ts`
-- `src/services/storage/` — `retention.ts`, `account.ts`, `localStorage.ts`,
-  `settings.service.ts`, `settingsSchema.ts` (`STORAGE.md` is evidence you read;
-  `spec-scribe` edits it)
+- `frontend/src/services/storage/` — `retention.ts`, `account.ts`,
+  `localStorage.ts` (`STORAGE.md` there is evidence you read; `spec-scribe` edits it)
+- `core/src/settings/` — `settings.service.ts`, `settingsSchema.ts`,
+  `aiConnections.ts` (and their tests); `core/src/storage/kv.ts`, the port both
+  hosts register a backend for
+- `extension/src/storage/` — `chromeStorageKv.ts`, `chromePreferences.ts`,
+  `localStorageKv.ts`, `index.ts`
 
 ## The schema
 
@@ -83,6 +87,18 @@ IndexedDB is used directly, no ORM. Keep transactions narrow and never hold one
 open across an `await` on something that is not a request. Schema and upgrade
 behaviour should be pinned with `fake-indexeddb` tests — hand the cases to
 `test-harness` if you do not write them.
+
+## The extension's storage
+
+The extension has no IndexedDB and no archive; its backend is
+`extension/src/storage/chromeStorageKv.ts`. From its header: `chrome.storage.local` is
+not partitioned by the embedding site (the panel is an extension page in an iframe on
+seller.uzum.uz, where IndexedDB and localStorage would be keyed to the extension and
+the top-level site) and is shared by every panel instance. The storage area is
+resolved on every call, `browser` first, never cached at import time. Every path is
+`async`, so a missing API is a rejected promise, never a synchronous throw — the
+settings service reads a rejection as "degrade to an in-memory session". Core slots
+are stored as `savdo.kv.<key>`; the core key strings themselves do not change.
 
 ## Report
 

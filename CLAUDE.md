@@ -14,6 +14,16 @@ IndexedDB (`savdo`, v3). An in-browser Copilot talks to the seller's chosen LLM
 provider with the seller's own key. There is no application server:
 **`backend/` is an untouched ASP.NET template — never modify it.**
 
+The repo has three packages besides `backend/`. `core/` is the source-only
+Copilot engine (no dependencies and no `node_modules` of its own) shared by two
+hosts: `frontend/`, the site, and `extension/`, an MV3 browser extension for
+seller.uzum.uz (Chrome, Edge, Firefox). Each host compiles `core/` against its
+own `node_modules`. **`core/` never imports from a host; hosts import core via
+`@core/`** (`@/` exists only in `frontend/`, `@ext/` only in `extension/`; lint
+rejects either inside `core/src`). The layer direction below applies inside
+`frontend/`; `core/` sits below every one of its layers and may be imported from
+any of them.
+
 Layer direction, strictly downward — an upper layer may import a lower one,
 never the reverse:
 
@@ -22,30 +32,44 @@ pages -> features -> services/queries -> services/insights -> services/derive
       -> services/data -> services/sync + services/storage -> services/uzum -> services/api
 ```
 
-`services/ai` (LLM transport) is used only by `services/insights`. `lib/`,
-`types/` and `constants/` are shared leaves any layer may import. Contract
-modules are the one accepted exception to the direction: `insights/blocks.ts`
-(the card body language, which the rules in `derive/insights.ts` also author)
-and the source shapes in `queries/sources.ts` may be imported from below. A new
+The LLM transport (`core/src/ai`) is used only by the engine and
+`services/insights`. `lib/`, `types/` and `constants/` are shared leaves any
+layer may import. Contract modules are the one accepted exception to the
+direction: `insights/cards.ts` (the insight-card envelope, which the rules in
+`derive/insights.ts` also author) and the source shapes in `queries/sources.ts`
+may be imported from below. The block language is `@core/agent/blocks`,
+importable from anywhere as core. A new
 upward import of anything else is a defect.
 
 ## Ownership — one owner per path
 
-| Path (under `frontend/` unless stated) | Owner |
+| Path (under `frontend/` unless it starts with `core/` or `extension/`) | Owner |
 |---|---|
 | `src/services/api/` (except `queryKeys.ts`), `src/services/uzum/` | `uzum-api` |
-| `src/services/storage/idb/` (cursor/worker plumbing, schema, repos, mappers), `src/services/storage/*.ts` | `storage-idb` |
+| `src/services/storage/idb/` (cursor/worker plumbing, schema, repos, mappers), `src/services/storage/*.ts` (`account`, `localStorage`, `retention`) | `storage-idb` |
 | `src/services/sync/`, `src/services/storage/archive/`, `src/services/data/`, `missingRanges()` in `idb/metadata.repo.ts` | `archive-sync` |
 | `src/services/derive/`, the arithmetic in `idb/aggregation.ts`, `src/types/` | `derive-metrics` |
 | `src/services/queries/`, `src/services/api/queryKeys.ts` | `data-queries` |
-| `src/services/ai/` | `ai-providers` |
-| `src/services/insights/` — `agent`, `prompt`, `widgets`, `ndjson`, `blocks`, `figures`, `actions`, `alerts`, `pins`, `export`, `phrase`, `ai` | `copilot-engine` |
-| `src/services/insights/` — `toolkit`, `datasets`, `digest`, `plaintext` | `copilot-data` |
+| `src/services/insights/` — `prompt`, `actions`, `cards`, `alerts`, `pins`, `ai` | `copilot-engine` |
+| `src/services/insights/` — `toolkit`, `datasets`, `digest`, `siteToolkit` | `copilot-data` |
 | `src/pages/`, `src/features/`, `src/components/`, `src/store/`, `src/lib/`, `src/styles/`, `src/app/`, `src/hooks/`, `src/constants/`, `src/main.tsx`, `index.html` | `ui-surface` |
 | `package.json`, lockfile, `vite.config.ts`, `vitest.config.ts`, `tsconfig*.json`, `eslint.config.js`, `vercel.json` | `platform-tooling` |
+| `core/src/ai/` | `ai-providers` |
+| `core/src/agent/` | `copilot-engine` |
+| `core/src/tools/` (including `contract.ts`) | `copilot-data` |
+| `core/src/settings/`, `core/src/storage/` | `storage-idb` |
+| `core/src/errors/`, `core/src/net/` | `uzum-api` |
+| `core/src/ui/`, `core/src/state/`, `core/src/i18n/`, `core/src/lib/`, `core/src/hooks/`, `core/src/styles/`, `core/src/constants/` | `ui-surface` |
+| `core/src/types/` | `derive-metrics` |
+| `extension/src/uzum/` | `uzum-api` |
+| `extension/src/tools/` | `copilot-data` |
+| `extension/src/host/` | `copilot-engine` |
+| `extension/src/storage/` | `storage-idb` |
+| `extension/src/content/`, `extension/src/panel/` | `ui-surface` |
+| `core/package.json`, `core/tsconfig.json`, `core/tooling/`, `extension/` config files (`package.json`, lockfile, `vite*.config.ts`, `vitest.config.ts`, `tsconfig*.json`, `eslint.config.js`), `extension/manifests/`, `extension/scripts/`, `extension/_locales/`, root `.gitignore` | `platform-tooling` |
 | growth of the test suite, fixtures | `test-harness` |
 | review against project invariants (read-only) | `invariant-reviewer` |
-| `FUNCTIONAL-SPECIFICATION.md`, `TECHNICAL-SPECIFICATION.md`, `ENDPOINTS.md`, `STORAGE.md` | `spec-scribe` |
+| `docs/FUNCTIONAL-SPECIFICATION.md`, `docs/TECHNICAL-SPECIFICATION.md`, `docs/API-REQUEST-RESPONSE.md`, `ENDPOINTS.md`, `STORAGE.md` | `spec-scribe` |
 
 `frontend/_design/` is reference material (design canvas, recorded API samples in
 `uploads/uzum-samples.json`); read it, never edit it.
@@ -62,8 +86,8 @@ upward import of anything else is a defect.
 3. **Tests move with the code.** If your intended change breaks an existing
    test, update that test in the same change and say why. New coverage beyond
    that is `test-harness` work.
-4. **Shared leaves.** Adding a key to `lib/i18n/dictionary.ts` (all three of
-   `[en, ru, uz]`) or a type to `types/` is allowed for any agent that needs it;
+4. **Shared leaves.** Adding a key to `core/src/i18n/dictionary.ts` (all three of
+   `[en, ru, uz]`) or a host-agnostic type to `core/src/types/` is allowed for any agent that needs it;
    changing an existing entry belongs to the owner.
 5. **Documentation follows the code when it has to.** When a change makes a
    section of the specs untrue, name the section in your report; the
@@ -89,7 +113,7 @@ upward import of anything else is a defect.
 ## House style
 
 - TypeScript `strict`, `noUncheckedIndexedAccess`, `noImplicitReturns`; alias
-  `@/` → `src/`. Lint: no `any`, `import type` for type-only imports, no unused
+  `@/` → `frontend/src/`, `@core/` → `core/src/` (both hosts), `@ext/` → `extension/src/`. Lint: no `any`, `import type` for type-only imports, no unused
   vars (`^_` exempt), no `console.log`.
 - Code comments in **English**, explaining *why*, in the voice of the existing
   module headers. Markdown documentation in **Uzbek**.
@@ -98,11 +122,18 @@ upward import of anything else is a defect.
 
 ## Verification
 
-From `frontend/`:
+From `frontend/` (also typechecks, lints and tests `core/`):
 
 ```bash
 npm run typecheck && npm run lint && npm test
 ```
 
-UI and tooling changes also run `npm run build`. Report failures honestly with
+From `extension/` (its own install; `core/` is linted and tested by `frontend/`):
+
+```bash
+npm run typecheck && npm run lint && npm test
+```
+
+A change under `core/` runs both. UI and tooling changes also run `npm run build`
+in the host they touch. Report failures honestly with
 their output; never adjust a test's expectation to hide a defect.

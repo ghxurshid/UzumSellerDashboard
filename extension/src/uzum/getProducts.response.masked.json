@@ -1,0 +1,637 @@
+{
+  "productList": [
+    {
+      "productId": 4000001,
+      "category": "Спортивная одежда",
+      "rating": "5.0",
+      "feedbackQuantity": 2,
+      "status": {
+        "id": 1,
+        "title": "В продаже",
+        "value": "IN_STOCK",
+        "description": "Есть товары в продаже, находятся на складе",
+        "color": "#51AE42",
+        "additional": []
+      },
+      "moderationStatus": {
+        "title": "Проверен",
+        "color": "#51AE42",
+        "value": "MODERATED",
+        "hasAnySkuBlocked": null
+      },
+      "commission": null,
+      "commissionDto": {
+        "minCommission": 25.5,
+        "maxCommission": 25.5
+      },
+      "skuList": [
+        {
+          "skuTitle": "КРАСН-L",
+          "skuFullTitle": "SELLER-SAMPLEKIT-КРАСН-L",
+          "productTitle": "Спортивный комплект «Образец» – футболка и шорты",
+          "skuId": 50000002,
+          "quantityCreated": 0,
+          "quantityAvailable": 5,
+          "quantityAvailableByStockType": {
+            "fbo": 5,
+            "fbs": 0
+          },
+          "quantityActive": 5,
+          "quantityFbs": 0,
+          "quantityAdditional": 0,
+          "quantityOnPhotoStudio": 0,
+          "quantityArchived": 0,
+          "quantitySold": 0,
+          "quantityReturned": 2,
+          "quantityMissing": 0,
+          "quantityDefected": 0,
+          "quantityPending": 0,
+          "returnedPercentage": 100,
+          "barcode": 2000000000024,
+          "archived": false,
+          "commission": 25.5,
+          "characteristics": "L, Красный",
+          "previewImage": "https://images.uzum.uz/xxxxxxxxxxxxxxxxxxxx",
+          "ikpu": "00000000000000000",
+          "photo": null,
+          "purchasePrice": null,
+          "price": 120000,
+          "recommendedTotalPrice": null,
+          "blockingReason": null,
+          "blockReasons": [],
+          "skuBlockReason": null,
+          "blocked": false,
+          "rankInfo": {
+            "rank": "C",
+            "rankValue": "C",
+            "dateUpdated": 1794472997270
+          },
+          "article": null,
+          "turnover": null,
+          "dimensionalGroup": "СГТ",
+          "paidStorageDimensionalGroup": null,
+          "paidStoragePriceItem": 96,
+          "paidStorageAmount": 480,
+          "actualDimensionalGroup": null,
+          "hasStudioPhoto": null,
+          "forecastOutOfStock": false,
+          "activeSale": false,
+          "switchbackActive": false,
+          "marketPrice": 120000,
+          "characteristicsList": [
+            {
+              "characteristicTitle": {
+                "uz": "Kiyim oʻlchami",
+                "ru": "Размер одежды"
+              },
+              "definedType": true,
+              "characteristicValue": {
+                "uz": "L",
+                "ru": "L"
+              }
+            },
+            {
+              "characteristicTitle": {
+                "uz": "Rang",
+                "ru": "Цвет"
+              },
+              "definedType": true,
+              "characteristicValue": {
+                "uz": "Qizil",
+                "ru": "Красный"
+              }
+            }
+          ],
+          "status": {
+            "value": "IN_STOCK",
+            "title": "В продаже",
+            "color": "#51AE42"
+          },
+          "skuDimension": {
+            "length": 378,
+            "width": 281,
+            "height": 35,
+            "weight": 365
+          },
+          "updatedFromWms": true,
+          "hasActiveDiscount": true,
+          "sellerItemCode": null,
+          "specialOffer": {
+            "inOffer": true,
+            "hasRecommendation": false,
+            "mechanicType": "UZUM_PROMO",
+            "mechanicPrice": null,
+            "endDate": 1796324340000,
+            "promoName": "Акция маркетплейса / Marketpleys aksiyasi",
+            "selfExit": null,
+            "promoIds": [
+              1
+            ]
+          },
+          "isWithoutWeightDimensional": false,
+          "avgdsales": 0,
+          "avgdquantity": 5,
+          "pstorage": true
+        },
+        {
+          "skuTitle": "КРАСН-M",
+          "skuFullTitle": "SELLER-SAMPLEKIT-КРАСН-M",
+          "productTitle": "Спортивный комплект «Образец» – футболка и шорты",
+          "skuId": 50000005,
+          "quantityCreated": 0,
+          "quantityAvailable": 0,
+          "quantityAvailableByStockType": {
+            "fbo": 0,
+            "fbs": 0
+          },
+          "quantityActive": 0,
+          "quantityFbs": 0,
+          "quantityAdditional": 0,
+          "quantityOnPhotoStudio": 0,
+          "quantityArchived": 0,
+          "quantitySold": 4,
+          "quantityReturned": 2,
+          "quantityMissing": 0,
+          "quantityDefected": 0,
+          "quantityPending": 0,
+          "returnedPercentage": 33.333333333333336,
+          "barcode": 2000000000055,
+          "archived": false,
+          "commission": 25.5,
+          "characteristics": "M, Красный",
+          "previewImage": "https://images.uzum.uz/xxxxxxxxxxxxxxxxxxxx",
+          "ikpu": "00000000000000000",
+          "photo": null,
+          "purchasePrice": null,
+          "price": 120000,
+          "recommendedTotalPrice": null,
+          "blockingReason": null,
+          "blockReasons": [],
+          "skuBlockReason": null,
+          "blocked": false,
+          "rankInfo": {
+            "rank": "A",
+            "rankValue": "A",
+            "dateUpdated": 1794472997277
+          },
+          "article": null,
+          "turnover": null,
+          "dimensionalGroup": null,
+          "paidStorageDimensionalGroup": null,
+          "paidStoragePriceItem": null,
+          "paidStorageAmount": null,
+          "actualDimensionalGroup": null,
+          "hasStudioPhoto": null,
+          "forecastOutOfStock": true,
+          "activeSale": false,
+          "switchbackActive": false,
+          "marketPrice": 120000,
+          "characteristicsList": [
+            {
+              "characteristicTitle": {
+                "uz": "Kiyim oʻlchami",
+                "ru": "Размер одежды"
+              },
+              "definedType": true,
+              "characteristicValue": {
+                "uz": "M",
+                "ru": "M"
+              }
+            },
+            {
+              "characteristicTitle": {
+                "uz": "Rang",
+                "ru": "Цвет"
+              },
+              "definedType": true,
+              "characteristicValue": {
+                "uz": "Qizil",
+                "ru": "Красный"
+              }
+            }
+          ],
+          "status": {
+            "value": "RUN_OUT",
+            "title": "Закончился",
+            "color": "#E4981B"
+          },
+          "skuDimension": {
+            "length": 370,
+            "width": 279,
+            "height": 31,
+            "weight": 350
+          },
+          "updatedFromWms": true,
+          "hasActiveDiscount": false,
+          "sellerItemCode": null,
+          "specialOffer": {
+            "inOffer": true,
+            "hasRecommendation": false,
+            "mechanicType": "UZUM_PROMO",
+            "mechanicPrice": null,
+            "endDate": 1796324340000,
+            "promoName": "Акция маркетплейса / Marketpleys aksiyasi",
+            "selfExit": null,
+            "promoIds": [
+              1
+            ]
+          },
+          "isWithoutWeightDimensional": false,
+          "avgdsales": null,
+          "avgdquantity": null,
+          "pstorage": null
+        },
+        {
+          "skuTitle": "КРАСН-S",
+          "skuFullTitle": "SELLER-SAMPLEKIT-КРАСН-S",
+          "productTitle": "Спортивный комплект «Образец» – футболка и шорты",
+          "skuId": 50000001,
+          "quantityCreated": 0,
+          "quantityAvailable": 4,
+          "quantityAvailableByStockType": {
+            "fbo": 4,
+            "fbs": 0
+          },
+          "quantityActive": 4,
+          "quantityFbs": 0,
+          "quantityAdditional": 0,
+          "quantityOnPhotoStudio": 0,
+          "quantityArchived": 0,
+          "quantitySold": 1,
+          "quantityReturned": 1,
+          "quantityMissing": 0,
+          "quantityDefected": 0,
+          "quantityPending": 0,
+          "returnedPercentage": 50,
+          "barcode": 2000000000017,
+          "archived": false,
+          "commission": 25.5,
+          "characteristics": "S, Красный",
+          "previewImage": "https://images.uzum.uz/xxxxxxxxxxxxxxxxxxxx",
+          "ikpu": "00000000000000000",
+          "photo": null,
+          "purchasePrice": null,
+          "price": 120000,
+          "recommendedTotalPrice": null,
+          "blockingReason": null,
+          "blockReasons": [],
+          "skuBlockReason": null,
+          "blocked": false,
+          "rankInfo": {
+            "rank": "C",
+            "rankValue": "C",
+            "dateUpdated": 1794472997010
+          },
+          "article": null,
+          "turnover": null,
+          "dimensionalGroup": "СГТ",
+          "paidStorageDimensionalGroup": null,
+          "paidStoragePriceItem": 120,
+          "paidStorageAmount": 480,
+          "actualDimensionalGroup": null,
+          "hasStudioPhoto": null,
+          "forecastOutOfStock": false,
+          "activeSale": false,
+          "switchbackActive": false,
+          "marketPrice": 120000,
+          "characteristicsList": [
+            {
+              "characteristicTitle": {
+                "uz": "Kiyim oʻlchami",
+                "ru": "Размер одежды"
+              },
+              "definedType": true,
+              "characteristicValue": {
+                "uz": "S",
+                "ru": "S"
+              }
+            },
+            {
+              "characteristicTitle": {
+                "uz": "Rang",
+                "ru": "Цвет"
+              },
+              "definedType": true,
+              "characteristicValue": {
+                "uz": "Qizil",
+                "ru": "Красный"
+              }
+            }
+          ],
+          "status": {
+            "value": "IN_STOCK",
+            "title": "В продаже",
+            "color": "#51AE42"
+          },
+          "skuDimension": {
+            "length": 374,
+            "width": 282,
+            "height": 47,
+            "weight": 331
+          },
+          "updatedFromWms": true,
+          "hasActiveDiscount": true,
+          "sellerItemCode": null,
+          "specialOffer": {
+            "inOffer": true,
+            "hasRecommendation": false,
+            "mechanicType": "UZUM_PROMO",
+            "mechanicPrice": null,
+            "endDate": 1796324340000,
+            "promoName": "Акция маркетплейса / Marketpleys aksiyasi",
+            "selfExit": null,
+            "promoIds": [
+              1
+            ]
+          },
+          "isWithoutWeightDimensional": false,
+          "avgdsales": 0,
+          "avgdquantity": 4,
+          "pstorage": true
+        },
+        {
+          "skuTitle": "КРАСН-XL",
+          "skuFullTitle": "SELLER-SAMPLEKIT-КРАСН-XL",
+          "productTitle": "Спортивный комплект «Образец» – футболка и шорты",
+          "skuId": 50000004,
+          "quantityCreated": 0,
+          "quantityAvailable": 2,
+          "quantityAvailableByStockType": {
+            "fbo": 2,
+            "fbs": 0
+          },
+          "quantityActive": 2,
+          "quantityFbs": 0,
+          "quantityAdditional": 0,
+          "quantityOnPhotoStudio": 0,
+          "quantityArchived": 0,
+          "quantitySold": 2,
+          "quantityReturned": 2,
+          "quantityMissing": 0,
+          "quantityDefected": 0,
+          "quantityPending": 0,
+          "returnedPercentage": 50,
+          "barcode": 2000000000048,
+          "archived": false,
+          "commission": 25.5,
+          "characteristics": "XL, Красный",
+          "previewImage": "https://images.uzum.uz/xxxxxxxxxxxxxxxxxxxx",
+          "ikpu": "00000000000000000",
+          "photo": null,
+          "purchasePrice": null,
+          "price": 120000,
+          "recommendedTotalPrice": null,
+          "blockingReason": null,
+          "blockReasons": [],
+          "skuBlockReason": null,
+          "blocked": false,
+          "rankInfo": {
+            "rank": "A",
+            "rankValue": "A",
+            "dateUpdated": 1794472997284
+          },
+          "article": null,
+          "turnover": null,
+          "dimensionalGroup": "СГТ",
+          "paidStorageDimensionalGroup": null,
+          "paidStoragePriceItem": 96,
+          "paidStorageAmount": 192,
+          "actualDimensionalGroup": null,
+          "hasStudioPhoto": null,
+          "forecastOutOfStock": false,
+          "activeSale": false,
+          "switchbackActive": false,
+          "marketPrice": 120000,
+          "characteristicsList": [
+            {
+              "characteristicTitle": {
+                "uz": "Kiyim oʻlchami",
+                "ru": "Размер одежды"
+              },
+              "definedType": true,
+              "characteristicValue": {
+                "uz": "XL",
+                "ru": "XL"
+              }
+            },
+            {
+              "characteristicTitle": {
+                "uz": "Rang",
+                "ru": "Цвет"
+              },
+              "definedType": true,
+              "characteristicValue": {
+                "uz": "Qizil",
+                "ru": "Красный"
+              }
+            }
+          ],
+          "status": {
+            "value": "IN_STOCK",
+            "title": "В продаже",
+            "color": "#51AE42"
+          },
+          "skuDimension": {
+            "length": 377,
+            "width": 286,
+            "height": 34,
+            "weight": 380
+          },
+          "updatedFromWms": true,
+          "hasActiveDiscount": true,
+          "sellerItemCode": null,
+          "specialOffer": {
+            "inOffer": true,
+            "hasRecommendation": false,
+            "mechanicType": "UZUM_PROMO",
+            "mechanicPrice": null,
+            "endDate": 1796324340000,
+            "promoName": "Акция маркетплейса / Marketpleys aksiyasi",
+            "selfExit": null,
+            "promoIds": [
+              1
+            ]
+          },
+          "isWithoutWeightDimensional": false,
+          "avgdsales": 0,
+          "avgdquantity": 2,
+          "pstorage": true
+        },
+        {
+          "skuTitle": "КРАСН-XXL",
+          "skuFullTitle": "SELLER-SAMPLEKIT-КРАСН-XXL",
+          "productTitle": "Спортивный комплект «Образец» – футболка и шорты",
+          "skuId": 50000003,
+          "quantityCreated": 0,
+          "quantityAvailable": 4,
+          "quantityAvailableByStockType": {
+            "fbo": 4,
+            "fbs": 0
+          },
+          "quantityActive": 4,
+          "quantityFbs": 0,
+          "quantityAdditional": 0,
+          "quantityOnPhotoStudio": 0,
+          "quantityArchived": 0,
+          "quantitySold": 1,
+          "quantityReturned": 2,
+          "quantityMissing": 0,
+          "quantityDefected": 0,
+          "quantityPending": 0,
+          "returnedPercentage": 66.66666666666667,
+          "barcode": 2000000000031,
+          "archived": false,
+          "commission": 25.5,
+          "characteristics": "XXL, Красный",
+          "previewImage": "https://images.uzum.uz/xxxxxxxxxxxxxxxxxxxx",
+          "ikpu": "00000000000000000",
+          "photo": null,
+          "purchasePrice": null,
+          "price": 120000,
+          "recommendedTotalPrice": null,
+          "blockingReason": null,
+          "blockReasons": [],
+          "skuBlockReason": null,
+          "blocked": false,
+          "rankInfo": {
+            "rank": "A",
+            "rankValue": "A",
+            "dateUpdated": 1794472997262
+          },
+          "article": null,
+          "turnover": 40,
+          "dimensionalGroup": "СГТ",
+          "paidStorageDimensionalGroup": null,
+          "paidStoragePriceItem": 60,
+          "paidStorageAmount": null,
+          "actualDimensionalGroup": null,
+          "hasStudioPhoto": null,
+          "forecastOutOfStock": false,
+          "activeSale": false,
+          "switchbackActive": false,
+          "marketPrice": 120000,
+          "characteristicsList": [
+            {
+              "characteristicTitle": {
+                "uz": "Kiyim oʻlchami",
+                "ru": "Размер одежды"
+              },
+              "definedType": true,
+              "characteristicValue": {
+                "uz": "XXL",
+                "ru": "XXL"
+              }
+            },
+            {
+              "characteristicTitle": {
+                "uz": "Rang",
+                "ru": "Цвет"
+              },
+              "definedType": true,
+              "characteristicValue": {
+                "uz": "Qizil",
+                "ru": "Красный"
+              }
+            }
+          ],
+          "status": {
+            "value": "IN_STOCK",
+            "title": "В продаже",
+            "color": "#51AE42"
+          },
+          "skuDimension": {
+            "length": 376,
+            "width": 278,
+            "height": 42,
+            "weight": 405
+          },
+          "updatedFromWms": true,
+          "hasActiveDiscount": true,
+          "sellerItemCode": null,
+          "specialOffer": {
+            "inOffer": true,
+            "hasRecommendation": false,
+            "mechanicType": "UZUM_PROMO",
+            "mechanicPrice": null,
+            "endDate": 1796324340000,
+            "promoName": "Акция маркетплейса / Marketpleys aksiyasi",
+            "selfExit": null,
+            "promoIds": [
+              1
+            ]
+          },
+          "isWithoutWeightDimensional": false,
+          "avgdsales": 0.1,
+          "avgdquantity": 4,
+          "pstorage": false
+        }
+      ],
+      "skuTitle": "SAMPLEKIT",
+      "image": "https://images.uzum.uz/yyyyyyyyyyyyyyyyyyyy/t_product_540_high.jpg",
+      "previewImg": "https://images.uzum.uz/yyyyyyyyyyyyyyyyyyyy/t_product_80_low.jpg",
+      "title": "Спортивный комплект «Образец» – футболка и шорты",
+      "quantityAvailable": 15,
+      "quantityAvailableByStockType": {
+        "fbo": 15,
+        "fbs": 0
+      },
+      "quantityReserved": 0,
+      "quantityActive": 15,
+      "quantityFbs": 0,
+      "quantityAdditional": 0,
+      "quantityOnPhotoStudio": 0,
+      "quantityCreated": 0,
+      "quantitySold": 8,
+      "quantityReturned": 9,
+      "quantityMissing": 0,
+      "quantityDefected": 0,
+      "quantityPending": 0,
+      "quantityArchived": 0,
+      "returnedPercentage": 52.9,
+      "newYearStatus": {
+        "title": "Нет",
+        "color": "#494B50",
+        "value": "NONE"
+      },
+      "price": 120000,
+      "clicks": null,
+      "viewers": 774,
+      "conversion": 1.16,
+      "roi": "-100.0",
+      "rankInfo": {
+        "rank": "A",
+        "rankValue": "A",
+        "dateUpdated": 1794452671174
+      },
+      "blockReason": null,
+      "blockComment": null,
+      "dateModerated": null,
+      "blockingReasons": [],
+      "volumeDiscount": null,
+      "skusHasAllRequiredFilters": true,
+      "allFiltersFilled": false,
+      "auctionMember": false,
+      "isEditable": true,
+      "isEditableSku": true,
+      "isActive": true,
+      "isDeletable": false,
+      "isIlliquid": false,
+      "switchbackActive": false,
+      "promotionStatus": "PROMOTION_AVAILABLE",
+      "createdByFlowB": true,
+      "isWithoutWeightDimensional": false,
+      "cpoAdvertisementsDetails": {
+        "advCpoId": "00000000-0000-7000-8000-000000000001",
+        "productId": 4000001,
+        "commissionPercentage": 7,
+        "minCommissionPercentage": 3,
+        "maxCommissionPercentage": 60,
+        "status": "ACTIVE",
+        "cpoVersion": 2
+      },
+      "pstorage": true
+    }
+  ],
+  "totalProductsAmount": 38,
+  "totalProductsAmountWithoutWeightDimensional": 0
+}

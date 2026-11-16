@@ -2,8 +2,8 @@ import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { PATH_BY_SCREEN } from '@/constants/navigation';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { useToastStore } from '@/store/toast.store';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { useToastStore } from '@core/state/toast.store';
 import {
   ALERT_CLEAR_PARAMS,
   ALERT_PARAMS,
@@ -24,7 +24,7 @@ import {
 } from '@/services/insights/actions';
 import { useUzumActions } from '@/services/queries/useUzumActions';
 import { useAlertsStore } from '@/store/alerts.store';
-import { useChatStore } from '@/store/chat.store';
+import { useChatStore } from '@core/state/chat.store';
 import { useFiltersStore } from '@/store/filters.store';
 import { useUiStore } from '@/store/ui.store';
 

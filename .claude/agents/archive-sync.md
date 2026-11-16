@@ -116,4 +116,4 @@ its `synced_ranges` must be trimmed with it.
 
 In Uzbek: what changed, how the invariant is preserved, which edge cases you
 covered and which you knowingly left open, tests added, and the
-`TECHNICAL-SPECIFICATION.md` §5 / `STORAGE.md` §4–§6 sections now stale.
+`docs/TECHNICAL-SPECIFICATION.md` §5 / `STORAGE.md` §4–§6 sections now stale.

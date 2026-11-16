@@ -35,7 +35,7 @@ import type {
   ReturnItemRecord,
   SupplyInvoiceItemRecord,
 } from '@/services/storage/idb/schema';
-import { readDataSettings } from '@/services/storage/settings.service';
+import { readDataSettings } from '@core/settings/settings.service';
 import { ensureWindowAcross } from '@/services/sync/lazySync';
 import { captureSnapshotsAcross } from '@/services/sync/snapshotSync';
 import { FBS_ORDER_STATUSES, type FbsCountedStatus } from '@/services/uzum/endpoints';

@@ -1,9 +1,11 @@
 import { isAvailable, requestPersistence } from '@/services/storage/idb/db';
-import { hydrateSettings } from '@/services/storage/settings.service';
+import { idbKvBackend } from '@/services/storage/idb/kv.repo';
+import { registerKvBackend } from '@core/storage/kv';
+import { hydrateSettings } from '@core/settings/settings.service';
 import { useArchiveStore } from '@/store/archive.store';
 import { restoreNotifications } from '@/store/notifications.store';
 import { restoreAlerts } from '@/store/alerts.store';
-import { initModelUsageSync, restoreModelUsage } from '@/store/modelUsage.store';
+import { initModelUsageSync, restoreModelUsage } from '@core/state/modelUsage.store';
 import { restorePins } from '@/store/pins.store';
 import { restoreSyncLog } from '@/store/sync.store';
 
@@ -59,6 +61,10 @@ async function run(): Promise<BootstrapReport> {
      screen mounts — a request sent while storage is still opening must not
      be the one request the quota meter never heard about. */
   initModelUsageSync();
+
+  /* Before anything reads settings or the usage ledger: the shared layer
+     reaches persistence only through this port. */
+  registerKvBackend(idbKvBackend);
 
   const storage = await isAvailable();
 

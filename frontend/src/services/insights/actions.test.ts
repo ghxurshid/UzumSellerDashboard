@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ACTION_IDS, explainRejection, INSIGHT_ACTIONS, resolveAction } from './actions';
 import { pinnableBlocks } from './pins';
-import type { Block } from './blocks';
+import type { Block } from '@core/agent/blocks';
 
 /**
  * The gate between a model's suggestion and a request to a marketplace.

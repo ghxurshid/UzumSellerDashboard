@@ -12,8 +12,8 @@ import {
 import type { ReactNode } from 'react';
 
 import { describeWindow } from '@/lib/dateRange';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useConnection } from '@/services/queries/useConnection';
 import { ALL_STORES, useFiltersStore } from '@/store/filters.store';
 import { selectUnreadCount, useNotificationsStore } from '@/store/notifications.store';

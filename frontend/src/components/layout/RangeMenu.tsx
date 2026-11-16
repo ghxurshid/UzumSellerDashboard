@@ -1,8 +1,8 @@
 import { GitCompareArrows } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { RANGE_KEYS, describeWindow, resolveWindow } from '@/lib/dateRange';
 import { useFiltersStore } from '@/store/filters.store';
 import { useUiStore } from '@/store/ui.store';

@@ -1,10 +1,10 @@
 import { useCallback } from 'react';
 
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { useTranslation } from '@core/i18n/useTranslation';
 import { useConnection } from '@/services/queries/useConnection';
 import { useSessionStore } from '@/store/session.store';
 import { useSyncStore } from '@/store/sync.store';
-import { useToastStore } from '@/store/toast.store';
+import { useToastStore } from '@core/state/toast.store';
 
 export type WriteBlock = 'unconfigured' | 'unauthorized' | 'forbidden' | 'offline' | 'syncing' | null;
 

@@ -2,10 +2,10 @@ import { Ban, CircleCheck, CircleDashed, Download, Loader2, TriangleAlert } from
 import type { ReactNode } from 'react';
 
 import { SyncProgress } from '@/components/common/SyncProgress';
-import { Panel } from '@/components/ui/Panel';
-import { formatClock, formatNumber, formatPercent } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { Panel } from '@core/ui/kit/Panel';
+import { formatClock, formatNumber, formatPercent } from '@core/lib/format';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import {
   taskFraction,
   useLazyTasks,

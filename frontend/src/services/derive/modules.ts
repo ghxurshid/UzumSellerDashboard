@@ -1,4 +1,4 @@
-import { formatCompactMoney, formatNumber, formatPercent, formatStamp } from '@/lib/format';
+import { formatCompactMoney, formatNumber, formatPercent, formatStamp } from '@core/lib/format';
 import type {
   ExpensesSource,
   FinanceSource,

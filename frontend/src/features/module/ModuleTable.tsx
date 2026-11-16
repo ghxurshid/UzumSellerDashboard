@@ -1,13 +1,13 @@
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FilterX } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@core/ui/kit/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
-import { IconButton } from '@/components/ui/IconButton';
+import { IconButton } from '@core/ui/kit/IconButton';
 import { MODULE_PAGE_SIZES } from '@/constants/app';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { useTranslation } from '@core/i18n/useTranslation';
 import { buildPageItems } from '@/lib/pagination';
-import { cn } from '@/lib/utils';
+import { cn } from '@core/lib/utils';
 import type { ModuleColumn, ModuleRow, ModuleRowAction, SortDirection } from '@/types/domain';
 import type { RowMenuAction } from '@/components/ui/RowContextMenu';
 

@@ -14,14 +14,14 @@ import {
 } from 'lucide-react';
 import { type ReactNode } from 'react';
 
-import { IconButton } from '@/components/ui/IconButton';
+import { IconButton } from '@core/ui/kit/IconButton';
 import { describeWindow } from '@/lib/dateRange';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useConnection } from '@/services/queries/useConnection';
 import { ALL_STORES, useFiltersStore } from '@/store/filters.store';
 import { selectUnreadCount, useNotificationsStore } from '@/store/notifications.store';
-import { usePreferencesStore } from '@/store/preferences.store';
+import { usePreferencesStore } from '@core/state/preferences.store';
 import { useSessionStore } from '@/store/session.store';
 import { selectProgress, useSyncStore } from '@/store/sync.store';
 import { useUiStore } from '@/store/ui.store';

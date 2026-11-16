@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useNavigate, useRouteError } from 'react-router-dom';
 
 import { StateBlock } from '@/components/common/StateBlock';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { useTranslation } from '@core/i18n/useTranslation';
 
 /**
  * Route-level fallback — a page chunk that failed to load, or a screen that

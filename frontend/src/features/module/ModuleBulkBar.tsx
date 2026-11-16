@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 
-import { Icon } from '@/components/ui/Icon';
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { Icon } from '@core/ui/kit/Icon';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 
 export interface BulkAction {
   readonly key: string;

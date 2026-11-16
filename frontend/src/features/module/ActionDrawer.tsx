@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@core/ui/kit/Button';
 import { Drawer } from '@/components/ui/Drawer';
-import { SelectField, TextAreaField, TextField } from '@/components/ui/Field';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { SelectField, TextAreaField, TextField } from '@core/ui/kit/Field';
+import { useTranslation } from '@core/i18n/useTranslation';
 import { queryKeys } from '@/services/api/queryKeys';
 import { useUzumActions } from '@/services/queries/useUzumActions';
 import { fetchBarcodeTypes, fetchReturnReasons } from '@/services/uzum/endpoints';

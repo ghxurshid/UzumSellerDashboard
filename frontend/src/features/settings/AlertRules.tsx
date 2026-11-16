@@ -1,10 +1,10 @@
 import { BellRing, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { IconButton } from '@/components/ui/IconButton';
-import { Panel, PanelHeader } from '@/components/ui/Panel';
-import { formatStamp } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { IconButton } from '@core/ui/kit/IconButton';
+import { Panel, PanelHeader } from '@core/ui/kit/Panel';
+import { formatStamp } from '@core/lib/format';
+import { useTranslation } from '@core/i18n/useTranslation';
 import { useAlertsStore } from '@/store/alerts.store';
 
 /**

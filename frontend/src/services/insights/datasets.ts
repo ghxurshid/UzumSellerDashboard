@@ -2,7 +2,7 @@ import type { Granularity } from '@/services/storage/idb/aggregation';
 import { bucketStart } from '@/services/storage/idb/aggregation';
 import type { FinanceOrderItem } from '@/services/uzum/types';
 
-import { isoDay, isoMinute } from './plaintext';
+import { isoDay, isoMinute } from '@core/tools/plaintext';
 
 /**
  * The arithmetic behind the chat's computing lookups, kept pure.

@@ -1,9 +1,9 @@
 import { RowsIcon, Search, XCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { IconButton } from '@/components/ui/IconButton';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { IconButton } from '@core/ui/kit/IconButton';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import type { ModuleTab } from '@/types/domain';
 
 interface ModuleToolbarProps {

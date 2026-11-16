@@ -13,7 +13,7 @@ import {
   type EntityType,
   type SyncMetadataRecord,
 } from '@/services/storage/idb/schema';
-import { readDataSettings } from '@/services/storage/settings.service';
+import { readDataSettings } from '@core/settings/settings.service';
 import {
   fetchExpenses,
   fetchFbsOrders,

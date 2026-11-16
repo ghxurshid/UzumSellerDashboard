@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 
 import { ScreenFrame } from '@/components/common/ScreenFrame';
 import { Dialog } from '@/components/ui/Dialog';
-import { Button } from '@/components/ui/Button';
-import { SkeletonTiles } from '@/components/ui/Skeleton';
+import { Button } from '@core/ui/kit/Button';
+import { SkeletonTiles } from '@core/ui/kit/Skeleton';
 import { PinnedCards } from '@/features/insights/PinnedCards';
 import { DemandHeatmap } from '@/features/overview/DemandHeatmap';
 import { KpiStrip } from '@/features/overview/KpiStrip';
@@ -13,7 +13,7 @@ import { PortfolioRank } from '@/features/overview/PortfolioRank';
 import { RevenueChart } from '@/features/overview/RevenueChart';
 import { UnitEconomics } from '@/features/overview/UnitEconomics';
 import { useScreenStatus } from '@/hooks/useScreenStatus';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { useTranslation } from '@core/i18n/useTranslation';
 import { useOverviewQuery } from '@/services/queries/useOverviewQuery';
 import { useFiltersStore } from '@/store/filters.store';
 

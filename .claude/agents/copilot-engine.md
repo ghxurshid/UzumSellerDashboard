@@ -1,6 +1,6 @@
 ---
 name: copilot-engine
-description: How the Copilot converses and what it may draw — owns frontend/src/services/insights/ agent.ts (conversation loop, rounds, rewrite turn, resume), prompt.ts and widgets.ts (the model's instructions), ndjson.ts (stream parser), blocks.ts and figures.ts (block schema, value formats, limits), actions.ts (action registry), alerts.ts, pins.ts, export.ts, phrase.ts and ai.ts (rail card author). Use for block kinds, widget rules, prompt wording, capability documents, refused-line handling, action/button validation, pins, CSV export, the insights rail's model cards. Examples - "add a comparison block", "the model keeps sending invalid charts", "a button does nothing", "the second question forgets the widget guide". Do NOT use for the lookups' data (copilot-data), provider transport (ai-providers) or rendering (ui-surface).
+description: How the Copilot converses and what it may draw — owns core/src/agent/ (agent.ts conversation loop, rounds, rewrite turn, resume; systemPrompt.ts and widgets.ts the model's instructions; ndjson.ts stream parser; blocks.ts and figures.ts block schema, value formats, limits; actionRegistry.ts action registry and gate; export.ts; phrase.ts), the site's frontend/src/services/insights/ prompt.ts, actions.ts, cards.ts, alerts.ts, pins.ts and ai.ts (rail card author), and the extension's extension/src/host/ (prompt, actions, toolkit pairing). Use for block kinds, widget rules, prompt wording, capability documents, refused-line handling, action/button validation, pins, CSV export, the insights rail's model cards. Examples - "add a comparison block", "the model keeps sending invalid charts", "a button does nothing", "the second question forgets the widget guide". Do NOT use for the lookups' data (copilot-data), provider transport (ai-providers) or rendering (ui-surface).
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: opus
 color: pink
@@ -16,12 +16,13 @@ reaches the screen.
 - **The model computes; the application validates and presents.** A lookup
   (owned by `copilot-data`) returns data. The model works out what the question
   needs and writes the result into blocks as plain values with a `format`
-  (`money`, `percent`, `count`, `number`). `figures.ts` prints them through the
-  same formatting as every screen. There are no refs and no fact table — do not
+  (`money`, `percent`, `count`, `number`). `core/src/agent/figures.ts` prints them
+  through the same formatting as every screen. There are no refs and no fact table — do not
   reintroduce either.
 - **Closed vocabularies.** `blocks.ts` is a closed set of kinds validated by zod,
-  depth-bounded, with every list capped by `WIDGET_LIMITS`. `actions.ts` is a
-  closed registry; a button's params are checked against its entry before it is
+  depth-bounded, with every list capped by `WIDGET_LIMITS`. `actionRegistry.ts` is
+  the closed registry every host shares (the site's own table is `actions.ts`, the
+  extension's is `extension/src/host/actions.ts`); a button's params are checked against its entry before it is
   drawn, and a refused one comes back to the model with a reason.
 - **The schema is the contract; the guide explains it.** `widgets.ts` reads its
   limits from `WIDGET_LIMITS`, so a limit changes in one place. When you add a
@@ -54,10 +55,25 @@ reaches the screen.
 
 Change the schema and the guide together, write the parser/loop behaviour as
 testable functions, and pin new refusals and protocol paths in
-`ndjson.test.ts`, `agent.loop.test.ts`, `session.test.ts` or a new test beside the
-file. When a change needs a new tool or a different data format, hand it to
+`core/src/agent/ndjson.test.ts`, `core/src/agent/session.test.ts`,
+`frontend/src/services/insights/agent.loop.test.ts` or a new test beside the file.
+When a change needs a new tool or a different data format, hand it to
 `copilot-data`; when it needs a new render arm, hand it to `ui-surface` with the
 exact block type.
+
+## The extension host
+
+`extension/src/host/` is this territory's second host: `prompt.ts` writes the
+extension's part of the system prompt over the shared `systemPrompt.ts`, `actions.ts`
+its registry, `toolkit.ts` pairs the two. From the header of `prompt.ts`: the prompt
+describes the situation, never the catalogue — which lookups exist is the toolkit
+document's business (`extension/src/tools/`, `copilot-data`), so a lookup added there
+needs no word changed here. What differs from the site is what the model may claim:
+that a figure is so'm, that a list is complete, that something changed since last
+week — the cabinet's response fields are documented nowhere. From `actions.ts`: a
+write action is an entry there *and* a route in `extension/src/uzum/routes.ts` *and*
+the confirmation in the panel, and the prompt's "this version only reads" paragraph
+changes with it.
 
 ## Report
 

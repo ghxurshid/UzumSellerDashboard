@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { classifyOpenAiFailure, openAiIncompleteError } from '@/services/ai/modelRules';
-import { ModelQuotaError } from '@/services/ai/usage';
+import { classifyOpenAiFailure, openAiIncompleteError } from '@core/ai/modelRules';
+import { ModelQuotaError } from '@core/ai/usage';
 import { ApiError, type ApiFailureKind } from '@/services/api/client';
 
 /**

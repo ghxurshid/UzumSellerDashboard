@@ -1,4 +1,4 @@
-import { blockLineSchema, type Block } from './blocks';
+import { blockLineSchema, type Block } from '@core/agent/blocks';
 
 /**
  * An answer the seller decided to keep.
@@ -24,6 +24,10 @@ import { blockLineSchema, type Block } from './blocks';
  * when it was proposed, and a button that has been sitting on a dashboard for
  * three weeks proposing last month's prices is a trap. A pinned card states;
  * acting stays in the conversation where the parameters are fresh.
+ *
+ * `choice` blocks go the same way as traces: a question the Copilot asked back
+ * is a moment in a conversation, and on a dashboard it would be a set of
+ * options that answer to nothing.
  */
 
 export interface PinnedAnswer {
@@ -50,7 +54,7 @@ export function pinnableBlocks(blocks: readonly Block[]): readonly Block[] {
   const kept: Block[] = [];
 
   for (const block of blocks) {
-    if (block.kind === 'trace' || block.kind === 'action') continue;
+    if (block.kind === 'trace' || block.kind === 'action' || block.kind === 'choice') continue;
 
     if (block.kind === 'callout') {
       const inner = pinnableBlocks(block.blocks);

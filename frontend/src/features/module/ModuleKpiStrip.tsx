@@ -2,8 +2,8 @@ import * as Tooltip from '@radix-ui/react-tooltip';
 import { Info } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import type { Kpi, Trend } from '@/types/domain';
 
 const TREND_STYLE: Record<Trend, string> = {

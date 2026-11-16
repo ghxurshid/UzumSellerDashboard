@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { readStoredPin } from './pins';
+import { pinnableBlocks, readStoredPin } from './pins';
 
 /**
  * Pins read back from storage.
@@ -44,5 +44,39 @@ describe('readStoredPin', () => {
     expect(readStoredPin(null)).toBeNull();
     expect(readStoredPin({ id: 'x' })).toBeNull();
     expect(readStoredPin({ id: 'x', title: 'y', blocks: [] })).toBeNull();
+  });
+});
+
+describe('pinnableBlocks', () => {
+  /**
+   * A pinned card states; it does not act and it does not ask. A question the
+   * Copilot asked back belongs to the moment it was asked in — on a dashboard
+   * three weeks later its options answer to nothing.
+   */
+  it('keeps what an answer states and drops what belongs to the conversation', () => {
+    const kept = pinnableBlocks([
+      { kind: 'trace', tool: 'window.totals', detail: '1204 rows' },
+      { kind: 'text', text: 'Ikki mahsulot shu nomga mos keldi.' },
+      {
+        kind: 'choice',
+        question: 'Qaysi biri?',
+        options: [{ label: 'Abaya qora' }, { label: 'Abaya oq' }],
+      },
+      { kind: 'action', actionId: 'copilot.ask', params: { question: 'Nega?' } },
+      {
+        kind: 'callout',
+        tone: 'accent',
+        title: 'Tavsiya',
+        blocks: [
+          {
+            kind: 'choice',
+            question: 'Qaysi davr?',
+            options: [{ label: '7 kun' }, { label: '30 kun' }],
+          },
+        ],
+      },
+    ]);
+
+    expect(kept).toEqual([{ kind: 'text', text: 'Ikki mahsulot shu nomga mos keldi.' }]);
   });
 });

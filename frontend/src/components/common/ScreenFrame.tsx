@@ -2,12 +2,12 @@ import { AlertCircle, CheckCircle2, CloudOff, Clock, Eye, X } from 'lucide-react
 import { useNavigate } from 'react-router-dom';
 import type { ComponentType, ReactNode } from 'react';
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@core/ui/kit/Button';
 import { STALE_AFTER_MS, type BannerKind, type ScreenStatus } from '@/hooks/useScreenStatus';
 import { describeWindow, resolveWindow } from '@/lib/dateRange';
-import { formatClock } from '@/lib/format';
-import { useTranslation, type Translator } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { formatClock } from '@core/lib/format';
+import { useTranslation, type Translator } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { SOURCE_IDS } from '@/services/queries/sources';
 import { useSync } from '@/services/sync/useSync';
 import { useFiltersStore } from '@/store/filters.store';

@@ -10,10 +10,10 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { NAV_ITEMS, SETTINGS_PATH } from '@/constants/navigation';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { useTranslation } from '@core/i18n/useTranslation';
 import { useProductsQuery } from '@/services/queries/useProductsQuery';
 import { useSync } from '@/services/sync/useSync';
-import { usePreferencesStore } from '@/store/preferences.store';
+import { usePreferencesStore } from '@core/state/preferences.store';
 import { useUiStore } from '@/store/ui.store';
 
 export type CommandGroup = 'go' | 'products' | 'actions' | 'ask';

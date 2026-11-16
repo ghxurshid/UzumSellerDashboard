@@ -1,6 +1,6 @@
 ---
 name: ai-providers
-description: LLM transport — owns frontend/src/services/ai/ (provider adapters in client.ts, streaming and retries in stream.ts, tool-call wire formats in messages.ts, zod→JSON Schema in jsonSchema.ts, token pricing in pricing.ts). Use for adding or fixing a provider, streaming that stalls or drops chunks, native tool calling (Claude/OpenAI/Gemini), thought signatures, 429/503 retry behaviour, cached-token accounting, cost estimates. Examples - "add a provider", "Gemini returns 400 on the second round", "streaming stalls on long answers", "the cost shown is wrong". Do NOT use for what the Copilot says or reads (copilot-engine / copilot-data) or for UI.
+description: LLM transport — owns core/src/ai/ (provider adapters in client.ts, streaming and retries in stream.ts, tool-call wire formats in messages.ts, zod→JSON Schema in jsonSchema.ts, token pricing in pricing.ts). Use for adding or fixing a provider, streaming that stalls or drops chunks, native tool calling (Claude/OpenAI/Gemini), thought signatures, 429/503 retry behaviour, cached-token accounting, cost estimates. Examples - "add a provider", "Gemini returns 400 on the second round", "streaming stalls on long answers", "the cost shown is wrong". Do NOT use for what the Copilot says or reads (copilot-engine / copilot-data) or for UI.
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 color: cyan
@@ -14,6 +14,8 @@ Copilot looks broken in ways nobody upstream can diagnose.
 
 ## What you own
 
+Everything in `core/src/ai/` (shared by the site and the extension):
+
 - `client.ts` — one-shot completions for the three request shapes: Anthropic
   Messages, Google `generateContent`, and the OpenAI-compatible
   `/chat/completions` every other adapter speaks.
@@ -25,7 +27,10 @@ Copilot looks broken in ways nobody upstream can diagnose.
 - `jsonSchema.ts` — the zod subset converter that describes tool arguments to a
   provider.
 - `pricing.ts` — `estimateCost`, `formatCost`.
-- Tests beside them: `stream.test.ts`, `jsonSchema.test.ts`.
+- `connection.ts` (the connection test), `modelRules.ts` (what each model id may be
+  sent, and the auth headers) and `usage.ts` (the per-model rate-limit meter).
+- Tests beside them: `stream.test.ts`, `jsonSchema.test.ts`, `modelRules.test.ts`,
+  `usage.test.ts`.
 
 The consumer contract is `streamComplete(options)` and `complete(settings,
 request)`. Changing their shapes is a *Contract change* for `copilot-engine`.
@@ -37,7 +42,8 @@ request)`. Changing their shapes is a *Contract change* for `copilot-engine`.
    the configured provider.
 2. **Anthropic browser calls** need `anthropic-dangerous-direct-browser-access`
    and API version `2023-06-01`.
-3. **Errors go through `toApiError()`** so the chat branches on the same
+3. **Errors go through `toApiError()`** (`core/src/net/httpError.ts`, owned by
+   `uzum-api`) so the chat branches on the same
    `ApiError` kinds as the rest of the app (`rateLimited`, `server`, `timeout`,
    `network`, `cancelled`, …). A cancelled request is never retried and never
    reported as a failure.

@@ -2,9 +2,9 @@ import * as RadixDialog from '@radix-ui/react-dialog';
 import { Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useProductsQuery } from '@/services/queries/useProductsQuery';
 import { useUiStore } from '@/store/ui.store';
 

@@ -1,4 +1,8 @@
-import { ApiError } from './errors';
+import { ApiError } from '@core/errors/apiError';
+import { headerValue } from '@core/net/headers';
+
+/* Re-exported: callers and tests have always imported it from the pacer. */
+export { headerValue };
 
 /**
  * Request pacing, driven by the seller API's own rate-limit headers.
@@ -126,24 +130,6 @@ const HEADER = {
   dailyLimit: 'x-ratelimit-limit-per-day',
   dailyRemaining: 'x-ratelimit-remaining-per-day',
 } as const;
-
-/**
- * Axios normalises response header names to lower case, but the object is an
- * `AxiosHeaders` instance on some adapters and a plain record on others, so
- * both shapes are read rather than assumed.
- */
-export function headerValue(headers: unknown, name: string): string | null {
-  if (typeof headers !== 'object' || headers === null) return null;
-
-  const bag = headers as Record<string, unknown> & { get?: (key: string) => unknown };
-  const raw = bag[name] ?? (typeof bag.get === 'function' ? bag.get(name) : undefined);
-
-  if (typeof raw === 'string') return raw;
-  if (typeof raw === 'number') return String(raw);
-  /* A repeated header arrives as a list; the first value is the current one. */
-  if (Array.isArray(raw) && typeof raw[0] === 'string') return raw[0];
-  return null;
-}
 
 function headerNumber(headers: unknown, name: string): number | null {
   const raw = headerValue(headers, name);

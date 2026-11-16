@@ -1,9 +1,9 @@
 import { Download, Settings2, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { IconButton } from '@/components/ui/IconButton';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { IconButton } from '@core/ui/kit/IconButton';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useDialogStore } from '@/store/dialog.store';
 
 interface ProgressOverlayProps {

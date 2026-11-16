@@ -205,3 +205,14 @@ describe('what a header claims', () => {
     expect(headerLine).toContain('expenses refetched from Uzum');
   });
 });
+
+describe('a name that is not in the registry', () => {
+  it.each(['constructor', 'toString'])(
+    'is "no such lookup" for "%s", not a crash on the prototype',
+    async (name) => {
+      resetMocks();
+      const { text } = await runReadTool(name, {}, makeContext());
+      expect(text).toContain(`[${name}] no such lookup. Available: window.totals`);
+    },
+  );
+});

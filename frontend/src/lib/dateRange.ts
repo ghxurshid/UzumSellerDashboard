@@ -1,4 +1,4 @@
-import { formatDay } from '@/lib/format';
+import { formatDay } from '@core/lib/format';
 import type { DateWindow } from '@/services/uzum/endpoints';
 import type { RangeKey } from '@/types/domain';
 

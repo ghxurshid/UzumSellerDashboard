@@ -2,7 +2,7 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { STATE_KIND } from '@/constants/app';
-import { formatClock } from '@/lib/format';
+import { formatClock } from '@core/lib/format';
 import { ApiError } from '@/services/api/client';
 import { useConnection } from '@/services/queries/useConnection';
 import { useFailedSources, useSyncStore } from '@/store/sync.store';

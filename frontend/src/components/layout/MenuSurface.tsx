@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import type { ReactNode } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@core/lib/utils';
 
 interface MenuSurfaceProps {
   readonly open: boolean;

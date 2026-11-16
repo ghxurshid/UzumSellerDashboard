@@ -1,9 +1,9 @@
 import { Info } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { Panel } from '@/components/ui/Panel';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { Panel } from '@core/ui/kit/Panel';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import type { RankBucket } from '@/types/domain';
 
 interface PortfolioRankProps {

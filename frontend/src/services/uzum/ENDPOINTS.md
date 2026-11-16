@@ -7,6 +7,11 @@ Manbalar:
 - Kod: [`endpoints.ts`](./endpoints.ts), [`types.ts`](./types.ts), [`http.ts`](./http.ts)
 - Rasmiy spetsifikatsiya: `frontend/_design/v1/uploads/api-docs.json` (OpenAPI 3, 35 ta path)
 
+> 1–12-bo'limlar — **seller OpenAPI** (`/api/seller-openapi/`). Brauzer kengaytmasi
+> ishlatadigan **kabinetning ichki API'si** (`/api/seller/`) bu API emas: u alohida,
+> dalili ancha kuchsiz va [13-bo'limda](#13-kabinetning-ichki-apisi-openapi-emas)
+> ajratib yozilgan.
+
 ---
 
 ## 1. Umumiy qoidalar (avval shuni o'qing)
@@ -33,7 +38,7 @@ Uzum API bir xil emas. Uch xil javob shakli mavjud va `http.ts` uchalasini ham b
 > **Javob ichidagi barcha timestamp'lar — MILLISEKUNDLARDA.**
 
 Ikkisini aralashtirsangiz API xato bermaydi — shunchaki **bo'sh ro'yxat** qaytaradi.
-Shuning uchun konvertatsiya alohida nom olgan: `toApiSeconds()` ([http.ts:150](./http.ts#L150)).
+Shuning uchun konvertatsiya alohida nom olgan: `toApiSeconds()` ([http.ts:171](./http.ts#L171)).
 
 ### Sahifalash (pagination)
 
@@ -517,7 +522,7 @@ belgilangan vaqtda qabul punktiga (drop-off point) topshiradi.
 > namunada shu tasdiqlangan. Kod `statuses` ni yuboradi, ya'ni to'g'ri ishlaydi.
 >
 > Bu route ba'zi serverlarda yalang'och massiv, ba'zilarida `{ invoices: [...] }`
-> qaytaradi — kod ikkalasini ham qabul qiladi ([endpoints.ts:325](./endpoints.ts#L325)).
+> qaytaradi — kod ikkalasini ham qabul qiladi ([endpoints.ts:338](./endpoints.ts#L338)).
 > Namunadagi yagona chaqiruv 400 bilan tugagani uchun **javob shakli tasdiqlanmagan**.
 
 **Qaytaradi:** `FbsInvoice[]`
@@ -642,7 +647,7 @@ real serverga qilingan **30 ta so'rov** yozuvi (28 tasi muvaffaqiyatli), do'konl
 Real namunada `page=0` va `page=1` — ikkalasida ham yozuvlar to'la, lekin
 `totalElements: 0`.
 
-`paginate()` mantiqi ([http.ts:136](./http.ts#L136)):
+`paginate()` mantiqi ([http.ts:118](./http.ts#L118)):
 
 ```ts
 if (reported !== undefined && collected.length >= reported) break;  // 50 >= 0 → chiqib ketadi
@@ -673,7 +678,7 @@ nomlandi va `fetchShopProducts` o'shani o'qiydi.
 52 ta real mahsulotda uchraganlari: `IN_STOCK` (23), `RUN_OUT` (21), `ARCHIVED` (5),
 `BLOCKED` (1), statussiz (2). **`ACTIVE` umuman yo'q.**
 
-`narrowStatus()` ([derive/products.ts:23](../derive/products.ts#L23)) esa
+`narrowStatus()` ([derive/products.ts:36](../derive/products.ts#L36)) esa
 `KNOWN_STATUSES` ichida `ACTIVE`, `INACTIVE`, `RUN_OUT`, `ARCHIVED`, `DEFECTED`,
 `WARNING` ni izlaydi va topilmasa `INACTIVE` qaytaradi.
 
@@ -762,3 +767,178 @@ qilinadi.
 - Real FBO nakladnoy statuslari: `ACCEPTANCE_IN_PROGRESS`, `ACCEPTED`.
 - Rate limit haqiqiy: namunadagi bitta so'rov (`fbs_orders_RETURNED`) **429** bilan
   qaytgan — ketma-ket o'qish qarori asosli.
+
+---
+
+## 13. Kabinetning ichki API'si (OpenAPI emas)
+
+Bu bo'limdagi hech narsa yuqoridagi 1–12-bo'limlarga tegishli emas. Uni
+saytning o'zi chaqirmaydi: faqat brauzer kengaytmasi
+([`extension/`](../../../../extension/src/uzum/routes.ts)), sotuvchining ochiq
+kabinet varag'i orqali (kabinetning o'zi ham shu yo'lni chaqiradi — yozib
+olingan so'rovlar uniki). Hujjatlashtirilmagan API: u haqida bilganimiz — ikkita
+yozib olingan so'rov, bitta yozib olingan javob va bitta sessiya namunasi.
+Javobning maydonma-maydon shakli bu yerda **takrorlanmaydi**:
+[API-REQUEST-RESPONSE.md, 5.B.8](../../../../docs/API-REQUEST-RESPONSE.md#5b8-get-apisellershopshopidproductgetproducts).
+
+### 13.1. Dalil qanchalik kuchli
+
+| Nima | Dalil |
+|---|---|
+| So'rov | **Ikkita** yozib olingan so'rov (kabinetning o'zi yuborgan): A — `size=5`, B — `size=24` |
+| Javob | **Bitta** yozib olingan javob (B so'rovniki), yozib olgan kishi qisqartirgan: 24 qatorli sahifadan 1 mahsulot, 5 SKU. A so'rovining tanasi yozilmagan |
+| Javob header'lari | Bitta javobniki (B) |
+| Sessiya shakli | **Bitta** `localStorage.state` namunasi (sirlar almashtirilgan) |
+| Tezlik chegarasi | Noma'lum: bitta javobda `X-RateLimit-*` va `Retry-After` yo'q |
+
+Bu bo'limdagi "bitta namuna" so'zi aniq shuni anglatadi: bir marta ko'rilgan.
+Hech qaysi qator "tasdiqlangan" deb yozilmagan — 12.1-bo'limdagi kabi bir
+nechta real javob bilan solishtirish bu yerda hali bo'lmagan. Kengaytma hech
+qachon haqiqiy brauzerda ishga tushirilmagan (texnik spetsifikatsiya, 14.8).
+
+### 13.2. OpenAPI'dan farqi
+
+| | Seller OpenAPI (1–12) | Kabinetning ichki API'si |
+|---|---|---|
+| Host | `api-seller.uzum.uz` | `api-seller.uzum.uz` (o'sha host) |
+| Yo'l | `/api/seller-openapi/…` | `/api/seller/…` |
+| `Authorization` | xom token, `Bearer`siz | `Bearer <token>` |
+| Token qayerdan | sotuvchi Sozlamalarga o'zi qo'yadi | kabinetning o'z sessiyasi (13.4) |
+| Kim chaqiradi | sayt | bizning kodimizdan faqat kengaytmaning kontent skripti (kabinetning o'zi ham chaqiradi) |
+
+Kabinet tokeni OpenAPI tokeni bilan bir xilmi, bittasi ikkinchisida ishlaydimi —
+**noma'lum**; ikkisi bir-biriga almashtirilmaydi.
+
+### 13.3. `GET /api/seller/shop/{shopId}/product/getProducts` — mahsulotlar sahifasi
+
+**Yozib olingan so'rovlar (ikkita, ikkalasi `200`):**
+
+```
+A  GET https://api-seller.uzum.uz/api/seller/shop/{shopId}/product/getProducts
+         ?page=0&size=5&filter=WITHOUT_REQUIRED_FILTERS
+   Authorization: Bearer <token>
+   → 200   (tanasi yozib olinmagan)
+
+B  GET https://api-seller.uzum.uz/api/seller/shop/{shopId}/product/getProducts
+         ?page=0&size=24&filter=ALL&sortBy=id&searchQuery=&order=descending
+   Authorization: Bearer <token>
+   → 200   (tanasi — yagona yozib olingan javob)
+```
+
+B kabinetning o'z mahsulotlar jadvali so'roviga o'xshaydi: `size=24` kabinet saqlagan
+sahifa hajmiga teng; A — kichik vidjetga o'xshaydi. Bu o'qish taxmin, ikkala so'rovda
+ham `sentry` tranzaksiya nomlari bir xil edi. `searchQuery` B da **bo'sh satr** bilan
+yuborilgan; `sortBy` va `order` uchun yozilgan yagona qiymatlar `id` va
+`descending`. A da bu uchtasi yo'q va `200` qaytgan.
+
+Kod B ning parametr tartibi bilan chaqiradi
+([`routes.ts`](../../../../extension/src/uzum/routes.ts#L112); marshrut — yopiq jadval
+`UZUM_ROUTES`, token faqat shu jadval yasagan URL'ga yuboriladi:
+[`toApiUrl`](../../../../extension/src/uzum/routes.ts#L184)). A shaklini (`sortBy`/
+`order`/`searchQuery`siz) kod yubormaydi.
+
+| Parametr | Kod nimani qabul qiladi | Dalil |
+|---|---|---|
+| `shopId` | musbat butun son | yo'lda — ikkala namunada |
+| `page` | butun, 0…100 000 | ikkalasida `0`; yuqori chegara — o'zimizniki |
+| `size` | butun, 1…100 (lookup'ning standarti — 24) | `5` (A) va `24` (B); **24 dan kattasi qabul qilinishi dalilsiz** |
+| `filter` | yopiq ro'yxat `ALL`, `WITHOUT_REQUIRED_FILTERS`; berilmasa `ALL` | `ALL` — B, `WITHOUT_REQUIRED_FILTERS` — A; boshqa qiymat yozilmagan va o'ylab topilmagan |
+| `searchQuery` | erkin matn, kesilgan (`trim`), ko'pi bilan 100 belgi, boshqaruv belgilarisiz; berilmasa bo'sh | B da bo'sh; to'ldirilgan qiymat bilan so'rov yozilmagan, **qanday moslashishi noma'lum**; 100 belgi — o'zimizniki |
+| `sortBy` | parametr emas, doim `id` | B da shu bitta qiymat |
+| `order` | parametr emas, doim `descending` | B da shu bitta qiymat |
+
+Qidiruv matni nega tokenni boshqa joyga yo'naltira olmaydi: u faqat `URLSearchParams`
+orqali **query qiymati** bo'lib kiradi — yo'lga ham, origin'ga ham yetmaydi, URL esa
+baribir `toApiUrl`dan o'tadi.
+
+**Javob header'lari (B, bitta namuna):** `content-type: application/json`;
+`access-control-allow-origin: https://seller.uzum.uz` (kabinet origin'i),
+`access-control-allow-credentials: true`, `access-control-allow-methods: POST, GET,
+OPTIONS, PUT, DELETE`, `access-control-allow-headers` ro'yxatida `authorization`
+bor; `access-control-max-age: 3600`; `cache-control: no-cache, no-store, …`;
+`server: istio-envoy`. `X-RateLimit-*` va `Retry-After` **yo'q**. Bu — CORS
+kabinet origin'idan chiqqan so'rovga ruxsat berganining bitta namunasi; kengaytma
+so'rovi shu origin'dan, sahifada chiqadi. Preflight alohida yozib olingan
+(2026-11-13, bitta namuna, tokensiz `OPTIONS`): faqat `authorization` so'ralganda
+server kabinet origin'iga, `GET` ga va shu header'ga ruxsat berdi
+([API-REQUEST-RESPONSE.md, 5.B.8](../../../../docs/API-REQUEST-RESPONSE.md#5b8-get-apisellershopshopidproductgetproducts)).
+Haqiqiy token bilan `GET` ning o'zi kengaytmadan hali yuborilmagan (13.5).
+
+**Javob shakli — bitta javobdan ma'lum.** Yuqori daraja: `productList` (massiv) va
+ikkita jami son — `totalProductsAmount` (yozuvda `38`) va
+`totalProductsAmountWithoutWeightDimensional` (`0`). Har mahsulot ichida `skuList`.
+Maydonlar, turlar, `null`lar va dalil kuchi — [API-REQUEST-RESPONSE.md, 5.B.8](../../../../docs/API-REQUEST-RESPONSE.md#5b8-get-apisellershopshopidproductgetproducts);
+bu yerda takrorlanmaydi. Kod uni
+[`readProductsPage`](../../../../extension/src/uzum/products.ts#L461) bilan o'qiydi:
+tolerant (har yozuvni javobdagidek ham (`raw`), yozib olingan namunadagi turga
+mos tiplangan ko'rinishda ham beradi; mos kelmagan yo'llar `mistyped` ro'yxatiga
+tushadi, noma'lum maydon e'tiborsiz qoladi, hech qachon yiqilmaydi) va **hech narsa hisoblamaydi**. Tana shu shaklga
+mos kelmasa, lookup shakldan mustaqil renderer
+([`render.ts`](../../../../extension/src/tools/render.ts)) ga tushadi va buni
+sarlavhada aytadi.
+
+### 13.4. Sessiya — `localStorage.state` (bitta namuna)
+
+Kontent skript kabinet varag'ining `localStorage` kaliti `state` ni o'qiydi
+([`session.ts`](../../../../extension/src/uzum/session.ts#L72)). Namunada:
+
+| Maydon | Ma'nosi (bitta namunadan) |
+|---|---|
+| `user.tokens.access` | Bearer tokeni — kontent skriptdan chiqmaydi |
+| `user.permissions` | kalitlari — do'kon id'lari, qiymati — ruxsat kodlari ro'yxati (masalan `PRODUCT_READ`) |
+| `user.sellerId`, `user.accountId` | butun sonlar |
+| `user.tokens.accessExpiration` | **birligi va ma'nosi noma'lum** — kod uni o'qimaydi; eskirgan token API'dan `401` bo'lib ko'rinadi |
+
+Kodning o'z farazlari — dalilsiz, shuning uchun noto'g'ri bo'lishi mumkin:
+- **`PRODUCT_READ` shu marshrut uchun kerak** degan faraz. Kod so'rovdan oldin
+  mahalliy tekshiradi (`permission: 'PRODUCT_READ'`); kod ro'yxatda bo'lsa-yu
+  marshrut boshqa kod so'rasa yoki umuman so'ramasa, kod ruxsatli so'rovni
+  yubormasdan rad etadi.
+- **Varaq URL'idagi son — do'kon id'i.** Yo'lning raqamli qismi sotuvchining
+  do'konlaridan biriga teng bo'lsa, shu do'kon ekranda deb olinadi
+  (`currentShopId`). Kabinetning URL sxemasi yozib olinmagan.
+
+### 13.5. Hal qilinmagan
+
+Javobning umumiy shakli (ro'yxat qaysi maydonda, umumiy son bormi) endi bitta
+javobdan **ma'lum**: `productList` va `totalProductsAmount`. Qolganlari ochiq:
+
+| Savol | Nima hal qiladi |
+|---|---|
+| `WITHOUT_REQUIRED_FILTERS` nimani tanlaydi: **hamma** mahsulotni yoki kichik qismni | shu filtr bilan yozib olingan javob. Faraz: `products-statistic` da `ALL: 38`, `WITHOUT_REQUIRED_FILTERS: 22` (1 sessiya) — kichik qism; ammo bu filtr bilan javob yozilmagan ([5.B.8, 5.B.9](../../../../docs/API-REQUEST-RESPONSE.md#5b8-get-apisellershopshopidproductgetproducts)) |
+| `totalProductsAmount` `filter` va `searchQuery` ga ergashadimi | `filter=WITHOUT_REQUIRED_FILTERS` yoki to'ldirilgan `searchQuery` bilan yozib olingan javob |
+| `searchQuery` qanday moslashadi (nom, SKU, shtrixkod) | to'ldirilgan qidiruv bilan yozib olingan so'rov va javob |
+| `size` 24 dan katta (kodda — 100 gacha) hurmat qilinadimi; sahifa o'rni `page × size` mi | `size=100` va `page>0` bilan yozib olingan javob |
+| Tezlik chegarasi bormi, `Retry-After` qaytaradimi | real `429` namunasi (bitta javobda bunday header yo'q — bu chegara yo'qligini isbotlamaydi) |
+| `accessExpiration` birligi | sessiya namunasi + tokenning real muddati |
+| `PRODUCT_READ` aynan shu marshrutga kerakmi | ruxsatsiz hisob bilan so'rov (`403`) |
+| `price` va saqlash summalarining birligi, `conversion` formulasi, `rankInfo.rank` shkalasi, boshqa enum qiymatlari | qo'shimcha javoblar; API-REQUEST-RESPONSE.md 5.B.8 "Ochiq savollar" |
+| Kabinetning CORS/CSP siyosati kengaytma so'rovini o'tkazadimi | kabinetga kirilgan varaqda, haqiqiy token bilan sinash — texnik spetsifikatsiya, 14.8. Hozircha: preflight o'tadi (bitta namuna), kirilmagan bosh sahifada CSP yo'q va ramka yuklanadi (Chrome 157, Edge 157); haqiqiy `GET` va kirilgan sahifalar ko'rilmagan |
+
+Shuning uchun kod bu marshrutni **"barcha mahsulotlar" deb atamaydi** va hech bir
+sonni o'zidan "do'kondagi mahsulotlar" deb yozmaydi. Sahifani faqat javobning o'z
+`totalProductsAmount` iga nisbatan joylaydi ("rows 1–24 of 38"), bunda o'rin `page ×
+size` deb faraz qilinadi (javob buni tasdiqlamaydi) va jami son `filter`/qidiruvga
+ergashishi noma'lum; jami son bo'lmasa yoki shakl tanilmasa — faqat "bu o'qish
+qaytargan elementlar" va hech bir sahifa "oxirgi" deyilmaydi. Kodning o'z tezlik
+qoidasi (ketma-ket, 400 ms oraliq, `429`da `Retry-After` yoki 2 s dan 60 s gacha
+o'sib boruvchi kutish, ko'pi bilan 10 daqiqa) o'lchangan chegara emas,
+ehtiyotkor taxmin.
+
+### 13.6. Xatolarni qanday sinflaydi
+
+Faqat HTTP holati bo'yicha (javob tanasi modelga uzatilmaydi, iqtibos qilinmaydi):
+`401` → `unauthorized`, `403` → `forbidden`, `404` → `notFound`, `429` →
+`rateLimited`, `5xx` → `server`, qolgan `4xx` → `client`. JSON bo'lmagan `200`
+tanasi — `server`. Tarmoq uzilishi — `network`, 30 soniyada javob bo'lmasa —
+`timeout`. Bu — kodning tanlovi, API xatolarining yozib olingan formati emas
+(xato tanasi hech qachon ko'rilmagan).
+
+Ikkita qoida sinfdan tashqarida turadi. **Yopiq ko'prik:** kontent tomoni
+xayrlashgandan keyin har bir chaqiruv `code` = `BRIDGE_CLOSED` bilan rad etiladi
+(`kind` — `client`, `unconfigured` emas): ulanish bor edi va yo'qoldi, hech qanday
+so'rov Uzum'ga bormagan. **"So'rov yuborilmadi":** kengaytmaning o'zi mahalliy rad
+etgan so'rov (do'kon sessiyada yo'q, ruxsat kodi yo'q, token yo'q) HTTP holatisiz
+xato bo'lib keladi; lookup matni Uzum API nomidan faqat HTTP holatli javob haqiqatan
+kelganda gapiradi, aks holda so'rov yuborilmaganini va sababini aytadi. Bu ham
+kodning tanlovi: kabinet API'sining xato javoblari hali bitta ham ko'rilmagan.

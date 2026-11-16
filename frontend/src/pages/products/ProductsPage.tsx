@@ -15,21 +15,21 @@ import { useCallback, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { ScreenFrame } from '@/components/common/ScreenFrame';
-import { Button } from '@/components/ui/Button';
-import { IconButton } from '@/components/ui/IconButton';
-import { Pill } from '@/components/ui/Pill';
-import { SkeletonTable } from '@/components/ui/Skeleton';
+import { Button } from '@core/ui/kit/Button';
+import { IconButton } from '@core/ui/kit/IconButton';
+import { Pill } from '@core/ui/kit/Pill';
+import { SkeletonTable } from '@core/ui/kit/Skeleton';
 import { PRODUCT_PAGE_SIZES } from '@/constants/app';
 import { useProductTable } from '@/features/products/useProductTable';
 import { useProgressTask } from '@/hooks/useProgressTask';
 import { useScreenStatus } from '@/hooks/useScreenStatus';
-import { buildCsv, downloadBlob, timestampedName } from '@/lib/download';
-import { formatNumber } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { buildCsv, downloadBlob, timestampedName } from '@core/lib/download';
+import { formatNumber } from '@core/lib/format';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useProductsQuery } from '@/services/queries/useProductsQuery';
 import { useFiltersStore } from '@/store/filters.store';
-import { useToastStore } from '@/store/toast.store';
+import { useToastStore } from '@core/state/toast.store';
 import type { Product, ProductSortKey, ProductStatus, Tone } from '@/types/domain';
 
 /* `gap-x` keeps the numeric columns from touching, and every track has a `0`

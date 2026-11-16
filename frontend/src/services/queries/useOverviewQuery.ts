@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 
 import { buildOverview, type OverviewSummary } from '@/services/derive/overview';
 import { toProducts } from '@/services/derive/products';
-import { usePreferencesStore } from '@/store/preferences.store';
+import { usePreferencesStore } from '@core/state/preferences.store';
 
 import { comparisonQuery, expensesQuery, financeQuery, productsQuery } from './sources';
 import { useScope, useScopeReady } from './useScope';

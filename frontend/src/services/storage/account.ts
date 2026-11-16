@@ -1,4 +1,4 @@
-import { readApiSettings } from './settings.service';
+import { readApiSettings } from '@core/settings/settings.service';
 
 /**
  * Which account the stored data belongs to.

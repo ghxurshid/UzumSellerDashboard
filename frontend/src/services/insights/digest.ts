@@ -6,7 +6,7 @@ import { flattenSkus } from '@/services/derive/products';
 import type { InvoicesSource } from '@/services/queries/sources';
 import type { Product } from '@/types/domain';
 
-import { clip, compose, dec, freshStamp, header, num, pairs, table } from './plaintext';
+import { clip, compose, dec, freshStamp, header, num, pairs, table } from '@core/tools/plaintext';
 
 /**
  * A window of the account, written out as data.

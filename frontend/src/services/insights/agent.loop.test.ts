@@ -1,17 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_AI_SETTINGS, defaultAiConnection } from '@/constants/settings';
-import type { AnthropicReasoningBlock, ToolCall } from '@/services/ai/messages';
-import type { StreamOptions, StreamResult } from '@/services/ai/stream';
-import type { AiSettings } from '@/types/settings';
+import { DEFAULT_AI_SETTINGS, defaultAiConnection } from '@core/constants/settings';
+import type { AnthropicReasoningBlock, ToolCall } from '@core/ai/messages';
+import type { StreamOptions, StreamResult } from '@core/ai/stream';
+import type { AiSettings } from '@core/types/settings';
 
-import type { AgentSession, Capability } from './agent';
-import type { Block } from './blocks';
+import type { AgentSession, Capability } from '@core/agent/agent';
+import type { Block } from '@core/agent/blocks';
 import type * as Digest from './digest';
+import { SITE_TOOLKIT } from './siteToolkit';
 import type { ToolContext } from './toolkit';
 
 const { streamComplete } = vi.hoisted(() => ({ streamComplete: vi.fn() }));
-vi.mock('@/services/ai/stream', () => ({ streamComplete }));
+vi.mock('@core/ai/stream', () => ({ streamComplete }));
 
 /* The only part of the digest the loop reads for itself. Everything else in
    that module is the real thing, because the toolkit runs on it. */
@@ -21,7 +22,7 @@ vi.mock('./digest', async (importOriginal) => ({
   freshnessNote,
 }));
 
-const { createSession, runAgent } = await import('./agent');
+const { createSession, runAgent } = await import('@core/agent/agent');
 
 /**
  * The round a question gets back when a line of it could not be drawn.
@@ -104,6 +105,7 @@ async function ask(
     settings: SETTINGS,
     system: 'system',
     session,
+    toolkit: SITE_TOOLKIT,
     context: CONTEXT,
     language: 'uz',
     granted: options.granted ?? new Set(['tools', 'widgets']),
@@ -295,6 +297,7 @@ describe('how old this machine’s data is', () => {
         settings: SETTINGS,
         system: 'system',
         session,
+        toolkit: SITE_TOOLKIT,
         context: CONTEXT,
         language: 'uz',
         granted: new Set(['tools', 'widgets']),
@@ -399,6 +402,7 @@ describe('Claude’s thinking on a turn that called a tool', () => {
         settings: SETTINGS,
         system: 'system',
         session,
+        toolkit: SITE_TOOLKIT,
         context: CONTEXT,
         language: 'uz',
         granted: new Set(),
@@ -441,5 +445,41 @@ describe('Claude’s thinking on a turn that called a tool', () => {
     expect(replayedCalls(2)).toEqual([CALL]);
     expect(replayedCalls(2)[0]?.reasoning).toBe(REASONING);
     expect(sentMessages(2)).toContain('series.0.values');
+  });
+});
+
+describe('a button the registry does not hold', () => {
+  it('never reaches the seller, and the rewrite is told which ids exist', async () => {
+    const { blocks, outcome } = await ask([
+      '{"kind":"action","actionId":"product.rename","params":{"name":"Abaya"}}',
+      '{"kind":"action","actionId":"product.rename","params":{"name":"Abaya"}}',
+    ]);
+
+    expect(blocks).toHaveLength(0);
+    expect(streamComplete).toHaveBeenCalledTimes(2);
+    expect(sentMessages(1)).toContain('no action named \\"product.rename\\"');
+    expect(sentMessages(1)).toContain('nav.open');
+    expect(outcome.dropped).toBe(1);
+    expect(outcome.rejected[0]).toMatch(/^actionId: no action named "product.rename"/);
+  });
+
+  it('is refused inside a callout too, keeping the rest of it', async () => {
+    const { blocks } = await ask([
+      '{"kind":"callout","tone":"accent","title":"Qiling","blocks":[{"kind":"text","text":"Narxni oshiring."},{"kind":"action","actionId":"toString"}]}',
+      '{"kind":"text","text":"Tayyor."}',
+    ]);
+
+    expect(blocks[0]).toMatchObject({ kind: 'callout', blocks: [{ kind: 'text' }] });
+  });
+
+  it('is not run when called as a tool, and says so', async () => {
+    const onRun = vi.fn();
+    await ask(['{"call":"product.rename","args":{"name":"Abaya"}}', '{"kind":"text","text":"Tayyor."}'], {
+      onRun,
+      budget: { rounds: 2, calls: 2 },
+    });
+
+    expect(onRun).not.toHaveBeenCalled();
+    expect(sentMessages(1)).toContain('[product.rename] no such lookup');
   });
 });

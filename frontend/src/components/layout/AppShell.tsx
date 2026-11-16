@@ -11,29 +11,29 @@ import {
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
-import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { ErrorBoundary } from '@core/ui/shell/ErrorBoundary';
 import { StateBlock } from '@/components/common/StateBlock';
 import { ProgressOverlay } from '@/components/common/ProgressOverlay';
-import { IconButton } from '@/components/ui/IconButton';
-import { SkeletonTiles } from '@/components/ui/Skeleton';
-import { Toaster } from '@/components/ui/Toaster';
+import { IconButton } from '@core/ui/kit/IconButton';
+import { SkeletonTiles } from '@core/ui/kit/Skeleton';
+import { Toaster } from '@core/ui/kit/Toaster';
 import { WINDOW } from '@/constants/app';
-import { CopilotPanel } from '@/features/chat/CopilotPanel';
+import { SiteCopilotPanel } from '@/features/chat/SiteCopilotPanel';
 import { AlertWatch } from '@/features/insights/AlertWatch';
 import { InsightsRail } from '@/features/insights/InsightsRail';
 import { CommandPalette } from '@/features/palette/CommandPalette';
 import { useElementWidth } from '@/hooks/useElementWidth';
 import { useHotkeys } from '@/hooks/useHotkeys';
-import { useIsMobile } from '@/hooks/useMediaQuery';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { useIsMobile } from '@core/hooks/useMediaQuery';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useConnection } from '@/services/queries/useConnection';
 import { useSync } from '@/services/sync/useSync';
 import { subscribeToSyncResult } from '@/services/sync/syncEngine';
 import { selectUnreadCount, useNotificationsStore } from '@/store/notifications.store';
 import { useDialogStore } from '@/store/dialog.store';
 import { useSyncStore } from '@/store/sync.store';
-import { useToastStore } from '@/store/toast.store';
+import { useToastStore } from '@core/state/toast.store';
 import { useUiStore } from '@/store/ui.store';
 
 import { BottomNav } from './BottomNav';
@@ -209,7 +209,7 @@ export function AppShell(): ReactNode {
         <BottomNav onOpenMenu={() => setNavOpen(true)} />
 
         <MobileNavDrawer open={navOpen} onOpenChange={setNavOpen} onSync={handleSync} />
-        {chatOpen && <CopilotPanel />}
+        {chatOpen && <SiteCopilotPanel />}
 
         <ProgressOverlay onCancel={cancelProgress} />
         <Toaster />
@@ -282,7 +282,7 @@ export function AppShell(): ReactNode {
             </div>
           </div>
 
-          {chatOpen && <CopilotPanel />}
+          {chatOpen && <SiteCopilotPanel />}
         </div>
 
         <ProgressOverlay onCancel={cancelProgress} />

@@ -1,8 +1,8 @@
 import { Building2, CheckCircle2, Store as StoreIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useConnection } from '@/services/queries/useConnection';
 import { ALL_STORES, useFiltersStore } from '@/store/filters.store';
 import { useUiStore } from '@/store/ui.store';

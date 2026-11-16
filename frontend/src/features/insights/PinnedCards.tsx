@@ -1,14 +1,14 @@
 import { Pin, RotateCcw, X } from 'lucide-react';
 import { type ReactNode } from 'react';
 
-import { IconButton } from '@/components/ui/IconButton';
-import { formatDay, formatStamp } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { resolveAction } from '@/services/insights/actions';
+import { IconButton } from '@core/ui/kit/IconButton';
+import { formatDay, formatStamp } from '@core/lib/format';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { INSIGHT_REGISTRY, resolveAction } from '@/services/insights/actions';
 import type { PinnedAnswer } from '@/services/insights/pins';
 import { usePinsStore } from '@/store/pins.store';
 
-import { BlockRenderer } from './BlockRenderer';
+import { BlockRenderer } from '@core/ui/blocks/BlockRenderer';
 import { useInsightActionRunner } from './useInsightActionRunner';
 
 /**
@@ -64,6 +64,7 @@ function PinnedCard({ pin }: { readonly pin: PinnedAnswer }): ReactNode {
           blocks={pin.blocks}
           t={t}
           language={language}
+          registry={INSIGHT_REGISTRY}
           /* A pinned card carries no buttons — `pinnableBlocks` strips them on
              the way in, because a write proposed three weeks ago carries
              parameters nobody has looked at since. */

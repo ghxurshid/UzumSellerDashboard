@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 
-import { Icon } from '@/components/ui/Icon';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { Icon } from '@core/ui/kit/Icon';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useNotificationsStore } from '@/store/notifications.store';
 import type { Tone } from '@/types/domain';
 

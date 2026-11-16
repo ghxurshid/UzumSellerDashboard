@@ -8,7 +8,7 @@ import {
   buildInvoicesModule,
   buildOpsModule,
 } from '@/services/derive/modules';
-import { usePreferencesStore } from '@/store/preferences.store';
+import { usePreferencesStore } from '@core/state/preferences.store';
 import type { ModuleDefinition, ModuleKey } from '@/types/domain';
 
 import {

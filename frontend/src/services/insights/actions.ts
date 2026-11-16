@@ -1,9 +1,19 @@
 import { z } from 'zod';
 
-import type { TranslationKey } from '@/lib/i18n/dictionary';
+import {
+  ASK_ACTION,
+  ASK_PARAMS,
+  createActionRegistry,
+  type ActionDefinition,
+  type ActionRegistry,
+  type ResolvedAction as RegistryResolvedAction,
+} from '@core/agent/actionRegistry';
+
+export type { ActionDefinition, ActionRisk } from '@core/agent/actionRegistry';
+export { ASK_PARAMS };
 
 /**
- * Everything the analysis layer is allowed to offer as a button.
+ * Everything the site's analysis layer is allowed to offer as a button.
  *
  * The rail and the chat exist to be acted on — a finding a seller has to go and
  * re-enact by hand in another screen is a report, not an operator. But what
@@ -46,23 +56,14 @@ import type { TranslationKey } from '@/lib/i18n/dictionary';
  * catalogue reports `rating` and `feedbackQuantity` and nothing else). The
  * toolkit says so in as many words, so a seller who asks gets told the truth
  * instead of watching the model invent an endpoint.
+ *
+ * ## Table and mechanism
+ *
+ * The gate itself — the entry shape, `resolve`, `explain` and the follow-up
+ * chip every host shares — is `actionRegistry.ts`, which the Copilot loop reads
+ * through `INSIGHT_REGISTRY`. This file is the site's *table*, and the typed
+ * surface site code switches on (`InsightActionId`, the `*_PARAMS` schemas).
  */
-
-export type ActionRisk = 'none' | 'low' | 'mid' | 'high';
-
-export interface ActionDefinition {
-  /** Button label. */
-  readonly labelKey: TranslationKey;
-  /** The route this performs, verbatim. `null` for navigation and chat. */
-  readonly endpoint: string | null;
-  readonly risk: ActionRisk;
-  /** Parameters this action needs, validated before the button is drawn. */
-  readonly params: z.ZodTypeAny;
-  /** The argument shape, written out for the toolkit document. */
-  readonly argsDoc: string;
-  /** One line for the model: what pressing this does. */
-  readonly summary: string;
-}
 
 const screenSchema = z.enum([
   'overview',
@@ -127,7 +128,6 @@ export const ALERT_PARAMS = z.object({
 });
 export const ALERT_CLEAR_PARAMS = z.object({ kind: alertKindSchema.optional() });
 export const RANGE_PARAMS = z.object({ rangeKey: rangeSchema });
-export const ASK_PARAMS = z.object({ question: z.string().trim().min(1).max(300) });
 export const PRICE_PARAMS = z.object({
   shopId: z.number().int().positive(),
   entries: z.array(priceEntrySchema).min(1).max(50),
@@ -202,15 +202,9 @@ export const INSIGHT_ACTIONS = {
     argsDoc: '{kind?:"…"} — omit kind to remove every rule',
     summary: 'Remove a standing rule the seller no longer wants. Runs immediately.',
   },
-  'copilot.ask': {
-    labelKey: 'askWhy',
-    endpoint: null,
-    risk: 'none',
-    params: ASK_PARAMS,
-    argsDoc: '{question:"…"}',
-    summary:
-      'Offer a follow-up question as a chip under your answer. Place it as a widget, not as a call.',
-  },
+  /* The one entry every host shares, taken as is so its wording cannot drift
+     between the site and any other host. */
+  'copilot.ask': ASK_ACTION,
   'product.price': {
     labelKey: 'iaPrice',
     endpoint: 'POST /v1/product/{shopId}/sendPriceData',
@@ -342,48 +336,33 @@ export const ACTION_IDS = [
   'print.acceptanceAct',
 ] as const satisfies readonly InsightActionId[];
 
-export interface ResolvedAction {
-  readonly actionId: InsightActionId;
-  readonly definition: ActionDefinition;
-  readonly params: unknown;
-}
+/**
+ * The site's table as the registry the Copilot loop reads.
+ *
+ * Built from `ACTION_IDS` rather than from the object's keys so the documented
+ * order is the one written above, whatever order the literal happens to hold.
+ */
+export const INSIGHT_REGISTRY: ActionRegistry<InsightActionId> = createActionRegistry(
+  Object.fromEntries(ACTION_IDS.map((id) => [id, INSIGHT_ACTIONS[id]])) as Record<
+    InsightActionId,
+    ActionDefinition
+  >,
+);
+
+/** A site action the registry accepted, typed so the runner can switch on its id. */
+export type ResolvedAction = RegistryResolvedAction<InsightActionId>;
 
 /**
- * Validate a proposed action against the registry.
+ * Validate a proposed action against the site's registry.
  *
  * Returns `null` for an unknown id or parameters the entry rejects, and the
- * renderer then draws nothing. A card that suggested an impossible action loses
- * its button and keeps its argument, which is the right degradation: the
- * finding may still be true even when the remedy was malformed.
+ * renderer then draws nothing.
  */
 export function resolveAction(actionId: string, params: unknown): ResolvedAction | null {
-  if (!(actionId in INSIGHT_ACTIONS)) return null;
-
-  const id = actionId as InsightActionId;
-  const definition: ActionDefinition = INSIGHT_ACTIONS[id];
-  const parsed = definition.params.safeParse(params ?? {});
-  if (!parsed.success) return null;
-
-  return { actionId: id, definition, params: parsed.data };
+  return INSIGHT_REGISTRY.resolve(actionId, params);
 }
 
-/**
- * Why the registry refused, in one line the model can act on.
- *
- * A rejected action used to disappear silently, which is the right behaviour on
- * screen and the wrong one in a conversation: the model asked for something,
- * nothing happened, and it had no way to learn that `entries` needed a barcode.
- * The chat feeds this back and gives it one chance to correct itself.
- */
+/** Why the site's registry refused, in one line the model can act on. */
 export function explainRejection(actionId: string, params: unknown): string {
-  if (!(actionId in INSIGHT_ACTIONS)) return `no action named "${actionId}"`;
-
-  const definition: ActionDefinition = INSIGHT_ACTIONS[actionId as InsightActionId];
-  const parsed = definition.params.safeParse(params ?? {});
-  if (parsed.success) return 'accepted';
-
-  return parsed.error.issues
-    .slice(0, 4)
-    .map((issue) => `${issue.path.join('.') || 'params'}: ${issue.message}`)
-    .join('; ');
+  return INSIGHT_REGISTRY.explain(actionId, params);
 }

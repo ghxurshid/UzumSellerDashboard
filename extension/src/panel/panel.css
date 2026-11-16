@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+@import '../../../core/src/styles/theme.css';
+
+/* Tailwind scans only the Vite root (src/panel); the classes written in the
+   rest of this package and in core/ need explicit sources. */
+@source '../';
+@source '../../../core/src';
+
+/* Density for a 433px frame.
+
+   The shared components pick their sizes by viewport breakpoint, and the
+   hinge is `md` (768px): below it they draw the phone layout — 52px header,
+   44px buttons — and at or above it the desktop one. This page's viewport is
+   the iframe's, 433px on a desktop, so untouched it would always look like a
+   phone. The frame is a desktop surface (a mouse, a dense panel the width of
+   the site's docked Copilot), so `md` moves down to a width a frame can really
+   be on a desktop: everything the core `md:` classes decide — header height,
+   button sizes, composer size — then takes the compact density here. `lg` and
+   above are not touched; nothing the panel renders keys on them.
+
+   Not 433: the frame narrows on a small window ("narrower on a small
+   viewport"), and a frame that is still comfortably wide should stay compact.
+   Below 360px it is a phone-sized window and gets the phone density.
+
+   The `.tap` hit-area widening is keyed on `pointer: coarse`, not on width, so
+   a touch screen keeps its finger targets whatever this says. */
+@theme {
+  --breakpoint-md: 360px;
+}

@@ -82,6 +82,41 @@ Bularda `synced_ranges` **har doim bo'sh**, o'rniga `captured_at` yoziladi.
 |---|---|---|
 | `change_events` | `product_skus` snapshot'lari farqidan | `sku_id` |
 
+### `kv` — bitta qiymatli yacheykalar
+
+`kv` jadvali vaqt qatori emas: har bir yacheyka — bitta hujjat, ishga tushganda
+o'qiladi va butunlay qayta yoziladi. Yacheykalar ro'yxati
+[`KV_KEYS`](./idb/schema.ts#L687) da:
+
+| Kalit | Nima saqlaydi | Kim yozadi |
+|---|---|---|
+| `settings` | Sozlamalar konverti (sxema v6, AI provayderlari kalitlari bilan) | `core/` — `settings.service.ts` |
+| `model_usage` | Oxirgi ~26 soatdagi AI so'rovlar jurnali (kvota o'lchagichi uchun) | `core/` — `state/modelUsage.store.ts` |
+| `notifications`, `sync_log`, `pins`, `alerts` | Bildirishnomalar, sync jurnali, qadalgan javoblar, doimiy qoidalar | saytning o'z store'lari |
+
+**Nega `settings` va `model_usage` portdan o'tadi.** Ularni `core/` yozadi, `core/`
+esa IndexedDB'ni bilmaydi — u ikki mezbonga umumiy va bittasi (kengaytma)
+IndexedDB'siz ishlaydi. Shuning uchun `core/` faqat
+[`core/src/storage/kv.ts`](../../../../core/src/storage/kv.ts) dagi uchta
+funksiyani (`readKv`, `writeKv`, `removeKv`) chaqiradi; mezbon o'z backend'ini
+ishga tushganda bir marta ro'yxatdan o'tkazadi
+(`registerKvBackend`, sozlamalar hydrate bo'lishidan **oldin**). Sayt buni
+[`bootstrap.ts`](../../app/bootstrap.ts#L67) da `idbKvBackend`
+([`idb/kv.repo.ts`](./idb/kv.repo.ts#L49)) bilan qiladi — ya'ni `savdo` bazasidagi
+`kv` jadvaliga, avvalgidek, aynan o'sha kalit satrlari bilan (`CORE_KV_KEYS`:
+`settings`, `model_usage`; ular foydalanuvchilar brauzerida allaqachon turibdi,
+shuning uchun o'zgarmaydi). Backend ro'yxatdan o'tmagan bo'lsa, uchala funksiya
+rad etiladi — chaqiruvchilar buni "saqlash ochilmadi" deb o'qib, xotiradagi
+sessiyaga o'tadi.
+
+Qiymatlar faqat oddiy JSON-ga mos bo'lishi shart (`Date`, `Map`, `Set`, klass
+nusxalari yo'q): saytda ular structured clone bilan, kengaytmada JSON bilan
+saqlanadi va ikkalasi ham buni sezmasligi kerak.
+
+> Kengaytma (`extension/`) bu hujjatdagi hech narsani ishlatmaydi: unda IndexedDB,
+> arxiv, qamrov va sync yo'q. U shu ikki yacheykani `chrome.storage.local` da
+> `savdo.kv.` prefiksi bilan saqlaydi — texnik spetsifikatsiya, 14.5-bo'lim.
+
 ---
 
 ## 3. Nega ayrimlarida window bor, ayrimlarida yo'q

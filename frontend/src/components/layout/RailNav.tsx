@@ -3,8 +3,8 @@ import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 import { NAV_ITEMS, SETTINGS_PATH } from '@/constants/navigation';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
+import { useTranslation } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
 import { useConnection } from '@/services/queries/useConnection';
 
 const RAIL_ITEM = cn(

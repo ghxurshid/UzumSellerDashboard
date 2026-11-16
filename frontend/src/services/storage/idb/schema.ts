@@ -50,6 +50,8 @@
  * narrower.
  */
 
+import { CORE_KV_KEYS } from '@core/storage/kv';
+
 /* ── database ───────────────────────────────────────────────────────────── */
 
 export const DB_NAME = 'savdo';
@@ -683,7 +685,9 @@ export interface KvRecord {
 
 /** The fixed set of key/value slots, so no module invents its own spelling. */
 export const KV_KEYS = {
-  settings: 'settings',
+  /* The two slots the shared engine persists are spelled once, in `../kv.ts`,
+     so this list and the port cannot drift apart. */
+  settings: CORE_KV_KEYS.settings,
   notifications: 'notifications',
   syncLog: 'sync_log',
   /** Answers the seller kept — see `insights/pins.ts`. */
@@ -691,7 +695,7 @@ export const KV_KEYS = {
   /** Standing conditions the seller asked to be told about — `insights/alerts.ts`. */
   alerts: 'alerts',
   /** Requests sent to the AI provider in about the last day, for the quota meter — `store/modelUsage.store.ts`. */
-  modelUsage: 'model_usage',
+  modelUsage: CORE_KV_KEYS.modelUsage,
 } as const;
 
 export type KvKey = (typeof KV_KEYS)[keyof typeof KV_KEYS];

@@ -1,28 +1,28 @@
 import { ChevronRight, ListTree, Sparkles, X } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 
-import { IconButton } from '@/components/ui/IconButton';
-import { Pill } from '@/components/ui/Pill';
-import { Skeleton } from '@/components/ui/Skeleton';
-import type { TranslationKey } from '@/lib/i18n/dictionary';
-import { useTranslation, type Translator } from '@/lib/i18n/useTranslation';
-import { cn } from '@/lib/utils';
-import { resolveAction, type ResolvedAction } from '@/services/insights/actions';
+import { IconButton } from '@core/ui/kit/IconButton';
+import { Pill } from '@core/ui/kit/Pill';
+import { Skeleton } from '@core/ui/kit/Skeleton';
+import type { TranslationKey } from '@core/i18n/dictionary';
+import { useTranslation, type Translator } from '@core/i18n/useTranslation';
+import { cn } from '@core/lib/utils';
+import { INSIGHT_REGISTRY, resolveAction, type ResolvedAction } from '@/services/insights/actions';
 import {
   INSIGHT_GROUPS,
   isImportant,
   type InsightCard,
   type InsightGroup,
-} from '@/services/insights/blocks';
-import { formatFigure } from '@/services/insights/figures';
-import { phrase } from '@/services/insights/phrase';
+} from '@/services/insights/cards';
+import { formatFigure } from '@core/agent/figures';
+import { phrase } from '@core/agent/phrase';
 import { useInsightsQuery } from '@/services/queries/useInsightsQuery';
-import { useToastStore } from '@/store/toast.store';
+import { useToastStore } from '@core/state/toast.store';
 import { useUiStore } from '@/store/ui.store';
 import type { InsightSeverity, Language, Tone } from '@/types/domain';
 
 import { ActionConfirmDialog } from './ActionConfirmDialog';
-import { BlockRenderer } from './BlockRenderer';
+import { BlockRenderer } from '@core/ui/blocks/BlockRenderer';
 import { useInsightActionRunner } from './useInsightActionRunner';
 
 /**
@@ -296,6 +296,7 @@ function CardView({
             blocks={card.blocks}
             t={t}
             language={language}
+            registry={INSIGHT_REGISTRY}
             onAction={onAction}
           />
           {card.origin === 'ai' && (
