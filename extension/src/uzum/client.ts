@@ -47,7 +47,7 @@ import {
   WIRE_FAILURE_KINDS,
   type WireResult,
 } from './protocol';
-import { UZUM_ROUTES, type UzumRouteId, type UzumRouteParams } from './routes';
+import { shopOfRoute, UZUM_ROUTES, type UzumRouteId, type UzumRouteParams } from './routes';
 import type { SellerSession } from './session';
 
 export type { SellerSession };
@@ -55,7 +55,7 @@ export type { SellerSession };
 export interface UzumResponse {
   readonly status: number;
   readonly data: unknown;
-  /** The shop that was asked, never read from the payload. */
+  /** The shop that was asked, never read from the payload; null for a route about the account, not a shop. */
   readonly shopId: number | null;
   /** For the answer's source chip. */
   readonly route: string;
@@ -377,7 +377,7 @@ export function createBridgeClient(env: PanelEnv, handshakeWaitMs = HANDSHAKE_WA
     return {
       status: result.status,
       data: result.data,
-      shopId: (spec as { shopOf(p: unknown): number }).shopOf(params),
+      shopId: shopOfRoute(route, params),
       route: spec.source,
     };
   }

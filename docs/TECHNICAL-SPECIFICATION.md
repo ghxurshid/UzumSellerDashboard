@@ -1,7 +1,7 @@
 # Savdo Copilot — Texnik spetsifikatsiya
 
-**Versiya:** 3.1.0
-**Hujjat sanasi:** 2026-11-13
+**Versiya:** 3.2.0
+**Hujjat sanasi:** 2026-11-16
 **Maqsad:** [FUNCTIONAL-SPECIFICATION.md](./FUNCTIONAL-SPECIFICATION.md) dagi har bir
 talab texnik jihatdan qanday amalga oshirilganini ifodalash.
 
@@ -1267,6 +1267,7 @@ Kengaytmaning testlari (`extension/`, `npm test`) — 14.8-bo'limda.
 | Kengaytma: faqat Copilot, sozlamalardan Umumiy, AI, Klaviatura | Panelda ikki ko'rinish — chat va sozlamalar; sozlamalar `core/src/ui/settings/` dagi umumiy bo'limlardan (14.7) |
 | Kengaytma: AI ko'p raundli va tool bilan, ro'yxat o'sadi | Umumiy sikl + `EXT_TOOLS` registri; keyingi lookup — uch qadam (14.6) |
 | Kengaytma: Copilot mahsulot ro'yxatini FBO/FBS qoldig'i, sotilgan/qaytarilgan, narx, holat va qidiruv bilan o'qiydi | `products.list`: yopiq marshrutning `filter`/`searchQuery` parametrlari (14.4), panel tomonidagi tolerant o'quvchi `readProductsPage`, ikki jadval (`view: products \| skus`) va sahifani javobning o'z jami soniga nisbatan joylash (14.6) |
+| Kengaytma: Copilot do'konlar nomini, filtr bo'yicha mahsulot sonlarini, yetkazib berish nakladnoylarini, ombordan qaytarishlarni, shartnoma tugash sanasini va o'qilmagan bildirishnomalar sonini o'qiydi | Oltita lookup — `shops.list`, `products.stats`, `invoices.list`, `returns.list`, `contract.end`, `notifications.unread`: har biri yopiq jadvaldagi bitta marshrut; do'kon nomlamaydigan ("account") marshrutda faqat kirgan sessiya tekshiriladi (14.4); tanilgan javob nomlangan ustunlar bilan, tanilmagani shakldan mustaqil renderer bilan chiqadi (14.6) |
 | Kengaytma: token faqat sotuvchi brauzerida | Token kontent skriptdan chiqmaydi; marshrutlar yopiq jadval; panel bilan faqat xususiy kanal va bir martalik nonce (14.4) |
 
 ---
@@ -1299,10 +1300,15 @@ Ustuvorlik tartibida:
   protokoli); kabinet API'sining javobi — repodagi niqoblangan namuna (so'rov
   brauzerda ushlab olinib, shu bilan javob berildi; soxta token Uzum'ga
   yuborilmadi). Nima o'tgani — 14.8 jadvalida.
+- **Qo'shimcha (2026-11-16):** oltita yangi lookup xuddi shu usulda Chrome
+  157.0.8103.52 va Edge 157.0.4341.60 da o'tkazildi, faqat bu safar kabinet
+  sahifasining o'zi ham almashtirgich edi (`seller.uzum.uz` so'rovi brauzerda
+  ushlanib, bo'sh sahifa bilan javob berildi) — Uzum'ga hech narsa ketmadi.
+  Natija — 14.8 jadvalining oxirgi qatorlarida.
 - **Hali brauzer yoki sotuvchining o'zi kerak bo'lgan savollar:**
   1. Firefox umuman: `dist/firefox` hech qayerga o'rnatilmagan; `content.fetch`
      (va `cloneInto`) ishlaydimi, yoki doim zaxira yo'l
-     ([`withFallback`](../extension/src/uzum/bridge.content.ts#L230)) ishlaydi;
+     ([`withFallback`](../extension/src/uzum/bridge.content.ts#L241)) ishlaydi;
   2. haqiqiy sessiya: kabinetga kirilgan varaqda `localStorage.state` shakli
      bitta namunadagidek ekani; kirilgan sahifalar ham iframe'ga yo'l qo'yishi
      (CSP faqat kirilmagan bosh sahifada ko'rilgan); haqiqiy token bilan `GET`
@@ -1310,7 +1316,10 @@ Ustuvorlik tartibida:
      so'roviga server kabinet origin'ini, `GET` ni va `authorization` ni ruxsat
      etdi, brauzer esa preflight'da faqat `authorization` ni so'raydi. Kabinet
      yuboradigan, kengaytma yubormaydigan `access-content-allow-origin` so'rov
-     header'i serverga kerakmi — faqat haqiqiy `GET` ko'rsatadi;
+     header'i serverga kerakmi — faqat haqiqiy `GET` ko'rsatadi. Yaqin dalil
+     (2026-11-16): kabinetning o'zi nakladnoylar so'rovini shu header'siz
+     yuborgan va `200` olgan (API-REQUEST-RESPONSE.md, 5.B.10) — demak server
+     uni hamma marshrutda talab qilmaydi, lekin bu kengaytma so'rovining o'zi emas;
   3. haqiqiy LLM kaliti: Gemini, Claude va OpenAI'ning tool API'li yo'li
      (sinovda faqat matn protokoli yurgan);
   4. Ctrl+J / ⌘J oynali brauzerda brauzerning o'z qisqa yo'lini bosib o'ta
@@ -1323,12 +1332,19 @@ Ustuvorlik tartibida:
 - **Keyingi qadam:** kabinetga kirilgan varaqda, haqiqiy kalit bilan va oynali
   brauzerda qo'lda o'tish, Firefox'ni qo'shish, natijani 14.8 jadvaliga yozish.
 
-### 3. Kabinet API'sining javobi faqat bitta namunadan ma'lum
+### 3. Kabinet API'sining javoblari bir-ikki namunadan ma'lum
 - **Qaysi joyda:** [`extension/src/uzum/products.ts`](../extension/src/uzum/products.ts)
   (o'quvchi), [`extension/src/tools/`](../extension/src/tools/) (jadvallar,
   maydon izohi) va [`routes.ts`](../extension/src/uzum/routes.ts) (parametrlar).
-  Shakl bitta javobdan yozilgan; o'quvchi tolerant, shakl tanilmasa shakldan
-  mustaqil renderer ishlaydi.
+  Har lookup'ning shakli bitta javobdan yozilgan (`shops.list` — ikkitadan);
+  shakl tanilmasa shakldan mustaqil renderer ishlaydi.
+- **Oltita kichik lookup (2026-11-16):** dalili va ochiq savollari 14.6 dagi
+  jadvalda va API-REQUEST-RESPONSE.md kartalarida (5.B.3, 5.B.5, 5.B.7, 5.B.9,
+  5.B.10, 5.B.11). Eng zaifi — `notifications.unread`: so'rovning o'zi yozib olinmagan,
+  faqat preflight'i. To'rtta ruxsat kodi (`PRODUCT_READ`, `INVOICE_READ`,
+  `SELLER_RETURN_READ`, `SHOP_READ`) — kodning o'z farazi: server qaysi kodni so'rashi hech qayerda
+  yozilmagan, shuning uchun faraz noto'g'ri bo'lsa kod ruxsatli so'rovni
+  yubormasdan rad etadi. Quyidagi bandlar mahsulot ro'yxati haqida.
 - **Dalil:** **ikki yozib olingan so'rov, bitta yozib olingan javob**, u ham
   qisqartirilgan: 24 qatorli sahifadan 1 mahsulot, 5 SKU
   ([ENDPOINTS.md](../frontend/src/services/uzum/ENDPOINTS.md), 13-bo'lim;
@@ -1343,7 +1359,9 @@ Ustuvorlik tartibida:
 - **Oqibati:** model sahifani javobning o'z `totalProductsAmount`iga nisbatan
   joylay oladi ("rows 1–24 of 38"), lekin birlikni (so'm) aytmaydi, `conversion`
   va `rank` ma'nosini taxmin qilmaydi va ro'yxatni to'liq deb aytmaydi.
-  Copilot hozir faqat mahsulot ro'yxatini (SKU lari bilan) o'qiy oladi.
+  Nakladnoylarda ham shunday: `fullPrice` birliksiz, jami son yo'q, hech bir
+  sahifa "oxirgi" deyilmaydi. Qaytarishlarda mahsulot, dona va summa umuman yo'q;
+  pullik saqlashdan faqat ikki sana bor, shuning uchun model haq haqida gapirmaydi.
 - **Keyingi qadam:** qo'shimcha javoblarni yozib olish — `size=100` va `page>0`,
   to'ldirilgan `searchQuery`, `filter=WITHOUT_REQUIRED_FILTERS`, ko'p mahsulotli
   sahifa; keyin o'quvchi va legendani shularga solishtirish. Faqat `null`
@@ -1352,7 +1370,7 @@ Ustuvorlik tartibida:
   "Ochiq savollar" ro'yxati bo'yicha.
 
 ### 4. Testlar bor, lekin saqlash qatlami qoplanmagan
-Sof funksiyalar qoplandi (1 066 ta test: saytda 708 — 38 fayl, shundan `core/` testlari ham, kengaytmada 358 — 28 fayl): `coverage.ts` interval algebrasi,
+Sof funksiyalar qoplandi (1 164 ta test: saytda 708 — 38 fayl, shundan `core/` testlari ham, kengaytmada 456 — 32 fayl): `coverage.ts` interval algebrasi,
 Copilot protokoli, toolkit arifmetikasi, AI provayder transporti va
 sozlamalar sxemasi. Qolgani: `archivePlan.ts`, `paginate()`, wire→row
 mapperlar, `missingRanges()` va v2→v3 migratsiyasi. Bular IndexedDB talab
@@ -1442,7 +1460,9 @@ qaytadan ko'rib chiqilishi kerak.
 
 **Funksional talab** (funksional spetsifikatsiya, 5-bo'lim, "Brauzer kengaytmasi"):
 sotuvchi Uzum kabinetida ishlayotganda o'sha saytning o'zida Copilot bilan
-gaplashadi va u kabinet orqali do'konining mahsulot ro'yxatini o'qiydi.
+gaplashadi va u kabinet orqali do'konining mahsulot ro'yxatini, mahsulot sonlarini,
+yetkazib berish nakladnoylarini, ombordan qaytarishlarni, do'konlar nomini, shartnoma tugash sanasini va
+o'qilmagan bildirishnomalar sonini o'qiydi.
 
 Kod: [`extension/`](../extension/). Umumiy dvigatel — [`core/`](../core/) (2.2);
 bu bo'lim faqat kengaytmaning o'z qismi.
@@ -1450,9 +1470,11 @@ bu bo'lim faqat kengaytmaning o'z qismi.
 > **Holat va dalil kuchi.** Kengaytma Chrome 157 va Edge 157'da ishga tushirib
 > ko'rilgan (2026-11-13), lekin kabinetga kirilmagan sahifada, ssenariyli LLM va
 > niqoblangan namuna bilan; Firefox'da, haqiqiy sessiya va haqiqiy LLM kaliti
-> bilan — yo'q (14.8). Kabinetning ichki API'si haqida ikki yozib olingan so'rov
-> va bitta yozib olingan javob bor ([ENDPOINTS.md](../frontend/src/services/uzum/ENDPOINTS.md),
-> 13-bo'lim). Quyida "ishlaydi" so'zi, 14.8 da brauzerda tekshirilgan deb
+> bilan — yo'q (14.8). Kabinetning ichki API'si haqida bilganimiz yozib olingan
+> trafikdan: mahsulot ro'yxati uchun ikki so'rov va bitta javob, qolgan olti
+> marshrut uchun bittadan (do'konlar ro'yxati — ikkitadan) namuna
+> ([ENDPOINTS.md](../frontend/src/services/uzum/ENDPOINTS.md), 13-bo'lim;
+> [API-REQUEST-RESPONSE.md](./API-REQUEST-RESPONSE.md), 5.B). Quyida "ishlaydi" so'zi, 14.8 da brauzerda tekshirilgan deb
 > ko'rsatilmagan joyda, "kodda shunday yozilgan" ma'nosida.
 
 ### 14.1. Tuzilma
@@ -1482,7 +1504,7 @@ kerak edi — shuning uchun so'rovni kontent skript bajaradi (14.4).
 |---|---|
 | `src/content/` | Tugma va ramka, ochiq holat, Ctrl+J, ramka ↔ panel xabarlari |
 | `src/uzum/` | Sessiya o'quvchi, yopiq marshrut jadvali, navbat, ko'prikning ikki tomoni; panel tomonida `getProducts` javobining o'quvchisi (`products.ts`) va niqoblangan namuna `getProducts.response.masked.json` |
-| `src/tools/` | Kengaytmaning toolkit'i: `products.list` |
+| `src/tools/` | Kengaytmaning toolkit'i — yettita lookup: `products.list`, `products.stats`, `invoices.list`, `returns.list`, `shops.list`, `contract.end`, `notifications.unread`; ular bo'lishadigan qismlar — `cabinet.ts` (muddat, do'kon tanlash, xato matni), `lookup.ts` (bitta so'rov va tanilmagan javob), `columns.ts` (nomlangan ustunlar), `render.ts` (shakldan mustaqil renderer) |
 | `src/host/` | Prompt qismlari, amallar registri, `EXTENSION_TOOLKIT` |
 | `src/storage/` | `chrome.storage.local` backend'i va preferences adapteri |
 | `src/panel/` | Ishga tushish tartibi, chat va sozlamalar ko'rinishlari, bildirishnomalar |
@@ -1711,13 +1733,40 @@ panel: {route:'products.list', params:{shopId,page,size,filter?,searchQuery?}}
    │ xususiy port
    ▼
 kontent skript:  marshrut id jadvalda bormi → usul GET → params qat'iy tekshiruv
-   → token bormi → do'kon sessiyada va ruxsat kodi bormi
+   → token bormi
+   → do'kon marshruti bo'lsa: do'kon sessiyada va ruxsat kodi bormi
    → URL = jadvaldan, toApiUrl(): '/api/' bilan boshlanishi va origin shu API ekani
    → navbat (ketma-ket) → fetch(Bearer token, credentials:'omit')
 ```
 
-**Marshrut parametrlari** (`products.list`,
-[`routes.ts`](../extension/src/uzum/routes.ts#L112)). Qat'iy tekshiruv: noma'lum
+**Marshrutlar** ([`UZUM_ROUTES`](../extension/src/uzum/routes.ts#L353)). Ikki tur:
+**do'kon** marshruti (`scope: 'shop'`) bitta do'kon haqida — do'kon sotuvchiniki
+bo'lmasa yoki unda marshrutning ruxsat kodi bo'lmasa, so'rov yuborilmasdan rad
+etiladi; **account** marshruti (`scope: 'account'`) hech bir do'konni nomlamaydi
+(do'konlar ro'yxatining o'zi, bildirishnoma sanog'i), shuning uchun tekshiradigan
+do'kon yo'q va faqat kirgan sessiya talab qilinadi. Token baribir faqat jadval
+yasagan URL'ga ketadi — bu ikkala turda bir xil.
+
+| Marshrut id | Yo'l | Tur · ruxsat kodi | Parametrlar | Yozib olingan so'rov |
+|---|---|---|---|---|
+| `products.list` | `/api/seller/shop/{shopId}/product/getProducts` | do'kon · `PRODUCT_READ` | pastdagi jadval | ikkita |
+| `products.stats` | `/api/seller/shop/{shopId}/product/products-statistic` | do'kon · `PRODUCT_READ` | `shopId` | bitta, parametrsiz |
+| `invoices.list` | `/api/seller/shop/{shopId}/invoice?page&size` | do'kon · `INVOICE_READ` | `shopId`, `page` `0…100 000`, `size` `1…100` | bitta, `page=0&size=20` |
+| `returns.list` | `/api/seller/shop/{shopId}/return?page&size` | do'kon · `SELLER_RETURN_READ` | `shopId`, `page` `0…100 000`, `size` `1…100` | bitta, `page=0&size=20` |
+| `shops.list` | `/api/seller/shop/` (oxiridagi `/` yozib olinganidek) | account | yo'q | ikkita |
+| `contract.end` | `/api/seller/committent/contract/end-date?shopId` | do'kon · `SHOP_READ` | `shopId` (query'da, yo'lda emas) | bitta |
+| `notifications.unread` | `/api/v1/seller/notification/unread-count` | account | yo'q | **yo'q** — faqat preflight'i |
+
+Ruxsat kodlari — jadvalning o'z qo'riqchisi, server haqidagi gap emas: API qaysi
+kodni so'rashi hech qayerda yozilmagan, kodlar o'z nomidan o'qilgan
+(`PRODUCT_READ` — mahsulot marshruti uchun). Shartnoma nomli kod yo'q,
+`SHOP_READ` — eng yaqini va bizning tanlov. `invoices.list` va `returns.list` da holat, sana yoki
+saralash parametri **yo'q**: yozib olingan so'rovlar faqat `page` va `size`
+yuborgan, uchinchisini o'ylab topish — nima qaytarishi noma'lum so'rovni yuborish
+bo'lardi. Account marshruti hech qanday kalitni qabul qilmaydi — `shopId` ni ham.
+
+**`products.list` parametrlari**
+([`routes.ts`](../extension/src/uzum/routes.ts#L164)). Qat'iy tekshiruv: noma'lum
 kalit rad etiladi (e'tiborsiz qoldirilgan kalit chaqiruvchiga ishlayotgan filtrdek
 ko'rinardi), butun son bo'lmagan qiymat rad etiladi.
 
@@ -1751,7 +1800,7 @@ o'tadi). Fayl sarlavhasi dalilni aytadi; sinov namunasi — shu javobning niqobl
 nusxasi [`getProducts.response.masked.json`](../extension/src/uzum/getProducts.response.masked.json),
 [`products.test.ts`](../extension/src/uzum/products.test.ts) uni o'qiydi.
 
-**Nega yopiq jadval.** Token faqat [`routes.ts`](../extension/src/uzum/routes.ts#L171)
+**Nega yopiq jadval.** Token faqat [`routes.ts`](../extension/src/uzum/routes.ts#L353)
 yasay oladigan URL'ga ketadi. Buzilgan panel yoki prompt-injection ta'sirida
 model tokenni ixtiyoriy manzilga yo'naltira olmaydi: undan faqat jadvaldagi id'ni
 nomlash mumkin. Yangi marshrut — `UzumRouteParamsMap`ga bitta kalit va
@@ -1778,7 +1827,7 @@ Firefox'da `content.fetch` bor bo'lsa shu ishlatiladi; u Xray chegarasida
 tarmoq uzilishidan farqlab bo'lmaydigan tarzda yiqilishi mumkin, shuning uchun
 yiqilsa bir marta keyingi usulga o'tiladi va HTTP javob bergan birinchi usul
 sahifa oxirigacha eslab qolinadi
-([`withFallback`](../extension/src/uzum/bridge.content.ts#L230)). Bahosi — haqiqiy
+([`withFallback`](../extension/src/uzum/bridge.content.ts#L241)). Bahosi — haqiqiy
 uzilishda bitta takroriy GET. **Brauzerda tekshirilmagan** (14.8).
 
 **Xatolar.** Faqat HTTP holati bo'yicha sinflanadi: `401` → `unauthorized`, `403` →
@@ -1871,10 +1920,65 @@ kengaytma jimgina boshqa panellar ko'rmaydigan saqlashga tushib qolmasligi uchun
 ### 14.6. Toolkit va mezbon
 
 **Toolkit** ([`src/tools/`](../extension/src/tools/)) — kengaytma nimani o'qiy
-oladi. Hozir bitta lookup: **`products.list`**. U umumiy
+oladi. Yettita lookup, har biri yopiq jadvaldagi bitta marshrut (14.4):
+**`products.list`** — eng kattasi, pastda batafsil — va oltita kichigi. Ular umumiy
 [`createToolkit`](../core/src/tools/createToolkit.ts) orqali yig'iladi, shuning
 uchun toolkit hujjati va native tool e'lonlari bir registrdan keladi
-([`EXT_TOOLS`](../extension/src/tools/index.ts#L35)).
+([`EXT_TOOLS`](../extension/src/tools/index.ts#L44)).
+
+**Oltita kichik lookup.** Har biri — bitta jonli so'rov; do'konni tanlash, muddat va
+xato matni `products.list` niki bilan bir xil (pastdagi jadval), faqat `shops.list`
+va `notifications.unread` do'kon so'ramaydi: ular butun akkaunt haqida, shuning uchun
+bir nechta do'konli sotuvchida ham "qaysi do'kon?" deb to'xtamaydi va natijada
+`askedShopId` ustuni yo'q.
+
+| Lookup | Argumentlar | Tanilgan javob | Natija | Dalil |
+|---|---|---|---|---|
+| `products.stats` | `{shopId?}` | `statisticResultList` massivli obyekt | `askedShopId\|type\|count\|shopId` jadvali; birliklar satri har safar "turlar kesishadi, qo'shma" deydi | 1 javob: sakkiz hisoblagich, `IN_STOCK + OUT_OF_STOCK + ARCHIVED = 36`, `ALL = 38` |
+| `invoices.list` | `{shopId?, page? (0 dan), size? (1–100, standart 20)}` | massiv | Nakladnoy qatori — pastda | 1 javob: 20 qatorli to'liq sahifa, bitta do'kon, bitta ombor, ikki holat |
+| `returns.list` | `{shopId?, page? (0 dan), size? (1–100, standart 20)}` | `payload` massivli obyekt | Qaytarish qatori — pastda | 1 javob: 20 qatorli to'liq sahifa, bitta do'kon, bitta ombor, bitta holat, ikki tur |
+| `shops.list` | `{}` | massiv | `id`, `shopTitle`, `shortTitle`, `urlTitle`, `skuTitle`, `transferred`, `shopDescription`, `description.uz`, `description.ru` (matnlar 80 belgigacha). Sarlavha ro'yxat bilan sessiya do'konlari farq qilsa aytadi | 2 javob, 3 kun oralig'ida, o'sha ikki do'kon |
+| `contract.end` | `{shopId?}` | `payload` kalitli obyekt | `askedShopId=… payload=… timestamp=…`; `payload: null` bo'lsa sarlavha "sana aytilmagan" deydi | 1 javob; bu shartnomaning **tugash** sanasi ekani yo'l nomidan o'qilgan |
+| `notifications.unread` | `{}` | `unreadCount` kalitli obyekt | `unreadCount=…`; `null` — "son aytilmagan", nol emas | so'rovning o'zi yozib olinmagan, faqat unga javob deb berilgan tana |
+
+`invoices.list` ustunlari ([`invoicesList.ts`](../extension/src/tools/invoicesList.ts)):
+`askedShopId`, `id`, `invoiceNumber`, `dateCreated`, `invoiceStatus.value`, `status`,
+`fullPrice`, `totalToStock`, `totalAccepted`, `hasIssue`, `dateAccepted`,
+`expressAcceptanceDate`, `timeSlotReservation.timeFrom` / `.timeTo` (to'rttasining
+har biri yonida `.utc` ustuni), `timeSlotReservation.status`,
+`timeSlotReservation.timeSlots.length`, `stock.id`, `stock.title`,
+`remainingAmountOfUpdates`, `invoiceEttn.warningFlag`, `invoiceEttn.ettn`,
+`externalNumber`, `deliveryCertificate`, `fines.length`, `createdInvoiceCount`.
+**Nega nomlangan ustunlar:** holat kodi, band qilingan vaqt va ombor ichma-ich
+obyektlarda turadi, shakldan mustaqil renderer esa ularni `{text,color,value}`
+shaklida qisqartirardi — savol aynan shu maydon haqida bo'ladi. Ombor obyekti 20
+qatorning hammasida bir xil edi, shuning uchun qatorda faqat `id` va nomi chiqadi
+(manzil va ish vaqti yigirma marta takrorlanardi). Javobda jami son yo'q:
+sarlavha sahifani faqat bir sahifadan so'zlaydi va hech birini "oxirgi" demaydi
+(`products.list` ning jami sonsiz holatidagi so'zlar bilan).
+
+`returns.list` ustunlari ([`returnsList.ts`](../extension/src/tools/returnsList.ts)):
+`askedShopId`, `id`, `type`, `status`, `dateCreated`, `assembledDate`, `executionDate`,
+`completedDate`, `canceledDate`, `paidStorage.status`, `paidStorage.startDate` / `.endDate`,
+`timeSlotReservation.timeFrom` / `.timeTo` (to'qqizta vaqt maydonining har biri yonida `.utc`
+ustuni), `timeSlotReservation.status`, `stock.id`, `stock.title`, `externalNumber`,
+`ettnInfo`, `returnDropInfo`. Sarlavhada javobning o'z `timestamp` i ham chiqadi; jami son
+yo'q, sahifa nakladnoylardagi so'zlar bilan joylanadi. Bu — Uzum omboridan sotuvchiga
+qaytarilayotgan tovar, xaridor qaytargan buyurtma emas; javobda mahsulot, dona va summa
+**yo'q**, birliklar satri buni har natijada aytadi. Pullik saqlash sanalari o'zi kelgandek
+chiqadi — tugash boshlanishdan oldin bo'lsa ham (yozib olingan 20 qatorning 14 tasida
+shunday): kod ularni "tuzatmaydi", ulardan hech narsa hisoblamaydi va haq olinganini aytmaydi.
+
+`shops.list` `chatAvatarUrl` ni ataylab chiqarmaydi: bu `images.uzum.uz` dagi rasm
+manzili, ya'ni `product` blokining `image` i qabul qiladigan narsaning o'zi —
+mahsulot qatorlari yonida turgan do'kon avatari mahsulot rasmi bo'lib chizilishi
+bir nusxalashga yaqin.
+
+Olti lookup uchun ham: javob tanilgan shaklda bo'lmasa — "shape not recognised
+(expected …): printed generically" sarlavhasi bilan shakldan mustaqil renderer;
+obyekt bo'lmagan yozuvlar tashlab o'tiladi va soni aytiladi; ko'prik mahalliy rad
+etgan so'rov matnida qaysi ruxsat kodi yetishmagani ham bor ("The seller lacks
+INVOICE_READ on shop …").
 
 | `products.list` | |
 |---|---|
@@ -1885,7 +1989,9 @@ uchun toolkit hujjati va native tool e'lonlari bir registrdan keladi
 | Muddat | 30 soniya; chaqiruv muddat bilan **poyga** qilinadi (mijoz signalga e'tibor bermasa ham javob ushlanib qolmaydi), muddat o'tsa far tomoniga to'xtatish aytiladi |
 | Natija | Ikki shakldan biri: javob `readProductsPage` tanigan bo'lsa — **ikki jadvaldan biri** (pastda); tanimasa — shakldan mustaqil renderer (zaxira yo'l). Sarlavha ikkalasida: do'kon (va nega aynan shu), `page`, `size`, `filter` (`WITHOUT_REQUIRED_FILTERS` — "meaning undocumented" belgisi bilan), qidiruv va ko'rinish, sahifa o'rni, `live from …`, HTTP holati `200` bo'lmasa, `TRUNCATED` |
 
-**Ikki jadval** ([`productsView.ts`](../extension/src/tools/productsView.ts)). Ustunlar —
+**Ikki jadval** ([`productsView.ts`](../extension/src/tools/productsView.ts); katakni
+o'qish va jadvalni kesish qoidasi — [`columns.ts`](../extension/src/tools/columns.ts),
+oltita kichik lookup bilan umumiy). Ustunlar —
 API'ning o'z maydon nomlari (ichma-ich bo'lsa nuqtali yo'l), birinchi ustun
 `askedShopId` — so'ralgan do'kon, payload'dan emas. Katak qiymati **javobdagi yozuvdan**
 (`raw`) olinadi, o'quvchining tiplangan ko'rinishidan emas: yozib olingan namunaga mos
@@ -1909,7 +2015,7 @@ satrida esa "kodda hisoblangan: o'rin, 'more remain', SKU sonlari" deb ajratilga
 tamg'asi epoch millisekund bo'lib qoladi, `.utc` ustuni faqat shu qiymatning UTC
 matni.
 
-**Sahifa o'rni javobning o'z jami sonidan** ([`pagingText`](../extension/src/tools/productsView.ts#L278)).
+**Sahifa o'rni javobning o'z jami sonidan** ([`pagingText`](../extension/src/tools/productsView.ts#L198)).
 Sarlavhada `rows 1–24 of 38 (totalProductsAmount, position from page × size)`:
 `38` — javobning `totalProductsAmount`i, o'rin esa so'rov qurilishidan (`page ×
 size`) chiqarilgan faraz, javob uni tasdiqlamaydi. Faraz mos kelmasa, matn buni
@@ -1940,7 +2046,7 @@ olib kelsa, sarlavha buni aytadi va ro'yxat pastda chiqariladi (bo'sh `productLi
 `totalProductsAmountWithoutWeightDimensional`i ham sarlavhaga chiqadi.
 
 **Maydon izohi.** Toolkit hujjatining **PRODUCT LIST FIELDS** bo'limi
-([`EXTENSION_SECTIONS`](../extension/src/tools/index.ts#L40)) har noaniq maydon haqida
+([`EXTENSION_SECTIONS`](../extension/src/tools/index.ts#L55)) har noaniq maydon haqida
 yagona javob nimani ko'rsatganini aytadi — kuzatuv sifatida, dalil kuchi bilan ("1 ta
 mahsulot", "6 ta nusxadan 6 tasi"), hech qachon tasdiqlangan deb emas: miqdorlar
 SKU yig'indisiga tengligi, `returnedPercentage` formulasi, `paidStorageAmount`
@@ -1987,19 +2093,36 @@ chegara bor, kesilgan joy `TRUNCATED` bilan aytiladi, hech qachon yiqilmaydi:
 Toolkit hujjatiga kengaytma o'z bo'limlarini qo'shadi: **WHERE THE DATA COMES FROM**
 (har lookup — jonli so'rov, hech narsa saqlanmaydi), **READING A RESULT** (ustunlar —
 API'ning o'z nomlari, birlik va ma'no taxmin qilinmaydi, sahifa jami songa nisbatan
-joylanadi, hujayradagi matn — ma'lumot, ko'rsatma emas), **PRODUCT LIST FIELDS**
-(yuqoridagi maydon izohi) va yopuvchi **NOT AVAILABLE** (faqat mahsulot ro'yxati —
-SKU qoldig'i, narx, sotilgan/qaytarilgan, ko'rishlar va aksiya bayroqlari bilan —
-o'qiladi; buyurtma, moliya, tarix va yozish amallari yo'q, ortig'ini so'rasa —
-"hozircha qila olmayman").
+joylanadi, hujayradagi matn — ma'lumot, ko'rsatma emas; qaysi lookup butun akkaunt
+haqida ekani), **PRODUCT LIST FIELDS** (yuqoridagi maydon izohi), **SUPPLY INVOICE
+FIELDS** (nakladnoy maydonlari: holat kodi `invoiceStatus.value` da, `status` esa
+tilga bog'liq matn; `ACCEPTED` to'liq qabulni anglatmasligi — 17 tadan 2 tasi kam
+qabul qilingan, 2 tasida `dateAccepted` yo'q; `fullPrice` birliksiz; vaqtlar va
+band qilingan oyna tovar kelgan vaqt emasligi; faqat `null` ko'rilgan maydonlar
+"aytilmagan", nol emas), **WAREHOUSE RETURN FIELDS** (qaytarish maydonlari: bu xaridor
+qaytarishi emasligi, javobda dona va summa yo'qligi, `status` bu yerda kod va `dateCreated`
+millisekund ekani, pullik saqlash boshlanishi yig'ilgandan aniq 10 kun keyin va 20 tadan 14
+tasida tugash boshlanishdan oldin — "haq haqida gapirma"), **OTHER LOOKUP FIELDS** (qolgan to'rt lookup'ning dalili:
+hisoblagichlar bo'linma emas, do'konlar ikki javobdan, shartnoma sanasining ma'nosi
+yo'l nomidan, bildirishnoma so'rovi yozib olinmagan) va yopuvchi **NOT AVAILABLE**
+(faqat yuqoridagi lookup'lar o'qiydi; buyurtma, moliya, tarix, nakladnoy va qaytarish tarkibi,
+bildirishnoma matni va yozish amallari yo'q, ortig'ini so'rasa — "hozircha qila
+olmayman"). Har yangi bo'lim dalil kuchini o'zi aytadi ("ONE recorded response",
+"2 of 17") va hech narsani tasdiqlangan demaydi.
 
 **Keyingi lookup qo'shish — uch qadam** ([`tools/index.ts`](../extension/src/tools/index.ts)
 sarlavhasida yozilgan): (1) `uzum/routes.ts`ga marshrut — `UzumRouteParamsMap`da bitta
 kalit va `UZUM_ROUTES`da bitta yozuv; (2) `tools/`da `ToolSpec<ExtToolContext>`
-eksport qiluvchi bitta fayl (`productsList.ts` — namuna: zod sxema, `args`,
-`summary`, va `uzumRequest`ni `withDeadline` ichida chaqiruvchi `run`);
-(3) `EXT_TOOLS`ga bitta qator. Boshqa hech narsa o'zgarmaydi: hujjat va native
-e'lonlar registrdan o'zi hosil bo'ladi.
+eksport qiluvchi bitta fayl: zod sxema, `args`, `summary` va `run` — do'konni
+`resolveShop` bilan hal qiladi (account marshrutida faqat kirganlikni tekshiradi),
+bitta so'rovni [`readCabinet`](../extension/src/tools/lookup.ts#L47) bilan yuboradi
+(muddat va xato matni shu yerda), tanigan javobni nomlangan ustunlar bilan, qolganini
+[`unrecognised`](../extension/src/tools/lookup.ts#L88) bilan chiqaradi. Qisqa namuna
+— `invoicesList.ts`, uzuni (tiplangan o'quvchi bilan) — `productsList.ts`;
+(3) `EXT_TOOLS`ga bitta qator va `EXTENSION_SECTIONS`ga maydonlar haqida namuna nimani
+ko'rsatgani, dalil kuchi bilan. Boshqa hech narsa o'zgarmaydi: hujjat va native
+e'lonlar registrdan o'zi hosil bo'ladi, prompt esa katalogni emas, vaziyatni
+tasvirlaydi.
 
 **Mezbon** ([`src/host/`](../extension/src/host/)):
 
@@ -2007,7 +2130,7 @@ e'lonlar registrdan o'zi hosil bo'ladi.
 |---|---|
 | Prompt ([`prompt.ts`](../extension/src/host/prompt.ts#L305)) | Umumiy quruvchiga mezbon qismlari: kimlik, mavzular, ma'lumot qayerdan, kontekst, va **yozish matni** ("bu versiyada hech narsa yozilmaydi"). `fieldNames` ataylab **berilmagan**: kod izohi sababini aytadi — bitta javobdan olingan nom misol bo'lib promptga tushsa, model "har natijada shular bor" deb eshitadi, keyingi lookup'ning nomlari esa boshqa; qoida misolsiz aytiladi, ustun nomlarini esa har natija o'zi chop etadi. Nomlar toolkit legendasida, dalili bilan |
 | Nima haqida gapiradi | Model **nimani da'vo qila olishi**: so'm degan birlik, ro'yxatning to'liqligi, "o'tgan haftadan beri" o'zgarish, kabinet ekrani — har biri dalil yetarli bo'lmagan ishonchli gap. Aniqroq: sanasiz hisoblagich (sotilgan, qaytarilgan) natija nomlamagan davrni qamraydi, uni "shu hafta/oy" deb aytib bo'lmaydi; `format` — birlik haqidagi da'vo (`money` faqat so'm aytilgan joyda, `percent` faqat foiz aytilgan joyda); butun ro'yxat uchun aytilgan son — nechta ekanini bildiradi, yig'indisini emas (yig'indi faqat o'qilgan qatorlarni qamraydi); API o'zi qaytargan belgi yoki daraja API'niki deb, maydon nomi bilan keltiriladi, ustiga bashorat qurilmaydi |
-| Sana va vaqt | CONTEXT bo'limidagi bir qator: bugungi sana va vaqtlarni qaysi zonada aytish — sotuvchining Umumiy sozlamasidagi `general.timezone` zonasida (offset hisoblab qo'shiladi). Natijadagi vaqt UTC'da keladi; panel esa har vaqtni shu zonada ko'rsatadi, shuning uchun model ham xuddi shu soatni aytadi. Zona nomini `Intl` qabul qilmasa — UTC, va qator UTC deydi (sotuvchi tanlamagan zonani emas). Saqlangan matn promptga o'zicha emas, `Intl` hal qilgan nom bilan tushadi. Zonani panel o'qiydi ([`prepareRun`](../extension/src/panel/copilotHost.ts#L67)), `prompt.ts` toza qoladi |
+| Sana va vaqt | CONTEXT bo'limidagi bir qator: bugungi sana va vaqtlarni qaysi zonada aytish — sotuvchining Umumiy sozlamasidagi `general.timezone` zonasida (offset hisoblab qo'shiladi). Natijadagi vaqt UTC'da keladi; panel esa har vaqtni shu zonada ko'rsatadi, shuning uchun model ham xuddi shu soatni aytadi. Zona nomini `Intl` qabul qilmasa — UTC, va qator UTC deydi (sotuvchi tanlamagan zonani emas). Saqlangan matn promptga o'zicha emas, `Intl` hal qilgan nom bilan tushadi. Zonani panel o'qiydi ([`prepareRun`](../extension/src/panel/copilotHost.ts#L68)), `prompt.ts` toza qoladi |
 | Sessiyadan nima kiradi | Faqat kirgan-kirmagani, do'kon id'lari va ekrandagi do'kon. `sellerId`, `accountId` va ruxsat kodlari promptga **tushmaydi**: modelning hech bir ishi ularni talab qilmaydi, sababsiz LLM provayderga ketgan identifikator — ortiqcha |
 | Kirmagan varaq | CONTEXT bo'limida aytiladi, qolgan prompt bayt-baytiga bir xil — provayder keshi prefiksni qayta ishlatishda davom etadi |
 | Amallar ([`actions.ts`](../extension/src/host/actions.ts#L25)) | Faqat `copilot.ask`. Sayt amallari (narx, qoldiq, navigatsiya) ataylab yo'q — kengaytmada ularni bajaradigan na API mijozi, na ekran bor. Registrda yo'q id modelga mavjud id'lar ro'yxati bilan rad etiladi |
@@ -2087,7 +2210,7 @@ ramkani yopish; ochiq select, menyu yoki dialog o'zinikini birinchi oladi.
 ishlov beruvchilarni bitta joydan oladi: ro'yxatda bor, lekin hech narsa javob
 bermaydigan tugma bo'lmaydi.
 
-**Mezbon obyekti** ([`copilotHost.ts`](../extension/src/panel/copilotHost.ts#L67)). Har savolda
+**Mezbon obyekti** ([`copilotHost.ts`](../extension/src/panel/copilotHost.ts#L68)). Har savolda
 sessiya kabinet varag'idan **bir marta** o'qiladi va undan ikki narsa quriladi: modelga
 aytiladigan prompt va lookup'lar tekshiriladigan kontekst. Ikki marta o'qisak, model
 bitta do'konlar to'plamini eshitib, lookup boshqasiga qarshi tekshirilishi mumkin edi.
@@ -2096,8 +2219,9 @@ javob berish mumkin. Ko'prik yopilgan bo'lsa (`BRIDGE_CLOSED`) savol "kabinet sa
 bilan aloqa uzildi" jumlasi bilan to'xtaydi — "kabinet ichida emas" deb emas. Panel
 kabinet ramkasidan tashqarida ochilgan bo'lsa (faqat dev build) o'qiydigan varaq yo'q
 va savol jumla bilan to'xtaydi. Xato matni sotuvchining tilida, ko'prikning o'z
-inglizcha xabarlari emas. Boshlang'ich takliflar — faqat bitta bor lookup javob bera
-oladiganlar ("mahsulotlarimni ko'rsat"...): taklif — va'da. Pin (qadash) yo'q, shuning
+inglizcha xabarlari emas. Boshlang'ich takliflar — `products.list` javob bera
+oladiganlar ("mahsulotlarimni ko'rsat"...): taklif — va'da; kichik lookup'lar
+(mahsulot sonlari, nakladnoylar, do'konlar) uchun taklif hali yo'q. Pin (qadash) yo'q, shuning
 uchun pin tugmasi chiqmaydi; insights paneli, sinxronlash tugmasi, tanlangan davr — hech biri yo'q.
 
 **Panelda sotuvchi ko'radigan holatlar** ([`cabinetStatus.ts`](../extension/src/panel/cabinetStatus.ts)):
@@ -2133,16 +2257,17 @@ telefon zichligi. Barmoq nishonlarini kengaytirish kenglikka emas,
 
 ### 14.8. Tekshirilgan va tekshirilmagan
 
-**Avtomatlashtirilgan** (`extension/`, `npm test`, 358 ta test, 28 fayl):
+**Avtomatlashtirilgan** (`extension/`, `npm test`, 456 ta test, 32 fayl):
 
 | Fayl | Nima qoplangan |
 |---|---|
-| `uzum/routes.test.ts`, `uzum/session.test.ts` | Yopiq jadval va qat'iy parametr tekshiruvi; buzuq/yetishmagan `state` — "kirmagan" |
-| `uzum/queue.test.ts`, `uzum/bridge.test.ts` | Ketma-ket navbat, `429` kutishi, bekor qilish; kontent tomoni: ruxsat, URL, xato sinfi, tokenning hech bir xabarda yo'qligi; xayrlashgandan keyin `BRIDGE_CLOSED` |
+| `uzum/routes.test.ts`, `uzum/session.test.ts` | Yopiq jadval va qat'iy parametr tekshiruvi: yettita marshrutning har biri yozib olingan URL'ni harfma-harf yasashi, account marshruti hech qanday kalitni (jumladan `shopId` ni) qabul qilmasligi, jadvalda faqat `GET` va faqat `/api/…` borligi; buzuq/yetishmagan `state` — "kirmagan" |
+| `uzum/queue.test.ts`, `uzum/bridge.test.ts` | Ketma-ket navbat, `429` kutishi, bekor qilish; kontent tomoni: ruxsat (har do'kon marshruti o'z kodi bilan va qaysi kod yetishmagani), URL, xato sinfi, tokenning hech bir xabarda yo'qligi; account marshruti do'konsiz sessiyada ham ishlashi, kirilmagan varaqda esa yuborilmasligi; xayrlashgandan keyin `BRIDGE_CLOSED` |
 | `uzum/handshake.test.ts` | Handshake — ota oyna, bir marta, nonce faqat xabarda, yozuv yoshi, bir martalik iste'mol, soxta nomzoddan keyin haqiqiyi (to'plamlab tekshirish), `ready` tasdig'i, panel URL'ni o'qimasligi |
 | `content/content.test.ts`, `content/navigation.test.ts` | Frame holati reduceri, shortcut, nonce va URL shakli (URL'da nonce yo'q); yuklash tartibi, kutilmagan `load`, tasdiqsiz qolish va `inert` chegarasi |
 | `uzum/products.test.ts` | Niqoblangan namunani o'qish; `raw` va `fields`, `mistyped`, o'qib bo'lmaydigan yozuvlar, hech qachon xato tashlamaslik |
-| `tools/productsList.test.ts`, `tools/productsView.test.ts`, `tools/render.test.ts`, `tools/index.test.ts` | Lookup argumentlari va sarlavhasi, ikki jadval (ustunlar, `null` — bo'sh katak, turi mos kelmagan qiymat), sahifa o'rni holatlari (jumladan qidiruv/filtrli), zaxira yo'l, renderer chegaralari, toolkit hujjati |
+| `tools/productsList.test.ts`, `tools/productsView.test.ts`, `tools/render.test.ts`, `tools/index.test.ts` | Lookup argumentlari va sarlavhasi, ikki jadval (ustunlar, `null` — bo'sh katak, turi mos kelmagan qiymat), sahifa o'rni holatlari (jumladan qidiruv/filtrli), zaxira yo'l, renderer chegaralari, toolkit hujjati (aynan yettita lookup, har biri o'z marshrutining nomi bilan; yangi legendalar dalil kuchini aytishi) |
+| `tools/invoicesList.test.ts`, `tools/returnsList.test.ts`, `tools/shopsList.test.ts`, `tools/smallLookups.test.ts` | Oltita kichik lookup, hujjatdagi niqoblangan namunalar bilan: so'rov parametrlari, do'kon hal bo'lmaguncha so'rov yo'qligi (account lookup'da esa do'kon so'ralmasligi), ichma-ich maydonlardan ustunlar, `null` va nol farqi, `.utc` ustunlari, jami sonsiz sahifalash, kesilgan jadval, tanilmagan shakl, xato matni va bekor qilingan savol |
 | `host/prompt.test.ts` + snapshot, `host/actions.test.ts`, `host/loop.test.ts` | Prompt (kirmagan varaq, identifikatorlar, sana va vaqt zonasi — noma'lum zona UTC'ga tushadi), registr darvozasi, umumiy sikl kengaytma toolkit'i bilan |
 | `panel/*.test.ts` | Ishga tushish tartibi (tinglovchi birinchi), gate, ko'rinishlar, shortcut'lar, kabinet holatlari (jumladan `closed`), mezbon, host ruxsati, sozlamalarni boshqa varaqdan yangilash signallari |
 | `storage/*.test.ts`, `manifests/manifest.test.ts` | Backend va preferences adapteri; ikki manifest va u nomlagan ikonka fayllarining mavjudligi |
@@ -2173,12 +2298,31 @@ mashina, ikki brauzer versiyasi: kafolat emas, kuzatuv.
 | Qayta tiklanish | Sahifa qayta yuklanganda ochiq holat tiklandi va yangi panel ulandi; panel o'zini qayta yuklaganda kontent skript uni yangi nonce bilan qayta yukladi (`?r=1`) |
 | `document.getAnimations()` (14.3) | Ochilish va yopilish paytida faqat ramka mezbonining o'zini (`savdo-copilot-frame`) ko'rsatdi; shadow root ichidagi hech narsa yo'q |
 
+**Oltita yangi lookup haqiqiy brauzerda** (2026-11-16; `dist/chromium`, Chrome
+157.0.8103.52 va Edge 157.0.4341.60, ikkalasida bir xil natija; `returns.list` — o'sha kuni
+ikkinchi yurgizishda). Sharoit yuqoridagidek,
+bitta farq bilan: kabinet sahifasining o'zi ham almashtirgich — `seller.uzum.uz`
+so'rovi brauzerda ushlanib, bo'sh sahifa bilan javob berildi, kabinet API'sining
+javoblari esa hujjatdagi niqoblangan namunalar edi. Uzum'ga hech bir so'rov ketmadi
+(boshqa `uzum.uz` manziliga urinish — 0 ta). Bu serverning xatti-harakati haqida
+hech narsa demaydi: javoblarni sinovning o'zi bergan.
+
+| Nima | Natija |
+|---|---|
+| Model olgan toolkit hujjati | Yettita lookup va `copilot.ask` sanalgan; **SUPPLY INVOICE FIELDS**, **WAREHOUSE RETURN FIELDS** va **OTHER LOOKUP FIELDS** bo'limlari bor |
+| Oltita so'rovning shakli | Har biri 14.4 jadvalidagi yo'lga (`…/shop/`, `…/product/products-statistic`, `…/invoice?page=0&size=20`, `…/return?page=0&size=20`, `…/contract/end-date?shopId=…`, `/api/v1/…/unread-count`) `Authorization: Bearer …`, `Accept: application/json`, origin `https://seller.uzum.uz` bilan, cookie'siz va boshqa hech qanday qo'shimcha header'siz ketdi; brauzerning preflight'i har birida faqat `authorization` ni so'radi |
+| Account marshrutlari | `shops.list` va `notifications.unread` do'kon so'ramasdan ishladi; model `shops.list` ga `shopId` qo'shganda u e'tiborsiz qoldi, so'rov o'sha parametrsiz yo'lga ketdi |
+| Ruxsat kodi yo'q do'kon | `INVOICE_READ` va `SELLER_RETURN_READ` berilmagan do'kon uchun `invoices.list` va `returns.list` — brauzer **hech qanday so'rov yubormadi**; modelga "so'rov yuborilmadi … The seller lacks INVOICE_READ on shop …" matni qaytdi |
+| Natijalar va panel | Oltita natija kutilgan jadval/juftliklar bo'lib modelga qaytdi; panelda har chaqiruvga bitta iz qatori va manba chipi chizildi |
+| Token | Modelga yuborilgan uchta so'rovning hech birida soxta token yo'q |
+
 **Hali tekshirilmagan** (13-bo'lim, texnik qarz, 2-band):
 
 | Nima | Nega ishonch yo'q |
 |---|---|
 | Firefox umuman; `content.fetch` (va `cloneInto`) | `dist/firefox` hech qayerga o'rnatilmagan; Xray chegarasidagi xatti-harakatni faqat brauzer ko'rsatadi |
-| Haqiqiy kabinet sessiyasi | `localStorage.state` shakli bitta namunadan ma'lum; kirilgan sahifalarning CSP'si va haqiqiy token bilan `GET` javobining CORS'i ko'rilmagan; kabinetning `access-content-allow-origin` so'rov header'i bizda yuborilmaydi |
+| Haqiqiy kabinet sessiyasi | `localStorage.state` shakli bitta namunadan ma'lum; kirilgan sahifalarning CSP'si va haqiqiy token bilan `GET` javobining CORS'i ko'rilmagan; kabinetning `access-content-allow-origin` so'rov header'i bizda yuborilmaydi (kabinetning o'zi uni nakladnoy so'roviga qo'shmagan va `200` olgan — 5.B.10; kengaytma so'rovi uchun bu hali dalil emas) |
+| Oltita yangi lookup haqiqiy server bilan | Yettita marshrutning hech biri kengaytmadan haqiqiy token bilan yuborilmagan. `PRODUCT_READ`, `INVOICE_READ`, `SELLER_RETURN_READ`, `SHOP_READ` — kodning farazi: server boshqa kod so'rasa yoki umuman so'ramasa, kod ruxsatli so'rovni rad etadi yoki server `403` qaytaradi. `notifications.unread` ning `GET` i hech qachon yozib olinmagan |
 | Haqiqiy LLM kaliti; tool API'li yo'l | Sinovda faqat matn protokoli (`custom`) yurgan; Gemini, Claude va OpenAI'ning tool API'li yo'li brauzerda yurmagan |
 | Ctrl+J qisqa yo'li brauzerning o'z qisqa yo'lini bosib o'tadimi | Oynasiz rejimda brauzer qisqa yo'llari yo'q; brauzerlar o'zlari zaxiralagan tugmalar to'plami har xil |
 | bfcache'dan qaytganda ramka tiklanishi | Hodisalar tartibi brauzerga bog'liq; sinovda faqat oddiy qayta yuklash va panelning o'z qayta yuklashi o'tgan |

@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   hasControlCharacter,
   isRouteId,
+  PAGE_MAX,
+  PAGE_MAX_SIZE,
   PRODUCTS_MAX_PAGE,
   PRODUCTS_MAX_SIZE,
   PRODUCTS_FILTER_DEFAULT,
   PRODUCTS_FILTERS,
   PRODUCTS_SEARCH_MAX_LENGTH,
+  shopOfRoute,
   toApiUrl,
   UZUM_API_ORIGIN,
   UZUM_ROUTES,
@@ -156,12 +159,172 @@ describe('shared validation exports', () => {
   });
 });
 
+/* The recorded paths, with invented shop ids. */
+describe('the other shop routes', () => {
+  const target = (
+    id: 'products.stats' | 'invoices.list' | 'returns.list' | 'contract.end',
+    params: Record<string, unknown>,
+  ): string => {
+    const spec = UZUM_ROUTES[id];
+    const parsed = spec.parse(params);
+    if (!parsed.ok) throw new Error(parsed.reason);
+    const url = toApiUrl(spec.target(parsed.value as never));
+    if (url === null) throw new Error('left the origin');
+    return url;
+  };
+
+  it('builds the recorded product-statistic path, with no query', () => {
+    expect(target('products.stats', { shopId: 42 })).toBe(
+      `${UZUM_API_ORIGIN}/api/seller/shop/42/product/products-statistic`,
+    );
+  });
+
+  it('builds the recorded invoice request character for character', () => {
+    expect(target('invoices.list', { shopId: 42, page: 0, size: 20 })).toBe(
+      `${UZUM_API_ORIGIN}/api/seller/shop/42/invoice?page=0&size=20`,
+    );
+  });
+
+  it('builds the recorded return request character for character', () => {
+    expect(target('returns.list', { shopId: 42, page: 0, size: 20 })).toBe(
+      `${UZUM_API_ORIGIN}/api/seller/shop/42/return?page=0&size=20`,
+    );
+    expect(target('returns.list', { shopId: 42, page: 3, size: 50 })).toBe(
+      `${UZUM_API_ORIGIN}/api/seller/shop/42/return?page=3&size=50`,
+    );
+  });
+
+  it('puts the shop of a contract request in the query, as recorded', () => {
+    expect(target('contract.end', { shopId: 42 })).toBe(
+      `${UZUM_API_ORIGIN}/api/seller/committent/contract/end-date?shopId=42`,
+    );
+  });
+
+  it('names the shop the call is for and a permission of its own', () => {
+    expect(UZUM_ROUTES['products.stats']).toMatchObject({ scope: 'shop', method: 'GET', permission: 'PRODUCT_READ' });
+    expect(UZUM_ROUTES['invoices.list']).toMatchObject({ scope: 'shop', method: 'GET', permission: 'INVOICE_READ' });
+    expect(UZUM_ROUTES['returns.list']).toMatchObject({ scope: 'shop', method: 'GET', permission: 'SELLER_RETURN_READ' });
+    expect(UZUM_ROUTES['contract.end']).toMatchObject({ scope: 'shop', method: 'GET', permission: 'SHOP_READ' });
+    expect(UZUM_ROUTES['returns.list'].shopOf({ shopId: 4, page: 0, size: 20 })).toBe(4);
+    expect(UZUM_ROUTES['products.stats'].shopOf({ shopId: 7 })).toBe(7);
+    expect(UZUM_ROUTES['invoices.list'].shopOf({ shopId: 8, page: 0, size: 20 })).toBe(8);
+    expect(UZUM_ROUTES['contract.end'].shopOf({ shopId: 9 })).toBe(9);
+  });
+
+  it('refuses a missing or malformed shop and every key it does not take', () => {
+    for (const id of ['products.stats', 'contract.end'] as const) {
+      const bad: unknown[] = [
+        null,
+        [],
+        {},
+        { shopId: '1' },
+        { shopId: 0 },
+        { shopId: 1.5 },
+        { shopId: -1 },
+        { shopId: 1, page: 0 },
+        { shopId: 1, filter: 'ALL' },
+      ];
+      for (const input of bad) expect(UZUM_ROUTES[id].parse(input).ok).toBe(false);
+      expect(UZUM_ROUTES[id].parse({ shopId: 1 })).toEqual({ ok: true, value: { shopId: 1 } });
+    }
+  });
+
+  it.each(['invoices.list', 'returns.list'] as const)('bounds a page of %s and offers no filter the recording did not show', (id) => {
+    const route = UZUM_ROUTES[id];
+    const base = { shopId: 1, page: 0, size: 20 };
+    const bad: unknown[] = [
+      null,
+      { shopId: 1, page: 0 },
+      { shopId: 1, size: 20 },
+      { ...base, page: -1 },
+      { ...base, page: 1.5 },
+      { ...base, size: 0 },
+      { ...base, size: PAGE_MAX_SIZE + 1 },
+      { ...base, page: PAGE_MAX + 1 },
+      { ...base, size: '20' },
+      { ...base, status: 'CREATED' },
+      { ...base, type: 'DEFECTED' },
+      { ...base, dateFrom: 1 },
+      { ...base, sortBy: 'id' },
+    ];
+    for (const input of bad) expect(route.parse(input).ok).toBe(false);
+    expect(route.parse({ shopId: 1, page: PAGE_MAX, size: PAGE_MAX_SIZE }).ok).toBe(true);
+    expect(route.parse(base)).toEqual({ ok: true, value: base });
+  });
+
+  it('cannot be steered off its path by a shop id', () => {
+    for (const shopId of ['../../x', '1/../admin', '1?x=1', '1#x', ' 1']) {
+      expect(UZUM_ROUTES['invoices.list'].parse({ shopId, page: 0, size: 20 }).ok).toBe(false);
+      expect(UZUM_ROUTES['returns.list'].parse({ shopId, page: 0, size: 20 }).ok).toBe(false);
+      expect(UZUM_ROUTES['products.stats'].parse({ shopId }).ok).toBe(false);
+      expect(UZUM_ROUTES['contract.end'].parse({ shopId }).ok).toBe(false);
+    }
+  });
+});
+
+describe('the account routes', () => {
+  it('build the recorded paths: the trailing slash of the shop list, the v1 prefix of the counter', () => {
+    expect(toApiUrl(UZUM_ROUTES['shops.list'].target({}))).toBe(`${UZUM_API_ORIGIN}/api/seller/shop/`);
+    expect(toApiUrl(UZUM_ROUTES['notifications.unread'].target({}))).toBe(
+      `${UZUM_API_ORIGIN}/api/v1/seller/notification/unread-count`,
+    );
+  });
+
+  it('name no shop and no permission', () => {
+    for (const id of ['shops.list', 'notifications.unread'] as const) {
+      expect(UZUM_ROUTES[id].scope).toBe('account');
+      expect(UZUM_ROUTES[id].method).toBe('GET');
+      expect(UZUM_ROUTES[id]).not.toHaveProperty('permission');
+      expect(UZUM_ROUTES[id]).not.toHaveProperty('shopOf');
+    }
+  });
+
+  it('take nothing at all', () => {
+    for (const id of ['shops.list', 'notifications.unread'] as const) {
+      expect(UZUM_ROUTES[id].parse({})).toEqual({ ok: true, value: {} });
+      for (const input of [null, undefined, [], 'x', { shopId: 1 }, { page: 0 }, { key: 'ONBOARDING' }]) {
+        expect(UZUM_ROUTES[id].parse(input).ok).toBe(false);
+      }
+    }
+  });
+});
+
 describe('route table', () => {
   it('knows only its own ids', () => {
-    expect(isRouteId('products.list')).toBe(true);
-    for (const id of ['constructor', 'toString', '__proto__', 'x', 5, null]) {
+    for (const id of ['products.list', 'products.stats', 'invoices.list', 'returns.list', 'shops.list', 'contract.end', 'notifications.unread']) {
+      expect(isRouteId(id)).toBe(true);
+    }
+    for (const id of ['constructor', 'toString', '__proto__', 'x', 5, null, 'account', 'check_token', 'notifications.list']) {
       expect(isRouteId(id)).toBe(false);
     }
+  });
+
+  it('holds only GET routes under /api/ on the API origin', () => {
+    const samples: Record<string, unknown> = {
+      'products.list': { shopId: 1, page: 0, size: 5 },
+      'products.stats': { shopId: 1 },
+      'invoices.list': { shopId: 1, page: 0, size: 20 },
+      'returns.list': { shopId: 1, page: 0, size: 20 },
+      'shops.list': {},
+      'contract.end': { shopId: 1 },
+      'notifications.unread': {},
+    };
+    expect(Object.keys(UZUM_ROUTES).sort()).toEqual(Object.keys(samples).sort());
+    for (const [id, spec] of Object.entries(UZUM_ROUTES)) {
+      expect(spec.method).toBe('GET');
+      expect(spec.source.startsWith('GET /api/')).toBe(true);
+      const url = toApiUrl((spec as { target(p: unknown): string }).target(samples[id]));
+      expect(url?.startsWith(`${UZUM_API_ORIGIN}/api/`)).toBe(true);
+    }
+  });
+
+  it('says which shop a call is for, and none for an account route', () => {
+    expect(shopOfRoute('products.list', { shopId: 5, page: 0, size: 5 })).toBe(5);
+    expect(shopOfRoute('invoices.list', { shopId: 6, page: 0, size: 20 })).toBe(6);
+    expect(shopOfRoute('returns.list', { shopId: 8, page: 0, size: 20 })).toBe(8);
+    expect(shopOfRoute('contract.end', { shopId: 7 })).toBe(7);
+    expect(shopOfRoute('shops.list', {})).toBeNull();
+    expect(shopOfRoute('notifications.unread', {})).toBeNull();
   });
 
   it('never resolves a target off the API origin', () => {

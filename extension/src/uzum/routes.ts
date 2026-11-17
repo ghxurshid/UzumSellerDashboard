@@ -9,10 +9,29 @@
  * produce, so a compromised panel or a prompt-injected model cannot aim it at
  * an arbitrary address.
  *
- * Evidence: TWO recorded requests for `products.list` (a 5-row call with no sort or search, and
- * one that reads as the cabinet's own product table, size 24), ONE recorded response (for the
- * second). Nothing here describes a response shape; that lives in
- * `products.ts`, on the panel side.
+ * Evidence is recorded traffic only, one card per route in
+ * `docs/API-REQUEST-RESPONSE.md` (section 5.B). What was recorded of each REQUEST:
+ *
+ *   products.list         TWO requests (a 5-row call with no sort or search, and one that
+ *                         reads as the cabinet's own product table, size 24)
+ *   products.stats        one request, no parameters
+ *   invoices.list         one request, `page=0&size=20`
+ *   returns.list          one request, `page=0&size=20`
+ *   shops.list            two requests, three days apart, no parameters
+ *   contract.end          one request, `shopId` in the query
+ *   notifications.unread  NO request: only its preflight was recorded, which asked to send
+ *                         `authorization`; the path is the preflight's
+ *
+ * Nothing here describes a response shape; that is the panel side's business
+ * (`products.ts` and the lookups in `@ext/tools`).
+ *
+ * Two kinds of route. A **shop** route is about one shop: it is refused before
+ * any request unless that shop is the seller's and carries the route's
+ * permission code. An **account** route names no shop (the shop list itself, a
+ * notification counter), so there is no shop to check and only the sign-in is
+ * required. Which permission the API itself asks for is recorded nowhere: the
+ * codes below are read off their names (`PRODUCT_READ` for a product route) and
+ * are this table's own guard, never a statement about the server.
  *
  * Adding an endpoint is adding one key to `UzumRouteParamsMap` and one entry to
  * `UZUM_ROUTES`; the compiler refuses either without the other.
@@ -25,20 +44,32 @@ export type RouteCheck<P> =
   | { readonly ok: true; readonly value: P }
   | { readonly ok: false; readonly reason: string };
 
-export interface RouteSpec<P> {
+interface RouteBase<P> {
   /** GET only for now; the content script refuses any other verb. */
   readonly method: 'GET';
-  /** The permission code the seller needs on the shop, checked before any request. */
-  readonly permission: string;
   /** Human-readable template for an answer's source chip. */
   readonly source: string;
   /** Strict: unknown keys, missing keys and out-of-range values are all refused. */
   parse(input: unknown): RouteCheck<P>;
-  /** The shop the call is made for — the caller's own, never read from a payload. */
-  shopOf(params: P): number;
   /** Path and query, always starting with `/api/`; resolved against `UZUM_API_ORIGIN`. */
   target(params: P): string;
 }
+
+/** A route about one shop. */
+export interface ShopRouteSpec<P> extends RouteBase<P> {
+  readonly scope: 'shop';
+  /** The permission code the seller needs on the shop, checked before any request. */
+  readonly permission: string;
+  /** The shop the call is made for — the caller's own, never read from a payload. */
+  shopOf(params: P): number;
+}
+
+/** A route about the signed-in account as a whole: it names no shop, so only the sign-in is checked. */
+export interface AccountRouteSpec<P> extends RouteBase<P> {
+  readonly scope: 'account';
+}
+
+export type RouteSpec<P> = ShopRouteSpec<P> | AccountRouteSpec<P>;
 
 /**
  * The two `filter` values recorded, one per request: `ALL` came with the
@@ -64,9 +95,30 @@ export interface ProductsListParams {
   readonly searchQuery?: string;
 }
 
+/** A shop route that takes nothing but its shop. */
+export interface ShopParams {
+  readonly shopId: number;
+}
+
+/** A shop route that pages: its shop, a zero-based page and a page size. */
+export interface ShopPageParams {
+  readonly shopId: number;
+  readonly page: number;
+  readonly size: number;
+}
+
+/** An account route that takes nothing at all. */
+export type NoParams = Readonly<Record<string, never>>;
+
 /** One line per route; `UzumRouteId` and `UzumRouteParams` derive from it. */
 export interface UzumRouteParamsMap {
   'products.list': ProductsListParams;
+  'products.stats': ShopParams;
+  'invoices.list': ShopPageParams;
+  'returns.list': ShopPageParams;
+  'shops.list': NoParams;
+  'contract.end': ShopParams;
+  'notifications.unread': NoParams;
 }
 
 export type UzumRouteId = keyof UzumRouteParamsMap;
@@ -109,7 +161,8 @@ export const PRODUCTS_MIN_SIZE = 1;
 export const PRODUCTS_MIN_PAGE = 0;
 export const PRODUCTS_MAX_PAGE = 100_000;
 
-const productsList: RouteSpec<ProductsListParams> = {
+const productsList: ShopRouteSpec<ProductsListParams> = {
+  scope: 'shop',
   method: 'GET',
   permission: 'PRODUCT_READ',
   source: 'GET /api/seller/shop/{shopId}/product/getProducts',
@@ -168,13 +221,157 @@ const productsList: RouteSpec<ProductsListParams> = {
   },
 };
 
+/** The first key the route does not take, or null. An ignored key would look like a working filter to the caller. */
+function strayKey(input: Record<string, unknown>, allowed: readonly string[]): string | null {
+  for (const key of Object.keys(input)) {
+    if (!allowed.includes(key)) return key;
+  }
+  return null;
+}
+
+function parseShopOnly(input: unknown): RouteCheck<ShopParams> {
+  if (!isPlainRecord(input)) return fail('params must be an object');
+  const stray = strayKey(input, ['shopId']);
+  if (stray !== null) return fail(`unknown param "${stray}"`);
+  const shopId = integerIn(input['shopId'], 1, Number.MAX_SAFE_INTEGER);
+  if (shopId === null) return fail('shopId must be a positive integer');
+  return { ok: true, value: { shopId } };
+}
+
+function parseNothing(input: unknown): RouteCheck<NoParams> {
+  if (!isPlainRecord(input)) return fail('params must be an object');
+  const stray = strayKey(input, []);
+  if (stray !== null) return fail(`unknown param "${stray}"`);
+  return { ok: true, value: {} };
+}
+
+/** The per-filter product counters of one shop. The recorded request carried no parameters. */
+const productsStats: ShopRouteSpec<ShopParams> = {
+  scope: 'shop',
+  method: 'GET',
+  permission: 'PRODUCT_READ',
+  source: 'GET /api/seller/shop/{shopId}/product/products-statistic',
+  parse: parseShopOnly,
+  shopOf: (params) => params.shopId,
+  target: (params) => `/api/seller/shop/${params.shopId}/product/products-statistic`,
+};
+
+/**
+ * The bounds of a paged shop route. They are our own contract (the recorded
+ * size, 20, fits), not something a response showed: both recorded requests
+ * sent `page=0&size=20` and nothing larger was ever seen.
+ */
+export const PAGE_MAX_SIZE = 100;
+export const PAGE_MIN_SIZE = 1;
+export const PAGE_MIN = 0;
+export const PAGE_MAX = 100_000;
+
+/** A shop, a page and a size, and nothing else: no filter the recordings did not show. */
+function parseShopPage(input: unknown): RouteCheck<ShopPageParams> {
+  if (!isPlainRecord(input)) return fail('params must be an object');
+  const stray = strayKey(input, ['shopId', 'page', 'size']);
+  if (stray !== null) return fail(`unknown param "${stray}"`);
+  const shopId = integerIn(input['shopId'], 1, Number.MAX_SAFE_INTEGER);
+  if (shopId === null) return fail('shopId must be a positive integer');
+  const page = integerIn(input['page'], PAGE_MIN, PAGE_MAX);
+  if (page === null) return fail('page must be an integer >= 0');
+  const size = integerIn(input['size'], PAGE_MIN_SIZE, PAGE_MAX_SIZE);
+  if (size === null) return fail(`size must be an integer from 1 to ${PAGE_MAX_SIZE}`);
+  return { ok: true, value: { shopId, page, size } };
+}
+
+/** `page` then `size`, the order both recorded requests used. */
+const pageQuery = (params: ShopPageParams): string =>
+  new URLSearchParams({ page: String(params.page), size: String(params.size) }).toString();
+
+/**
+ * One shop's supply (FBO) invoices, a page per call. The one recorded request
+ * sent `page` and `size` and nothing else: no status, date or sort parameter is
+ * known, so none is offered.
+ */
+const invoicesList: ShopRouteSpec<ShopPageParams> = {
+  scope: 'shop',
+  method: 'GET',
+  permission: 'INVOICE_READ',
+  source: 'GET /api/seller/shop/{shopId}/invoice',
+  parse: parseShopPage,
+  shopOf: (params) => params.shopId,
+  target: (params) => `/api/seller/shop/${params.shopId}/invoice?${pageQuery(params)}`,
+};
+
+/**
+ * One shop's returns from the warehouse (goods Uzum sends back to the seller),
+ * a page per call. Like the invoices, the one recorded request sent `page` and
+ * `size` only. `SELLER_RETURN_READ` is read off the permission's name.
+ */
+const returnsList: ShopRouteSpec<ShopPageParams> = {
+  scope: 'shop',
+  method: 'GET',
+  permission: 'SELLER_RETURN_READ',
+  source: 'GET /api/seller/shop/{shopId}/return',
+  parse: parseShopPage,
+  shopOf: (params) => params.shopId,
+  target: (params) => `/api/seller/shop/${params.shopId}/return?${pageQuery(params)}`,
+};
+
+/** The seller's shops. The trailing slash is the recorded path's own, in both recordings. */
+const shopsList: AccountRouteSpec<NoParams> = {
+  scope: 'account',
+  method: 'GET',
+  source: 'GET /api/seller/shop/',
+  parse: parseNothing,
+  target: () => '/api/seller/shop/',
+};
+
+/**
+ * The end date of one shop's contract. The shop travels in the query, not the
+ * path. No permission code is named after contracts; `SHOP_READ` is the closest
+ * one in the recorded session and is our own choice of guard.
+ */
+const contractEnd: ShopRouteSpec<ShopParams> = {
+  scope: 'shop',
+  method: 'GET',
+  permission: 'SHOP_READ',
+  source: 'GET /api/seller/committent/contract/end-date',
+  parse: parseShopOnly,
+  shopOf: (params) => params.shopId,
+  target(params) {
+    const query = new URLSearchParams({ shopId: String(params.shopId) });
+    return `/api/seller/committent/contract/end-date?${query.toString()}`;
+  },
+};
+
+/** How many notifications are unread. The only cabinet path recorded under `/api/v1/`. */
+const notificationsUnread: AccountRouteSpec<NoParams> = {
+  scope: 'account',
+  method: 'GET',
+  source: 'GET /api/v1/seller/notification/unread-count',
+  parse: parseNothing,
+  target: () => '/api/v1/seller/notification/unread-count',
+};
+
 export const UZUM_ROUTES = {
   'products.list': productsList,
+  'products.stats': productsStats,
+  'invoices.list': invoicesList,
+  'returns.list': returnsList,
+  'shops.list': shopsList,
+  'contract.end': contractEnd,
+  'notifications.unread': notificationsUnread,
 } as const satisfies { readonly [K in UzumRouteId]: RouteSpec<UzumRouteParamsMap[K]> };
 
 /** `hasOwn`, not `in`: a route id of "constructor" must not find anything. */
 export function isRouteId(value: unknown): value is UzumRouteId {
   return typeof value === 'string' && Object.hasOwn(UZUM_ROUTES, value);
+}
+
+/**
+ * The shop a call is made for, taken from the caller's own params; null for an
+ * account route, which is about no shop in particular.
+ */
+export function shopOfRoute<R extends UzumRouteId>(route: R, params: UzumRouteParams<R>): number | null {
+  const spec: RouteSpec<unknown> = UZUM_ROUTES[route];
+  return spec.scope === 'shop' ? spec.shopOf(params) : null;
 }
 
 /**

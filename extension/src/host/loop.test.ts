@@ -134,9 +134,19 @@ describe('a question on the extension toolkit', () => {
 
     /* First request: only the door is declared. */
     expect(request(0).tools?.map((tool) => tool.name)).toEqual(['open_toolkit']);
-    /* After opening: the product list and the follow-up chip, and nothing of the site's. */
+    /* After opening: the cabinet lookups and the follow-up chip, and nothing of the site's. */
     const declared = request(1).tools?.map((tool) => tool.name) ?? [];
-    expect(declared).toEqual(['open_toolkit', 'products_list', 'copilot_ask']);
+    expect(declared).toEqual([
+      'open_toolkit',
+      'products_list',
+      'products_stats',
+      'invoices_list',
+      'returns_list',
+      'shops_list',
+      'contract_end',
+      'notifications_unread',
+      'copilot_ask',
+    ]);
 
     /* No shopId from the model: the cabinet was asked for the shop on screen. */
     expect(uzumRequest).toHaveBeenCalledTimes(1);

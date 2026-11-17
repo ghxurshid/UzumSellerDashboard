@@ -95,6 +95,61 @@ describe('content side: validation before any request', () => {
     expect(await svc.handleRequest(good, live)).toMatchObject({ ok: false, kind: 'unauthorized' });
     expect(calls).toHaveLength(0);
   });
+
+  it('holds every shop route to its own permission, and says which one is missing', async () => {
+    const { svc, calls } = service(async () => response(200, '{}'));
+    /* Shop 1001 carries PRODUCT_READ only: enough for the product routes, not for these. */
+    const invoices = await svc.handleRequest(
+      { route: 'invoices.list', method: 'GET', params: { shopId: 1001, page: 0, size: 20 } },
+      live,
+    );
+    const contract = await svc.handleRequest(
+      { route: 'contract.end', method: 'GET', params: { shopId: 1001 } },
+      live,
+    );
+    expect(invoices).toMatchObject({ ok: false, kind: 'forbidden', message: 'The seller lacks INVOICE_READ on shop 1001.' });
+    expect(contract).toMatchObject({ ok: false, kind: 'forbidden', message: 'The seller lacks SHOP_READ on shop 1001.' });
+    const returns = await svc.handleRequest(
+      { route: 'returns.list', method: 'GET', params: { shopId: 1001, page: 0, size: 20 } },
+      live,
+    );
+    expect(returns).toMatchObject({
+      ok: false,
+      kind: 'forbidden',
+      message: 'The seller lacks SELLER_RETURN_READ on shop 1001.',
+    });
+    /* A shop that is not the seller's is refused whatever the route. */
+    const outside = await svc.handleRequest(
+      { route: 'products.stats', method: 'GET', params: { shopId: 5 } },
+      live,
+    );
+    expect(outside).toMatchObject({ ok: false, kind: 'forbidden' });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses an account route a shop or any other param, and a signed-out tab, unfetched', async () => {
+    const { svc, calls } = service(async () => response(200, '[]'));
+    for (const params of [{ shopId: 1001 }, { page: 0 }, null, 'x']) {
+      expect(await svc.handleRequest({ route: 'shops.list', method: 'GET', params }, live)).toMatchObject({
+        ok: false,
+        kind: 'client',
+      });
+    }
+    expect(await svc.handleRequest({ route: 'shops.list', method: 'POST', params: {} }, live)).toMatchObject({
+      ok: false,
+      kind: 'client',
+    });
+    expect(calls).toHaveLength(0);
+
+    const signedOut = service(async () => response(200, '[]'), null);
+    for (const route of ['shops.list', 'notifications.unread']) {
+      expect(await signedOut.svc.handleRequest({ route, method: 'GET', params: {} }, live)).toMatchObject({
+        ok: false,
+        kind: 'unauthorized',
+      });
+    }
+    expect(signedOut.calls).toHaveLength(0);
+  });
 });
 
 describe('content side: the request itself', () => {
@@ -109,6 +164,51 @@ describe('content side: the request itself', () => {
     expect(call?.init.method).toBe('GET');
     expect(call?.init.credentials).toBe('omit');
     expect(call?.init.headers).toMatchObject({ authorization: `Bearer ${TOKEN}` });
+  });
+
+  it('serves an account route with the sign-in alone: no shop is checked, the token goes to the table\'s URL', async () => {
+    /* A session whose permissions name no shop at all can still ask about the account. */
+    const noShops = JSON.stringify({ user: { tokens: { access: TOKEN }, permissions: {} } });
+    const { svc, calls } = service(async () => response(200, '[{"id":1001}]'), noShops);
+
+    expect(await svc.handleRequest({ route: 'shops.list', method: 'GET', params: {} }, live)).toEqual({
+      ok: true,
+      status: 200,
+      data: [{ id: 1001 }],
+    });
+    await svc.handleRequest({ route: 'notifications.unread', method: 'GET', params: {} }, live);
+
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://api-seller.uzum.uz/api/seller/shop/',
+      'https://api-seller.uzum.uz/api/v1/seller/notification/unread-count',
+    ]);
+    for (const call of calls) {
+      expect(call.init.method).toBe('GET');
+      expect(call.init.credentials).toBe('omit');
+      expect(call.init.headers).toEqual({ accept: 'application/json', authorization: `Bearer ${TOKEN}` });
+    }
+  });
+
+  it('builds each shop route\'s recorded URL once the shop carries its permission', async () => {
+    const full = JSON.stringify({
+      user: {
+        tokens: { access: TOKEN },
+        permissions: { '1001': ['PRODUCT_READ', 'INVOICE_READ', 'SELLER_RETURN_READ', 'SHOP_READ'] },
+      },
+    });
+    const { svc, calls } = service(async () => response(200, '{}'), full);
+
+    await svc.handleRequest({ route: 'products.stats', method: 'GET', params: { shopId: 1001 } }, live);
+    await svc.handleRequest({ route: 'invoices.list', method: 'GET', params: { shopId: 1001, page: 2, size: 20 } }, live);
+    await svc.handleRequest({ route: 'returns.list', method: 'GET', params: { shopId: 1001, page: 0, size: 20 } }, live);
+    await svc.handleRequest({ route: 'contract.end', method: 'GET', params: { shopId: 1001 } }, live);
+
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://api-seller.uzum.uz/api/seller/shop/1001/product/products-statistic',
+      'https://api-seller.uzum.uz/api/seller/shop/1001/invoice?page=2&size=20',
+      'https://api-seller.uzum.uz/api/seller/shop/1001/return?page=0&size=20',
+      'https://api-seller.uzum.uz/api/seller/committent/contract/end-date?shopId=1001',
+    ]);
   });
 
   it('classifies statuses and never quotes the body or the token', async () => {
@@ -250,6 +350,18 @@ describe('handshake and request/response over the private port', () => {
       route: 'GET /api/seller/shop/{shopId}/product/getProducts',
     });
     expect(seen[0]).toEqual({ origin: 'chrome-extension://abcdef' });
+  });
+
+  it('serves an account route end to end and tags it with no shop', async () => {
+    fetchImpl = async () => response(200, '[{"id":1001,"shopTitle":"A"}]');
+    const client = await mount();
+    const result = await client.uzumRequest('shops.list', {});
+    expect(result).toEqual({
+      status: 200,
+      data: [{ id: 1001, shopTitle: 'A' }],
+      shopId: null,
+      route: 'GET /api/seller/shop/',
+    });
   });
 
   it('turns failures into ApiError with the right kind', async () => {

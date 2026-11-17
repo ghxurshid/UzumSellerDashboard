@@ -208,7 +208,8 @@ export function explainFailure(error: unknown): string {
           : `The Uzum API refused the cabinet session (HTTP ${error.status}) — the seller may need to sign in again in this tab.`;
       case 'forbidden':
         return error.status === undefined
-          ? "No request was sent: the extension itself refused it — the shop is not among the seller's shops in this session, or the session lacks the permission to read it."
+          ? /* The bridge's own sentence says which of the two it was, and which permission. */
+            `No request was sent: the extension itself refused it — the shop is not among the seller's shops in this session, or the session lacks the permission to read it${detail(error)}.`
           : `The Uzum API answered HTTP ${error.status}: the seller's account is not allowed to read this.`;
       case 'notFound':
         return error.status === undefined

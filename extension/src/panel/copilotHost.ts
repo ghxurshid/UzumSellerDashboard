@@ -31,9 +31,10 @@ import { BRIDGE_CLOSED_CODE, getSellerSession, type SellerSession } from '@ext/u
 export type ExtensionCopilotHost = CopilotHost<ExtToolContext, ExtActionId>;
 
 /**
- * Starter questions the one existing lookup (`products.list`) can answer. No
- * sales, profit or stock analysis is promised: the extension cannot read those
- * yet, and a suggestion is a promise.
+ * Starter questions `products.list` can answer; the smaller lookups (product
+ * counters, supply invoices, shops) have none yet. No sales, profit or stock
+ * analysis is promised: the extension cannot read those yet, and a suggestion
+ * is a promise.
  */
 export const EXTENSION_SUGGESTIONS: readonly TranslationKey[] = [
   'extQStockList',

@@ -775,13 +775,17 @@ qilinadi.
 Bu bo'limdagi hech narsa yuqoridagi 1–12-bo'limlarga tegishli emas. Uni
 saytning o'zi chaqirmaydi: faqat brauzer kengaytmasi
 ([`extension/`](../../../../extension/src/uzum/routes.ts)), sotuvchining ochiq
-kabinet varag'i orqali (kabinetning o'zi ham shu yo'lni chaqiradi — yozib
-olingan so'rovlar uniki). Hujjatlashtirilmagan API: u haqida bilganimiz — ikkita
-yozib olingan so'rov, bitta yozib olingan javob va bitta sessiya namunasi.
-Javobning maydonma-maydon shakli bu yerda **takrorlanmaydi**:
-[API-REQUEST-RESPONSE.md, 5.B.8](../../../../docs/API-REQUEST-RESPONSE.md#5b8-get-apisellershopshopidproductgetproducts).
+kabinet varag'i orqali (kabinetning o'zi ham shu yo'llarni chaqiradi — yozib
+olingan so'rovlar uniki). Hujjatlashtirilmagan API: u haqida bilganimiz faqat yozib
+olingan trafik. Kod **yettita** marshrutni chaqiradi: mahsulot ro'yxati (13.3 — ikkita
+yozib olingan so'rov, bitta javob) va oltita kichigi (13.6 — bittadan namuna,
+do'konlar ro'yxatida ikkitadan), bunga bitta sessiya namunasi qo'shiladi (13.4).
+Javoblarning maydonma-maydon shakli bu yerda **takrorlanmaydi**:
+[API-REQUEST-RESPONSE.md, 5.B](../../../../docs/API-REQUEST-RESPONSE.md#5b-kabinet-api).
 
 ### 13.1. Dalil qanchalik kuchli
+
+Jadval mahsulot ro'yxati (13.3) va sessiya haqida; qolgan olti marshrutning dalili — 13.6.
 
 | Nima | Dalil |
 |---|---|
@@ -832,9 +836,9 @@ yuborilgan; `sortBy` va `order` uchun yozilgan yagona qiymatlar `id` va
 `descending`. A da bu uchtasi yo'q va `200` qaytgan.
 
 Kod B ning parametr tartibi bilan chaqiradi
-([`routes.ts`](../../../../extension/src/uzum/routes.ts#L112); marshrut — yopiq jadval
+([`routes.ts`](../../../../extension/src/uzum/routes.ts#L164); marshrut — yopiq jadval
 `UZUM_ROUTES`, token faqat shu jadval yasagan URL'ga yuboriladi:
-[`toApiUrl`](../../../../extension/src/uzum/routes.ts#L184)). A shaklini (`sortBy`/
+[`toApiUrl`](../../../../extension/src/uzum/routes.ts#L381)). A shaklini (`sortBy`/
 `order`/`searchQuery`siz) kod yubormaydi.
 
 | Parametr | Kod nimani qabul qiladi | Dalil |
@@ -890,10 +894,14 @@ Kontent skript kabinet varag'ining `localStorage` kaliti `state` ni o'qiydi
 | `user.tokens.accessExpiration` | **birligi va ma'nosi noma'lum** — kod uni o'qimaydi; eskirgan token API'dan `401` bo'lib ko'rinadi |
 
 Kodning o'z farazlari — dalilsiz, shuning uchun noto'g'ri bo'lishi mumkin:
-- **`PRODUCT_READ` shu marshrut uchun kerak** degan faraz. Kod so'rovdan oldin
-  mahalliy tekshiradi (`permission: 'PRODUCT_READ'`); kod ro'yxatda bo'lsa-yu
-  marshrut boshqa kod so'rasa yoki umuman so'ramasa, kod ruxsatli so'rovni
-  yubormasdan rad etadi.
+- **Har do'kon marshrutiga bitta ruxsat kodi kerak** degan faraz: mahsulot
+  marshrutlariga `PRODUCT_READ`, nakladnoylarga `INVOICE_READ`, qaytarishlarga
+  `SELLER_RETURN_READ`, shartnoma sanasiga
+  `SHOP_READ` (13.6). Kod so'rovdan oldin mahalliy tekshiradi; kodlar o'z nomidan
+  o'qilgan, server qaysi birini so'rashi hech qayerda yozilmagan. Marshrut boshqa
+  kod so'rasa yoki umuman so'ramasa, kod ruxsatli so'rovni yubormasdan rad etadi.
+  Do'kon nomlamaydigan ikki marshrutda (do'konlar ro'yxati, bildirishnoma sanog'i)
+  kod tekshirilmaydi — faqat kirgan sessiya.
 - **Varaq URL'idagi son — do'kon id'i.** Yo'lning raqamli qismi sotuvchining
   do'konlaridan biriga teng bo'lsa, shu do'kon ekranda deb olinadi
   (`currentShopId`). Kabinetning URL sxemasi yozib olinmagan.
@@ -911,7 +919,8 @@ javobdan **ma'lum**: `productList` va `totalProductsAmount`. Qolganlari ochiq:
 | `size` 24 dan katta (kodda — 100 gacha) hurmat qilinadimi; sahifa o'rni `page × size` mi | `size=100` va `page>0` bilan yozib olingan javob |
 | Tezlik chegarasi bormi, `Retry-After` qaytaradimi | real `429` namunasi (bitta javobda bunday header yo'q — bu chegara yo'qligini isbotlamaydi) |
 | `accessExpiration` birligi | sessiya namunasi + tokenning real muddati |
-| `PRODUCT_READ` aynan shu marshrutga kerakmi | ruxsatsiz hisob bilan so'rov (`403`) |
+| `PRODUCT_READ`, `INVOICE_READ`, `SELLER_RETURN_READ`, `SHOP_READ` aynan shu marshrutlarga kerakmi | ruxsatsiz hisob bilan so'rov (`403`) |
+| Oltita kichik marshrut haqiqiy token bilan kengaytmadan o'tadimi | kabinetga kirilgan varaqda sinash; hozircha faqat almashtirgich javoblar bilan yurgan (texnik spetsifikatsiya, 14.8) |
 | `price` va saqlash summalarining birligi, `conversion` formulasi, `rankInfo.rank` shkalasi, boshqa enum qiymatlari | qo'shimcha javoblar; API-REQUEST-RESPONSE.md 5.B.8 "Ochiq savollar" |
 | Kabinetning CORS/CSP siyosati kengaytma so'rovini o'tkazadimi | kabinetga kirilgan varaqda, haqiqiy token bilan sinash — texnik spetsifikatsiya, 14.8. Hozircha: preflight o'tadi (bitta namuna), kirilmagan bosh sahifada CSP yo'q va ramka yuklanadi (Chrome 157, Edge 157); haqiqiy `GET` va kirilgan sahifalar ko'rilmagan |
 
@@ -924,6 +933,47 @@ qaytargan elementlar" va hech bir sahifa "oxirgi" deyilmaydi. Kodning o'z tezlik
 qoidasi (ketma-ket, 400 ms oraliq, `429`da `Retry-After` yoki 2 s dan 60 s gacha
 o'sib boruvchi kutish, ko'pi bilan 10 daqiqa) o'lchangan chegara emas,
 ehtiyotkor taxmin.
+
+### 13.6. Oltita kichik marshrut
+
+Hammasi `GET`, hammasi o'sha yopiq jadvalda
+([`UZUM_ROUTES`](../../../../extension/src/uzum/routes.ts#L353)) va o'sha ko'prikdan
+o'tadi. Ikki tur bor: **do'kon** marshruti bitta do'kon haqida — do'kon sessiyada va
+unda ruxsat kodi bo'lmasa so'rov yuborilmaydi; **account** marshruti do'kon
+nomlamaydi — faqat kirgan sessiya tekshiriladi.
+
+| Marshrut id (lookup ham shu nomda) | So'rov | Tur · ruxsat kodi (faraz) | Kod nimani qabul qiladi | Javobdan nima kutiladi | Dalil |
+|---|---|---|---|---|---|
+| `products.stats` | `GET /api/seller/shop/{shopId}/product/products-statistic` | do'kon · `PRODUCT_READ` | `shopId` | `{ statisticResultList: [{count, type, shopId}] }` | 1 so'rov, 1 javob ([5.B.9](../../../../docs/API-REQUEST-RESPONSE.md#5b9-get-apisellershopshopidproductproducts-statistic)) |
+| `invoices.list` | `GET /api/seller/shop/{shopId}/invoice?page=&size=` | do'kon · `INVOICE_READ` | `shopId`; `page` 0…100 000; `size` 1…100 (lookup'ning standarti — 20) | yalang'och massiv, jami son yo'q | 1 so'rov (`page=0&size=20`), 20 qatorli 1 javob ([5.B.10](../../../../docs/API-REQUEST-RESPONSE.md#5b10-get-apisellershopshopidinvoice)) |
+| `returns.list` | `GET /api/seller/shop/{shopId}/return?page=&size=` | do'kon · `SELLER_RETURN_READ` | `shopId`; `page` 0…100 000; `size` 1…100 (lookup'ning standarti — 20) | `{ payload: [...], timestamp }`, jami son yo'q | 1 so'rov (`page=0&size=20`), 20 qatorli 1 javob ([5.B.11](../../../../docs/API-REQUEST-RESPONSE.md#5b11-get-apisellershopshopidreturn)) |
+| `shops.list` | `GET /api/seller/shop/` | account | hech narsa | yalang'och massiv | 2 so'rov, 2 javob, 3 kun oralig'ida ([5.B.3](../../../../docs/API-REQUEST-RESPONSE.md#5b3-get-apisellershop)) |
+| `contract.end` | `GET /api/seller/committent/contract/end-date?shopId=` | do'kon · `SHOP_READ` | `shopId` | `{ payload, timestamp }` | 1 so'rov, 1 javob ([5.B.7](../../../../docs/API-REQUEST-RESPONSE.md#5b7-get-apisellercommittentcontractend-dateshopidshopid)) |
+| `notifications.unread` | `GET /api/v1/seller/notification/unread-count` | account | hech narsa | `{ unreadCount }` | so'rovning o'zi **yozib olinmagan** — faqat preflight'i va unga javob deb berilgan tana ([5.B.5](../../../../docs/API-REQUEST-RESPONSE.md#5b5-get-apiv1sellernotificationunread-count-qisman)) |
+
+Kodning o'z qarorlari — dalil emas:
+
+- **Chegaralar bizniki.** `invoices.list` va `returns.list` da `size` 1…100 va `page` 0…100 000; yozib
+  olingan yagona qiymatlar — `page=0`, `size=20`. Kattaroq `size` qabul qilinishi,
+  `page=1` nima qaytarishi ko'rilmagan.
+- **`invoices.list` va `returns.list` da filtr yo'q.** Yozib olingan so'rov faqat `page` va `size`
+  yuborgan; holat, sana yoki saralash parametri o'ylab topilmagan, shuning uchun
+  taklif ham qilinmaydi.
+- **Javob shaklini tanish — tolerant.** Har lookup faqat eng tashqi belgini
+  tekshiradi (massivmi, `statisticResultList` / `payload` / `unreadCount` kaliti
+  bormi), qolgan har maydonni javobdagidek chiqaradi; belgi topilmasa shakldan
+  mustaqil renderer ([`render.ts`](../../../../extension/src/tools/render.ts)) ishlaydi
+  va sarlavha buni aytadi. Bu marshrutlar uchun `products.ts` kabi tiplangan
+  o'quvchi **yo'q** — kod ulardan hech narsa hisoblamaydi.
+- **OpenAPI egizagi ishlatilmaydi.** `invoices.list` va `returns.list` ning OpenAPI'da yaqinlari bor
+  (`GET /v1/shop/{shopId}/invoice` — 11-bo'lim, `GET /v1/return` — 8-bo'lim); kengaytma faqat kabinet yo'lini
+  chaqiradi va OpenAPI tokenini so'ramaydi.
+
+Qo'shilmagan kabinet yo'llari (API-REQUEST-RESPONSE.md da kartasi bor): `check_token`
+(`POST`, tokenni tanada yoki query'da yuboradi — ko'prik faqat `GET` va tokenni faqat
+header'da yuboradi), `account` (faqat sotuvchining ismi, telefoni va emaili),
+`notifications` (yozib olingan yagona javob — bo'sh tana, ko'prik esa bo'sh tanani
+JSON emas deb rad etadi) va `storage/{key}` (kabinet interfeysining bayrog'i).
 
 ### 13.6. Xatolarni qanday sinflaydi
 

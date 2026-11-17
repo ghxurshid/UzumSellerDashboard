@@ -15,9 +15,12 @@
  * (`accept` + `authorization`, no cookies). The preflight has one sample too,
  * sent by hand without a token: asked for `authorization` alone — which is what
  * Chrome and Edge ask for this request — the server allowed the cabinet origin,
- * GET and that header. The GET itself has never been sent from here with a real
- * token, and the recorded response carried no `X-RateLimit-*` or `Retry-After`
- * header (see `queue.ts`).
+ * GET and that header. Two later responses, to the cabinet's own `shops.list`
+ * and `invoices.list` requests, carried the same CORS headers; the second of
+ * those requests went out without the cabinet's `access-content-allow-origin`
+ * request header and was answered all the same. The GET itself has never been
+ * sent from here with a real token, and no recorded response carried an
+ * `X-RateLimit-*` or `Retry-After` header (see `queue.ts`).
  *
  * ## Starting the frame
  *
@@ -189,18 +192,23 @@ export function createCabinetService(deps: CabinetServiceDeps) {
     const checked = spec.parse(raw.params);
     if (!checked.ok) return failure('client', `Invalid params: ${checked.reason}.`);
     const params = checked.value as never;
-    const shopId = spec.shopOf(params);
 
     const current = readCabinetState(deps.storage, deps.pathname());
     if (current.token === null) {
       return failure('unauthorized', 'The seller is not signed in to the cabinet.');
     }
-    const granted = current.session.permissions[shopId];
-    if (granted === undefined) {
-      return failure('forbidden', `Shop ${shopId} is not among the seller's shops.`);
-    }
-    if (!granted.includes(spec.permission)) {
-      return failure('forbidden', `The seller lacks ${spec.permission} on shop ${shopId}.`);
+    /* An account route names no shop, so the sign-in above is all there is to
+       check; a shop route is refused unless the shop is the seller's own and
+       carries the route's permission. */
+    if (spec.scope === 'shop') {
+      const shopId = spec.shopOf(params);
+      const granted = current.session.permissions[shopId];
+      if (granted === undefined) {
+        return failure('forbidden', `Shop ${shopId} is not among the seller's shops.`);
+      }
+      if (!granted.includes(spec.permission)) {
+        return failure('forbidden', `The seller lacks ${spec.permission} on shop ${shopId}.`);
+      }
     }
 
     const url = toApiUrl(spec.target(params));

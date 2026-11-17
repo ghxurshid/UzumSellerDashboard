@@ -1,7 +1,7 @@
 # Savdo Copilot — Funksional spetsifikatsiya
 
-**Versiya:** 3.1.0
-**Hujjat sanasi:** 2026-11-13
+**Versiya:** 3.2.0
+**Hujjat sanasi:** 2026-11-16
 **Maqsad:** Mahsulot oddiy foydalanuvchi — Uzum Market sotuvchisi — nuqtai nazaridan
 nima qilishini ifodalash. Bu yerda texnik yechim yo'q; u
 [TECHNICAL-SPECIFICATION.md](./TECHNICAL-SPECIFICATION.md) da.
@@ -440,7 +440,7 @@ o'zida savol berish uchun. U panelning o'rnini bosmaydi.
 > **Holat.** Kengaytma Chrome va Edge'da ishga tushirib ko'rilgan, lekin sinov
 > ma'lumoti bilan: haqiqiy kabinet sessiyasi va haqiqiy AI kaliti bilan hali
 > sinalmagan, Firefox'da umuman sinalmagan. Kabinetning ichki
-> API'si ham hali yaxshi o'rganilmagan: uning bitta javobi ko'rilgan (quyida). Shu sabab u hozircha tor
+> API'si ham hali yaxshi o'rganilmagan: har bir so'rovining bir-ikkita javobi ko'rilgan (quyida). Shu sabab u hozircha tor
 > imkoniyat bilan, ehtiyotkor va'dalar bilan chiqadi.
 
 **Qanday ochiladi.** `seller.uzum.uz` sahifalarining o'ng pastki burchagida
@@ -468,25 +468,46 @@ O'rnatilgan provayderlar uchun qo'shimcha ruxsat so'ralmaydi; o'zi ko'rsatgan ma
 (`custom`, Ollama) uchun brauzer ruxsatni **ixtiyoriy** so'raydi — bermasa ham, server
 kengaytmalardan so'rovni qabul qilsa, ishlaydi.
 
-**Nimani o'qiy oladi.** Hozir faqat bitta narsani — **do'konning mahsulot
-ro'yxatini**, sahifa-sahifa, kabinetning o'z so'rovi bilan, jonli: mahsulotlar va
-ularning o'lcham/rang bo'yicha qatorlari, do'kondagi mahsulotlarning umumiy soni
-(Uzum o'zi aytgan son), har qator uchun FBO va FBS qoldig'i, sotilgan va
-qaytarilgan dona hamda qaytarish foizi, narx, holat (tugab qolgani ham), pullik
-saqlash va aksiya belgilari; mahsulotni matn bo'yicha qidirish ham mumkin. Hammasi
-savol berilgan paytdagi holat. Buyurtmalar, moliya va tarix o'qilmaydi, Uzum'ga
+**Nimani o'qiy oladi.** Yetti narsani, hammasini kabinetning o'z so'rovi bilan, jonli:
+
+- **Do'konning mahsulot ro'yxati** — eng boyi, sahifa-sahifa: mahsulotlar va
+  ularning o'lcham/rang bo'yicha qatorlari, do'kondagi mahsulotlarning umumiy soni
+  (Uzum o'zi aytgan son), har qator uchun FBO va FBS qoldig'i, sotilgan va
+  qaytarilgan dona hamda qaytarish foizi, narx, holat (tugab qolgani ham), pullik
+  saqlash va aksiya belgilari; mahsulotni matn bo'yicha qidirish ham mumkin.
+- **Mahsulot sonlari** — kabinet filtrlari bo'yicha nechta mahsulot borligi (hammasi,
+  sotuvda, tugagan, arxivda va boshqalar). Bu sonlar bir-birini kesib o'tadi,
+  shuning uchun Copilot ularni qo'shmaydi va "taqsimot" deb ko'rsatmaydi.
+- **Yetkazib berish nakladnoylari** — Uzum omboriga yuborilgan tovar, sahifa-sahifa:
+  holati, summasi, yuborilgan va ombor qabul qilgan dona, band qilingan vaqt va
+  qabul qilingan vaqt. Nakladnoy ichida qaysi mahsulotlar borligi **o'qilmaydi**.
+- **Ombordan qaytarishlar** — Uzum ombori sotuvchiga qaytarayotgan tovar (brak va
+  boshqalar), sahifa-sahifa: turi, holati, yaratilgan, yig'ilgan va yakunlangan vaqti,
+  pullik saqlash sanalari. Bu xaridor qaytargan buyurtmalar emas; qaytarish ichida qaysi
+  mahsulot va necha dona borligi **o'qilmaydi**.
+- **Do'konlar va ularning nomi** — Copilot do'konni raqami bilan emas, nomi bilan
+  ayta olishi uchun.
+- **Shartnoma tugash sanasi** — bitta sana.
+- **O'qilmagan bildirishnomalar soni** — bitta son; bildirishnomalarning matni
+  o'qilmaydi.
+
+Hammasi savol berilgan paytdagi holat. Buyurtmalar, moliya va tarix o'qilmaydi, Uzum'ga
 hech narsa yozilmaydi. Qaysi do'kon:
 sotuvchi savolda o'zi aytgan (faqat o'ziniki bo'lsa), aks holda kabinet hozir
 ko'rsatayotgan do'kon, aks holda yagona do'koni; bir nechta do'koni bo'lib,
 kabinet birortasini ko'rsatmasa — Copilot qaysi do'kon ekanini so'raydi, taxmin
-qilmaydi. Boshlang'ich takliflar ham shu doirada ("mahsulotlarimni FBO va FBS qoldiqlari bilan
+qilmaydi (do'konlar ro'yxati va bildirishnomalar soni butun akkaunt haqida — ular
+uchun do'kon so'ralmaydi). Do'kon xodimining hisobida biror bo'limga ruxsat
+bo'lmasa, Copilot o'sha ma'lumotni so'ramaydi va nima yetishmasligini aytadi.
+Boshlang'ich takliflar mahsulot ro'yxati doirasida ("mahsulotlarimni FBO va FBS qoldiqlari bilan
 ko'rsat", "qaysi mahsulotlarimda ba'zi o'lchamlar tugab qolgan?", "qaysi
 mahsulotlarda qaytarish foizi eng yuqori, nechta dona sotilgan va qaytarilgan?").
 
-**Ehtiyotkorlik — nega.** Kabinetning bu API'si hujjatlashtirilmagan va undan faqat
-bitta javob ko'rilgan (bitta mahsulot, besh o'lcham): ko'p maydonning ma'nosi, narx
-birligi, qidiruv qanday moslashishi va ayrim filtr hamma mahsulotni qaytarishi yoki
-bir qismini ekani hali noma'lum. Shuning uchun Copilot:
+**Ehtiyotkorlik — nega.** Kabinetning bu API'si hujjatlashtirilmagan va har bir
+so'rovidan bir-ikkita javob ko'rilgan, xolos (mahsulot ro'yxatidan — bitta mahsulot,
+besh o'lcham; nakladnoylar va qaytarishlardan — yigirma qatorli bittadan sahifa): ko'p maydonning ma'nosi,
+narx va summa birligi, qidiruv qanday moslashishi va ayrim filtr hamma mahsulotni
+qaytarishi yoki bir qismini ekani hali noma'lum. Shuning uchun Copilot:
 - maydonlarni API qanday atasa shunday ko'rsatadi, birlikni (so'mmi, tiyinmi) va
   ma'noni taxmin qilmaydi va noaniq raqam haqida buni bir marta aytadi;
 - umumiy sonni faqat Uzum o'zi aytgan son sifatida keltiradi va uni o'zidan
@@ -494,6 +515,11 @@ bir qismini ekani hali noma'lum. Shuning uchun Copilot:
   ekanini aytadi;
 - sahifani faqat Uzum aytgan songa nisbatan joylaydi, sonsiz bo'lsa "oxirgisi"
   demaydi — ko'proq bor-yo'qligini bilish uchun keyingi sahifani so'raydi;
+- nakladnoy "qabul qilingan" holatida bo'lsa ham, hamma tovar qabul qilingan deb
+  aytmaydi: yuborilgan va qabul qilingan donani yonma-yon ko'rsatadi (ko'rilgan
+  sahifada ikki nakladnoyda qabul qilingani kam edi);
+- qaytarishda pullik saqlash haqi olingan deb aytmaydi: Uzum faqat sanalarni beradi,
+  summani emas (ko'rilgan sahifada ko'p qaytarish pullik davr boshlanmasdan yakunlangan);
 - bashorat qilmaydi va avvalgi davr bilan taqqoslamaydi: ma'lumot o'zi shuni bermasa,
   taqqoslanadigan narsa yo'q.
 
@@ -501,7 +527,7 @@ bir qismini ekani hali noma'lum. Shuning uchun Copilot:
 
 | Yo'q | Nega |
 |---|---|
-| Savdo, buyurtma, moliya, qoldiq, nakladnoy ma'lumoti | Hozircha faqat mahsulot ro'yxati o'qiladi; so'ralsa Copilot "buni hozircha qila olmayman" deydi va mahsulot ro'yxati nimani ko'rsata olishini taklif qiladi |
+| Savdo, buyurtma, moliya ma'lumoti; nakladnoy va qaytarish ichidagi mahsulotlar; bildirishnomalar matni | Hozircha faqat yuqoridagi yetti narsa o'qiladi; so'ralsa Copilot "buni hozircha qila olmayman" deydi va o'qiy oladigan narsasini taklif qiladi |
 | Yozish amallari (narx, qoldiq, buyurtma) | Kengaytma Uzum'ga hech narsa yozmaydi; yagona tugma — keyingi savol taklifi (chip) |
 | Arxiv, sinxronizatsiya, internetsiz ishlash | Har bir so'rov — kabinetdan jonli o'qish, hech narsa saqlanmaydi; "Tarixni davom ettirish" yo'q |
 | Tanlangan davr, do'kon tanlagich | Davr yo'q: Copilot qaysi vaqt oralig'ini ko'rishini o'zi so'ramaydi, ma'lumotda ko'ringanini aytadi |

@@ -2,12 +2,13 @@
 
 > **Holat:** Uzumning ikki API'si bor: **OpenAPI** (`/api/seller-openapi/…`) va **kabinet ichki API'si**
 > (`/api/seller/…`, seller.uzum.uz o'zi ishlatadi). OpenAPI kartalari hali kutilmoqda (§5.A bo'sh).
-> Kabinet API'sida 10 ta karta bor (§5.B) — 5.B.1–5.B.9 (5.B.8 ning A so'rovi va 5.B.3 ning ikkinchi namunasidan tashqari) 2026-11-13 dagi **bitta brauzer sessiyasidan**
+> Kabinet API'sida 11 ta karta bor (§5.B) — 5.B.1–5.B.9 (5.B.8 ning A so'rovi va 5.B.3 ning ikkinchi namunasidan tashqari) 2026-11-13 dagi **bitta brauzer sessiyasidan**
 > (bitta sotuvchi hisobi, 2 ta do'kon, 03:01 GMT). Shu sababli hech bir maydon "tasdiqlangan" emas.
 > 2026-11-16 da (10:52 GMT) **ikkinchi sessiyadan** ikki so'rov-javob qo'shilgan: 5.B.3 (`shop/`) ga ikkinchi
 > namuna — shakl o'zgarmagan, lekin bu o'sha hisobning o'sha ikki do'koni (taxmin, 5.B.3), ya'ni hisoblar
 > orasidagi xilma-xillikni ko'rsatmaydi; va yangi karta 5.B.10 (`invoice`, FBO nakladnoylari) — to'liq
-> 20 qatorli sahifa, 1 namuna.
+> 20 qatorli sahifa, 1 namuna. O'sha kuni 12:11 GMT da, boshqa sahifa yuklanishidan, 5.B.11 (`return`,
+> ombordan qaytarishlar) qo'shilgan — u ham to'liq 20 qatorli sahifa, 1 namuna.
 > Eng boyi — 5.B.8 (`getProducts`): **ikki yozib olingan so'rov va bitta yozib olingan javob**; javob
 > qisqartirilgan (24 qatorli sahifadan 1 mahsulot, 5 SKU), uning niqoblangan nusxasi repoda
 > [`getProducts.response.masked.json`](../extension/src/uzum/getProducts.response.masked.json).
@@ -43,11 +44,11 @@ bu yerda takrorlanmaydi. Har kartaning sarlavhasidagi bo'lim raqami sirni ko'rsa
 | Nima | OpenAPI | Kabinet API |
 |---|---|---|
 | Base URL | `https://api-seller.uzum.uz/api/seller-openapi/` | `https://api-seller.uzum.uz/api/seller/…`; auth servisi `/api/auth/seller/…`; bittasi `/api/v1/seller/…` (5.B.5) |
-| Avtorizatsiya | Token header'i, xom, `Bearer`siz (qiymati **yozilmaydi**) | `Authorization: Bearer <token>`; token 27 belgili shaffof satr (JWT emas; ikki sessiyada ham 27 belgi — 2026-11-13 va 2026-11-16). check_token shakl A da `Basic` (5.B.1). Ba'zi so'rovlarda `cookie` da `access_token=<JWT>` ham bor — qarang "Cookie kuzatuvi" |
-| `dateFrom` / `dateTo` | So'rovda **sekundlarda**; javobda **millisekundlarda**; konvertatsiya faqat `toApiSeconds()` orqali | 10 ta kartaning hech bir so'rovida sana parametri yo'q |
-| Vaqt formatlari | epoch ms | To'rt xil: (a) epoch **millisekund** son (`rankInfo.dateUpdated`, `specialOffer.endDate`; 5.B.10 da `dateAccepted`, `timeSlots[].timeFrom`); (b) zonasiz ISO satr (`registrationDate: "2026-…T06:02:56.306"`, `timestamp` 8 xonali kasr bilan; javob `date` header'i bilan mos, demak zonasiz UTC — 1 namuna); (c) faqat sana `"2031-…-…"`; (d) `DD.MM.YYYY` satr (`dateCreated: "07.10.2026"`, 5.B.10). Bundan tashqari soat — `HH:mm` satr (`stock.timeFrom: "06:00"`, 5.B.10) |
-| Konvertlar | Yalang'och massiv / `{ payload: … }` / nomlangan maydonli obyekt — ENDPOINTS.md §1 | Har xil: yalang'och massiv (`shop/`, `invoice`), yalang'och obyekt (`account`, `check_token`), `{ payload, timestamp }` (committent), nomlangan ro'yxat maydoni (`productList`, `statisticResultList`), bo'sh tana (`notifications`) |
-| Sahifalash | Kartada | `getProducts` da `page` (0 dan) / `size` + `totalProductsAmount`; `invoice` da `page` / `size`, jami son **yo'q** (5.B.10); qolganida yo'q |
+| Avtorizatsiya | Token header'i, xom, `Bearer`siz (qiymati **yozilmaydi**) | `Authorization: Bearer <token>`; token 27 belgili shaffof satr (JWT emas; ikki sessiyada ham 27 belgi — 2026-11-13 va 2026-11-16; 2026-11-16 da 10:52 va 12:11 dagi so'rovlarda token aynan bir xil satr edi, ya'ni u kamida 79 daqiqa yashaydi). check_token shakl A da `Basic` (5.B.1). Ba'zi so'rovlarda `cookie` da `access_token=<JWT>` ham bor — qarang "Cookie kuzatuvi" |
+| `dateFrom` / `dateTo` | So'rovda **sekundlarda**; javobda **millisekundlarda**; konvertatsiya faqat `toApiSeconds()` orqali | 11 ta kartaning hech bir so'rovida sana parametri yo'q |
+| Vaqt formatlari | epoch ms | To'rt xil: (a) epoch **millisekund** son (`rankInfo.dateUpdated`, `specialOffer.endDate`; 5.B.10 da `dateAccepted`, `timeSlots[].timeFrom`; 5.B.11 da hamma vaqt maydonlari, jumladan `dateCreated`); (b) zonasiz ISO satr (`registrationDate: "2026-…T06:02:56.306"`, `timestamp` 8 xonali kasr bilan; javob `date` header'i bilan mos, demak zonasiz UTC — 1 namuna); (c) faqat sana `"2031-…-…"`; (d) `DD.MM.YYYY` satr (`dateCreated: "07.10.2026"`, 5.B.10 — 5.B.11 da esa shu nomli maydon epoch ms: nom formatni bildirmaydi). `timestamp` ning ikkinchi namunasi (5.B.11) 9 xonali kasr bilan, javob `date` header'idan 1,06 s keyin. Bundan tashqari soat — `HH:mm` satr (`stock.timeFrom: "06:00"`, 5.B.10) |
+| Konvertlar | Yalang'och massiv / `{ payload: … }` / nomlangan maydonli obyekt — ENDPOINTS.md §1 | Har xil: yalang'och massiv (`shop/`, `invoice`), yalang'och obyekt (`account`, `check_token`), `{ payload, timestamp }` (committent, `return`), nomlangan ro'yxat maydoni (`productList`, `statisticResultList`), bo'sh tana (`notifications`) |
+| Sahifalash | Kartada | `getProducts` da `page` (0 dan) / `size` + `totalProductsAmount`; `invoice` va `return` da `page` / `size`, jami son **yo'q** (5.B.10, 5.B.11); qolganida yo'q |
 | Xato kodlari | `401`, `403`, `429` — kuzatilganda kartaga | **Kuzatilmagan** (401/403/429 yo'q); rate limit header'lari ham kuzatilmadi |
 | Kim chaqira oladi / CORS | Sayt | Hamma javobda `access-control-allow-origin: https://seller.uzum.uz`, `access-control-allow-credentials: true`, `access-control-max-age: 3600`. So'rovning `Origin` i ham seller.uzum.uz edi — server origin'ni aks ettirayotgan bo'lishi mumkin, boshqa origin'ga ruxsat noma'lum. |
 
@@ -93,6 +94,10 @@ bu yerda takrorlanmaydi. Har kartaning sarlavhasidagi bo'lim raqami sirni ko'rsa
     (yuqoridagi 25–79 ms oralig'ida); `X-RateLimit-*` va `Retry-After` yana yo'q.
   - `access-control-allow-headers` ning to'liq matni ikkala javobda 5.B.8 dagi preflight matni bilan
     harfma-harf bir xil.
+  - **12:11 GMT, `return` (5.B.11)** — o'sha kuni 79 daqiqa keyin, boshqa sahifa yuklanishi (sentry
+    trace id'si boshqa, tranzaksiya `invoices-return`). Token aynan o'sha satr; build, release va
+    `access-control-allow-headers` matni o'zgarmagan; `access-content-allow-origin`, `x-iid` va cookie
+    **yo'q**, `200`; `x-envoy-upstream-service-time: 66`; `X-RateLimit-*` va `Retry-After` yo'q.
 
 ### Maxfiy ma'lumot qoidasi
 
@@ -115,7 +120,9 @@ Bu hujjatga hech narsa yozishdan oldin **niqoblanadi**:
   (asl kattalikda). 5.B.10 kartasida: nakladnoy `id` `3000001…3000003`, `invoiceNumber` shu
   to'qilgan `id` dan tuzilishi saqlangan holda qayta hisoblangan, `timeSlotReservation.id`
   `7000001…`, `fullPrice` to'qilgan (asl kattalikda), ombor `externalId` nollar, ombor manzili
-  qisqartirilgan. Yozib olingan, lekin to'qilgan qiymatlardan chiqarib bo'lmaydigan
+  qisqartirilgan. 5.B.11 kartasida: qaytarish `id` lari `1000000001` (10 xonali oila) va
+  `100001…100002` (6 xonali oila), `timeSlotReservation.id` `7000004`, ombor `externalId` nollar,
+  manzil qisqartirilgan. Yozib olingan, lekin to'qilgan qiymatlardan chiqarib bo'lmaydigan
   kuzatuvlar kartada alohida belgilanadi.
 
 ### Dalil siyosati
@@ -153,6 +160,7 @@ FBS/DBS buyurtmalari, DBS, FBO nakladnoylari, FBS jo'natma nakladnoylari, Chop e
 | 8 | `kabinet` | GET | `/api/seller/shop/{shopId}/product/getProducts` | Katalog | namuna bor (2 so'rov, 1 javob) | 5.B.8 |
 | 9 | `kabinet` | GET | `/api/seller/shop/{shopId}/product/products-statistic` | Katalog | namuna bor | 5.B.9 |
 | 10 | `kabinet` | GET | `/api/seller/shop/{shopId}/invoice` | FBO nakladnoylari | namuna bor (to'liq sahifa, 20 qator) | 5.B.10 |
+| 11 | `kabinet` | GET | `/api/seller/shop/{shopId}/return` | FBO nakladnoylari | namuna bor (to'liq sahifa, 20 qator) | 5.B.11 |
 
 `Holat` qiymatlari: `namuna bor` (karta to'ldirilgan), `namuna bor (qisman)` (faqat `OPTIONS`
 preflight yozilgan, javob esa uning ortidan kelgan `GET` niki deb olingan) yoki `kutilmoqda`
@@ -229,9 +237,16 @@ _Hozircha bo'sh. Namunalar kelgach, shabloni (§4) bo'yicha `5.A.N` sifatida qo'
 Hamma kartalar 2026-11-13 dagi bitta brauzer sessiyasidan; aks holda aytilmagan bo'lsa — `1 namuna`.
 Hamma so'rovlarda `Authorization: Bearer <niqoblangan>` (5.B.1 shakl A dan tashqari). Umumiy
 header'lar va cookie kuzatuvi — §2. 5.B.8 (`getProducts`) istisno: u ikki so'rov va bitta
-javobdan, 5.B.8 ni brauzer kengaytmasi ham chaqiradi. 5.B.3 (`shop/`) ham istisno: unda
+javobdan. 5.B.3 (`shop/`) ham istisno: unda
 2026-11-16 dagi ikkinchi sessiyadan ikkinchi namuna bor. 5.B.10 (`invoice`) butunlay shu ikkinchi
-sessiyadan.
+sessiyadan, 5.B.11 (`return`) esa o'sha kunning 12:11 GMT dagi yozuvidan.
+
+Brauzer kengaytmasi shu kartalardan yettitasining yo'lini chaqiradi — har biri bitta Copilot
+lookup'i: 5.B.8 (`products.list`), 5.B.9 (`products.stats`), 5.B.10 (`invoices.list`), 5.B.11
+(`returns.list`), 5.B.3
+(`shops.list`), 5.B.7 (`contract.end`) va 5.B.5 (`notifications.unread`). Qolgan to'rttasi
+(5.B.1, 5.B.2, 5.B.4, 5.B.6) chaqirilmaydi; nega — ENDPOINTS.md
+[13.6](../frontend/src/services/uzum/ENDPOINTS.md#136-oltita-kichik-marshrut).
 
 ---
 
@@ -444,7 +459,11 @@ Kuzatilmagan (ikkala namuna `200`).
 
 #### Kod/ENDPOINTS.md bilan farq
 
-Yo'q. Kod bu yo'lni chaqirmaydi: kengaytma do'kon id'larini sessiyadan oladi (ENDPOINTS.md 13.4), ENDPOINTS.md da ham bu yo'l tasvirlanmagan.
+Ziddiyat yo'q. Kengaytma bu yo'lni `shops.list` lookup'i bilan chaqiradi ([`shopsList.ts`](../extension/src/tools/shopsList.ts); ENDPOINTS.md 13.6). Kodning o'z qarorlari:
+
+1. **Do'kon tekshirilmaydi.** Yo'l hech bir do'konni nomlamaydi, shuning uchun ko'prik faqat kirgan sessiyani talab qiladi; ruxsat kodi tekshirilmaydi (server biror kod so'rashi yozilmagan).
+2. **Javob massiv bo'lishi kutiladi**; boshqa shakl shakldan mustaqil renderer bilan chiqadi. Kod to'qqiz maydondan sakkiztasini javobdagidek chiqaradi; `chatAvatarUrl` **ataylab chiqarilmaydi** (rasm manzili mahsulot rasmi bilan chalkashmasligi uchun).
+3. **Do'kon id'lari baribir sessiyadan olinadi** (ENDPOINTS.md 13.4): boshqa lookup'lar faqat sessiyadagi do'konni so'ray oladi. Ro'yxat va sessiya farq qilsa, natija buni aytadi — yuqoridagi "`id` lar bir xil to'plam" kuzatuvi bitta sessiyadan, kafolat emas.
 
 #### Ochiq savollar
 
@@ -522,7 +541,7 @@ Kuzatilmagan.
 
 #### Kod/ENDPOINTS.md bilan farq
 
-Yo'q.
+Ziddiyat yo'q, lekin kod **dalildan oldinda**: kengaytma bu yo'lni `notifications.unread` lookup'i bilan chaqiradi ([`notificationsUnread.ts`](../extension/src/tools/notificationsUnread.ts); ENDPOINTS.md 13.6), holbuki `GET` ning o'zi hech qachon yozib olinmagan. Kod `accept` va `authorization` bilan `GET` yuboradi (preflight aynan `authorization` ni so'ragan), do'kon so'ramaydi va javobda `unreadCount` kalitini kutadi; topmasa — shakldan mustaqil renderer. Lookup natijasi va toolkit legendasi bu zaiflikni aytadi.
 
 #### Ochiq savollar
 
@@ -616,7 +635,11 @@ Kuzatilmagan.
 
 #### Kod/ENDPOINTS.md bilan farq
 
-Yo'q.
+Ziddiyat yo'q. Kengaytma bu yo'lni `contract.end` lookup'i bilan chaqiradi ([`contractEnd.ts`](../extension/src/tools/contractEnd.ts); ENDPOINTS.md 13.6). Kodning o'z farazlari — dalil emas:
+
+1. **`SHOP_READ` ruxsat kodi.** Kod so'rovdan oldin do'konda shu kodni tekshiradi. Shartnoma nomli kod sessiyada yo'q, `SHOP_READ` — eng yaqini; server qaysi kodni so'rashi yozilmagan.
+2. **Cookie yuborilmaydi.** Yozib olingan so'rovda `access_token` cookie'si bor edi; kengaytma faqat `Authorization: Bearer` yuboradi (`credentials: 'omit'`). §2 dagi kuzatuvga ko'ra cookie kerak emas ko'rinadi, lekin aynan shu yo'l uchun cookie'siz so'rov yozib olinmagan.
+3. **`payload` ning ma'nosi yo'l nomidan.** Kod uni javobdagidek chiqaradi va "shartnoma tugash sanasi" ekani yo'l nomidan o'qilganini har natijada aytadi; `payload: null` — "sana aytilmagan".
 
 #### Ochiq savollar
 
@@ -681,7 +704,7 @@ Javob header'lari (B, 1 namuna): `access-control-allow-origin: https://seller.uz
 baggage, Access-Control-Allow-Origin, sentry-trace, Access-Control-Allow-Methods, X-XSRF-TOKEN, latitude, User-Agent, authorization, Authorization, responseType, credential, x-apollo-tracing, Access-Content-Allow-Origin, Access-Control-Allow-Credentials, Jwt-Token, content-type, qa-stub, Build-Info, x-iid, Content-Type, longitude, apollo-query-plan-experimental, Access-Control-Allow-Headers, x-requested-with, x-context
 ```
 
-Xuddi shu matn (harfma-harf, shu tartibda) 2026-11-16 da boshqa ikki marshrutning — `GET /api/seller/shop/` (5.B.3) va `GET /api/seller/shop/{shopId}/invoice` (5.B.10) ning o'z javoblarida, boshqa build (`1200005`) ostida ham kelgan: ro'yxat marshrutga, method'ga va build'ga bog'liq emas ko'rinadi (3 namuna).
+Xuddi shu matn (harfma-harf, shu tartibda) 2026-11-16 da boshqa uch marshrutning — `GET /api/seller/shop/` (5.B.3), `GET /api/seller/shop/{shopId}/invoice` (5.B.10) va `GET /api/seller/shop/{shopId}/return` (5.B.11) ning o'z javoblarida, boshqa build (`1200005`) ostida ham kelgan: ro'yxat marshrutga, method'ga va build'ga bog'liq emas ko'rinadi (4 namuna).
 
 Bu nimani ko'rsatadi: server kabinet origin'idan `authorization` li `GET` ga preflight bosqichida ruxsat beradi. Nimani ko'rsatmaydi: haqiqiy token bilan `GET` ning o'zi faqat `accept` va `authorization` bilan qabul qilinishini (yozib olingan `GET` lar kabinetniki, ular qo'shimcha header'lar ham yuborgan), boshqa origin'ga javobni va boshqa marshrutlarni.
 
@@ -857,13 +880,13 @@ Kuzatilmagan: ikkala yozib olingan so'rov `200` oldi. `401`, `403`, `429` va xat
 
 #### Kod/ENDPOINTS.md bilan farq
 
-Kodning shu marshrutni chaqirishi — [`routes.ts`](../extension/src/uzum/routes.ts#L112) va [`productsList.ts`](../extension/src/tools/productsList.ts#L100). Mos kelmaydigan yoki dalilsiz joylar:
+Kodning shu marshrutni chaqirishi — [`routes.ts`](../extension/src/uzum/routes.ts#L164) va [`productsList.ts`](../extension/src/tools/productsList.ts#L100). Mos kelmaydigan yoki dalilsiz joylar:
 
 1. **B shakli yuboriladi, A shakli hech qachon.** Kod parametrlarni B dagi tartibda (`page, size, filter, sortBy, searchQuery, order`) yuboradi; `sortBy=id` va `order=descending` qat'iy (yagona yozilgan qiymatlar), `searchQuery` bo'sh yoki sotuvchi so'ragan matn. A shakli (`sortBy`/`order`/`searchQuery`siz) kod tomonidan yuborilmaydi, va `filter=WITHOUT_REQUIRED_FILTERS` bilan `sortBy`/`order`/`searchQuery` birikmasi **yozib olinmagan** — kod uni yuborishi mumkin.
 2. **Kodning o'z chegaralari — dalil emas:** `size` 1…100 (standart 24), `page` 0…100 000, `searchQuery` ≤ 100 belgi. Ularni hech bir javob ko'rsatmagan.
 3. **Faqat `null` ko'rilgan maydonlarga kod tur faraz qiladi** — [`products.ts`](../extension/src/uzum/products.ts): son — `purchasePrice`, `recommendedTotalPrice`, `mechanicPrice`, `clicks`, `dateModerated`, `volumeDiscount`, mahsulot `commission`; satr — `article`, `sellerItemCode`, `blockingReason`, `paidStorageDimensionalGroup`, `actualDimensionalGroup`, `blockReason`, `blockComment`; mantiqiy — `hasStudioPhoto`, `selfExit`, `hasAnySkuBlocked`. Haqiqiy tur boshqacha bo'lsa, o'quvchi bu yo'lni `mistyped` ro'yxatiga yozadi, lookup esa qiymatni javobdagidek (`raw`) ko'rsatadi va sarlavhada "unexpected:" deydi — qiymat yo'qolmaydi. Faraz o'zi baribir dalilsiz. `photo`, `skuBlockReason`, `blockReasons` va `blockingReasons` uchun tur faraz qilinmagan.
-4. **Sahifa o'rni `page × size` deb faraz qilinadi** ([`pagingText`](../extension/src/tools/productsView.ts#L278)): "rows 1–24 of 38" shu farazga tayanadi; javob buni tasdiqlamaydi (faqat `page=0`). Sahifa farazga mos kelmasa, matn buni aytadi.
-5. **Maydon izohi** ([`tools/index.ts`](../extension/src/tools/index.ts#L74)) bu hujjat bilan mos: `commission` — "birligi payload'da yo'q, ehtimol foiz"; saralash so'ralgani, qidiruv bo'sh yozilgani va tilni bitta namuna bilan cheklaydi.
+4. **Sahifa o'rni `page × size` deb faraz qilinadi** ([`pagingText`](../extension/src/tools/productsView.ts#L198)): "rows 1–24 of 38" shu farazga tayanadi; javob buni tasdiqlamaydi (faqat `page=0`). Sahifa farazga mos kelmasa, matn buni aytadi.
+5. **Maydon izohi** ([`tools/index.ts`](../extension/src/tools/index.ts#L90)) bu hujjat bilan mos: `commission` — "birligi payload'da yo'q, ehtimol foiz"; saralash so'ralgani, qidiruv bo'sh yozilgani va tilni bitta namuna bilan cheklaydi.
 6. **Eskirgan izohlar:** [`host/prompt.ts`](../extension/src/host/prompt.ts#L14) sarlavhasi ("one recorded request, no recorded response") va `fieldNames` izohi ("no cabinet response has ever been recorded") endi to'g'ri emas: bitta javob yozib olingan. Prompt hamon hech bir maydon nomini kafolatlamaydi — bu kod egasining qarori.
 7. ENDPOINTS.md 13-bo'limi shu karta uchun yangilandi (ilgari "javob noma'lum", "bitta so'rov" deyilgan edi).
 
@@ -936,7 +959,7 @@ Kuzatilmagan.
 
 #### Kod/ENDPOINTS.md bilan farq
 
-Yo'q. `WITHOUT_REQUIRED_FILTERS` soni uchun qarang 5.B.8.
+Ziddiyat yo'q. `WITHOUT_REQUIRED_FILTERS` soni uchun qarang 5.B.8. Kengaytma bu yo'lni `products.stats` lookup'i bilan chaqiradi ([`productsStats.ts`](../extension/src/tools/productsStats.ts); ENDPOINTS.md 13.6): `PRODUCT_READ` ni mahalliy tekshiradi (faraz), `statisticResultList` massivini kutadi va har yozuvni javobdagidek chiqaradi. Yozib olingan so'rovda `cookie` bor edi, kengaytma uni yubormaydi (cookie'siz so'rov bu yo'l uchun yozib olinmagan). Natija va legenda yuqoridagi "turlar kesishadi" kuzatuvini modelga aytadi: hisoblagichlar qo'shilmaydi.
 
 #### Ochiq savollar
 
@@ -1103,7 +1126,13 @@ Kuzatilmagan (bitta `200`).
 
 #### Kod/ENDPOINTS.md bilan farq
 
-Ziddiyat yo'q. Kod bu yo'lni chaqirmaydi: sayt OpenAPI'ning `GET /v1/invoice` ini ishlatadi (ENDPOINTS.md 8-bo'lim), kengaytmaning marshrut jadvalida esa faqat `getProducts` bor.
+Ziddiyat yo'q. Kengaytma bu yo'lni `invoices.list` lookup'i bilan chaqiradi ([`invoicesList.ts`](../extension/src/tools/invoicesList.ts); ENDPOINTS.md 13.6); sayt esa OpenAPI'ning `GET /v1/invoice` ini ishlatadi (ENDPOINTS.md 8-bo'lim). Kodning o'z qarorlari — dalil emas:
+
+1. **`INVOICE_READ` ruxsat kodi** so'rovdan oldin mahalliy tekshiriladi (nomidan o'qilgan faraz).
+2. **Chegaralar bizniki:** `size` 1…100 (standart 20 — yozib olingan qiymat), `page` 0…100 000. Kattaroq `size` va `page=1` ko'rilmagan.
+3. **Filtr yuborilmaydi:** yozib olingan so'rovda holat, sana yoki saralash parametri yo'q, kod ham o'ylab topmaydi.
+4. **Ustunlar tanlangan.** Kod 19 kalitning hammasini emas, nomlangan ustunlarni chiqaradi (ro'yxati — texnik spetsifikatsiya 14.6). Chiqmaydiganlari: `invoiceStatus.text` va `.color` (matn `status` ustunida), `timeSlotReservation.id` va oynalarning o'zi (soni chiqadi), `invoiceEttn.isEditable` va `.slaEttnUpdate`, omborning `id` va `title` dan boshqa maydonlari (20 qatorda bir xil edi).
+5. **Kuzatuvlar legendada**, dalil kuchi bilan: 2 (tartib), 4 (qabul bosqichlari), 5 (`ACCEPTED` to'liq qabul emas), 6 (matn tilga bog'liq — holat `invoiceStatus.value` dan). Kuzatuv 3 (vaqt zonasi) legendaga kirmagan: `.utc` ustuni UTC, sotuvchi zonasiga o'tkazishni prompt aytadi.
 
 OpenAPI egizagi (`GET /v1/shop/{shopId}/invoice?size=20&page=0`, 2026-08-10 namunasi) bilan solishtiruv:
 
@@ -1129,17 +1158,175 @@ ENDPOINTS.md 12.4 dagi tavsif ("`status`, `hasIssue`, `externalNumber`, `invoice
 - Nakladnoy tarkibi (mahsulotlar) kabinetda qaysi yo'ldan olinadi — bu javobda yo'q.
 - Ikkinchi do'kon (`1002`) va boshqa ombor uchun javob.
 
+---
+
+### 5.B.11 `GET /api/seller/shop/{shopId}/return`
+
+**Guruh:** FBO nakladnoylari · **Maqsad:** do'konning ombordan qaytarishlari ro'yxati — Uzum omboridan sotuvchiga qaytarilayotgan tovar (brak va boshqalar): turi, holati, bosqich vaqtlari, pullik saqlash oralig'i va ombor. Xaridor qaytargan buyurtmalar emas.
+
+**API:** kabinet (ichki). Kabinetning qaytarish nakladnoylari sahifasi chaqiradi (sentry tranzaksiya nomi `invoices-return`). OpenAPI'da yaqini bor — `GET /v1/return` (ENDPOINTS.md [8-bo'lim](../frontend/src/services/uzum/ENDPOINTS.md#8-fbo--yetkazib-berish-va-qaytarish-nakladnoylari)); farqi — pastda "Kod/ENDPOINTS.md bilan farq".
+
+**Dalil qanchalik kuchli:** **1 namuna** — 2026-11-16 12:11 GMT, bitta do'kon (`1001`), `page=0&size=20`, `200`. Javob **to'liq** yozilgan: 20 element. "N/20" sanoqlari shu bitta sahifa ichida — bir do'kon, bitta ombor, bitta holat (`COMPLETED`), ikki tur. Hech bir maydon "tasdiqlangan" emas. Mustaqil tayanch — OpenAPI `GET /v1/return` ning 2026-08-10 dagi namunasi ([`uzum-samples.json`](../frontend/_design/v1/uploads/uzum-samples.json), `returns_list`, 21 qator).
+
+#### So'rov
+
+| Maydon | Tur | Majburiy | Birlik | Misol | Izoh |
+|---|---|---|---|---|---|
+| `{shopId}` (yo'lda) | number | ha | — | `1001` | do'kon id'i |
+| `page` | number | bor; majburiyligi kuzatilmadi | — | `0` | faqat `0` yozilgan |
+| `size` | number | bor; majburiyligi kuzatilmadi | dona | `20` | javobda aynan 20 element |
+
+Holat, tur, sana yoki saralash parametri yo'q. Body yo'q.
+
+```http
+GET /api/seller/shop/1001/return?page=0&size=20
+Authorization: Bearer <niqoblangan>
+Accept: application/json
+Accept-Language: ru-RU
+Origin: https://seller.uzum.uz
+Referer: https://seller.uzum.uz/
+```
+
+Kabinet bundan tashqari faqat sentry `baggage` / `sentry-trace` ni yuborgan. `access-content-allow-origin` so'rov header'i, `x-iid` va `cookie` **yo'q** — va `200` kelgan (5.B.10 dagidek).
+
+#### Javob
+
+Konvert: **`{ payload, timestamp }`**, `payload` — 20 elementli massiv (= `size`). `content-type: application/json`.
+
+Javob header'lari: 5.B.3 ning 2026-11-16 dagi javobi bilan bir xil to'plam (CORS, `vary`, `cache-control`, `server`, `build-info: Build-Number: 1200005; Commit:`, `access-control-allow-headers` ning o'sha 25 nomli matni); `x-envoy-upstream-service-time: 66`. `X-RateLimit-*`, `Retry-After` va jami sonni bildiradigan header **yo'q**.
+
+"Nullable": `ha (n/20)` — 20 qatordan n tasida `null`. Hamma qatorning dalil kuchi — `1 namuna`.
+
+| Maydon yo'li | Tur | Nullable | Birlik | Ma'nosi | Dalil kuchi |
+|---|---|---|---|---|---|
+| `payload[].id` | number | kuzatilmagan | — | qaytarish id'i; ikki oila: `DEFECTED` da 10 xonali, `RETURN` da 6 xonali (kuzatuv 1) | 1 namuna |
+| `payload[].dateCreated` | number | kuzatilmagan | epoch ms | yaratilgan vaqt (taxmin — nomidan). **5.B.10 dagi shu nomli maydondan farqli:** u yerda `DD.MM.YYYY` satr | 1 namuna |
+| `payload[].status` | string | kuzatilmagan | — | holat **kodi**: 20/20 `COMPLETED`. **5.B.10 dagi `status` dan farqli:** u yerda tilga bog'liq matn | 1 namuna |
+| `payload[].type` | string | kuzatilmagan | — | `DEFECTED` (4/20), `RETURN` (16/20); ma'nosi nomidan (brak / oddiy qaytarish — taxmin) | 1 namuna |
+| `payload[].stock` | obyekt | kuzatilmagan | — | ombor; kalitlari 5.B.10 `stock` niki bilan bir xil (8 ta). 20/20 da bitta ombor: `id` `3`, "Сергели", `poolSource` `SERGELI`, `timeFrom`/`timeTo` `"06:00"`/`"23:59"` | 1 namuna |
+| `payload[].timeSlotReservation` | obyekt | ha (19/20) | — | band qilingan oyna; to'ldirilgan yagona qatorda 5.B.10 dagi shakl (`id`, `timeSlots[]`, `status: RESERVED`, `timeFrom`, `timeTo`), kuzatuv 5 | 1 namuna |
+| `payload[].paidStorage` | `{ startDate: number, endDate: number, status: string }` | kuzatilmagan | epoch ms | pullik saqlash oralig'i (taxmin — nomidan); `status` 20/20 `COMPLETED`; kuzatuv 2–3 | 1 namuna |
+| `payload[].assembledDate` | number | kuzatilmagan | epoch ms | yig'ilgan vaqt (taxmin — nomidan) | 1 namuna |
+| `payload[].executionDate`, `.completedDate` | number | kuzatilmagan | epoch ms | 20/20 da ikkalasi bir xil qiymat; yakunlangan vaqt (tovar olib ketilgan — taxmin) | 1 namuna |
+| `payload[].canceledDate` | null | ha (20/20) | — | to'ldirilgandagi turi noma'lum (ehtimol epoch ms) | 1 namuna |
+| `payload[].externalNumber`, `.ettnInfo`, `.returnDropInfo` | null | ha (20/20) | — | to'ldirilgandagi turi noma'lum | 1 namuna |
+| `timestamp` | string, zonasiz ISO (9 xonali kasr) | kuzatilmagan | UTC | server vaqti; javob `date` header'idan 1,06 s keyin — zonasiz UTC degan kuzatuvga (§2) mos, ikkinchi namuna | 1 namuna |
+
+Kuzatuvlar (shu sahifa ichida; haqiqiy qiymatlardan olingan, misoldagi to'qilgan `id` lar shu tuzilishni saqlaydi):
+
+1. **Tartib — `id` kamayish tartibida** (20/20). `DEFECTED` id'lari kattaroq oiladan bo'lgani uchun ular (4 ta) boshida, keyin `RETURN` (16 ta). `dateCreated` bo'yicha umumiy tartib **yo'q** — faqat har tur ichida kamayadi. So'rovda saralash parametri yo'q.
+2. **`paidStorage.startDate` = `assembledDate` + aniq 10 kun** (864 000 000 ms; 20/20, OpenAPI namunasida 20/21). `paidStorage.endDate` = `executionDate` = `completedDate` (20/20). Demak pullik saqlash yig'ilgandan 10 kun o'tib boshlanadi va yakunlanganda tugaydi (taxmin).
+3. **14/20 da `endDate` < `startDate`** — tovar pullik saqlash boshlanishidan oldin yakunlangan; 6/20 da `endDate` > `startDate` (0,08 kundan 38,4 kungacha). `paidStorage.status` ikkala holatda ham `COMPLETED`: u pul olingan-olinmaganini bildirmaydi, summa esa javobda **yo'q**.
+4. **Bosqichlar.** `dateCreated` ≤ `assembledDate` ≤ `completedDate` (20/20). Yaratilgandan yig'ilguncha 1,5 soatdan 22 kungacha, yig'ilgandan yakunlanguncha 2,8 kundan 48 kungacha.
+5. **Oyna yakunlangan vaqt emas.** `timeSlotReservation` to'ldirilgan yagona qatorda oyna 120 daqiqa, `status: RESERVED`; qaytarish esa oynadan 36 kun **keyin** yakunlangan.
+6. **Javobda tarkib yo'q:** mahsulot, dona va summa maydonlari umuman yo'q — nechta tovar qaytarilganini bu ro'yxatdan o'qib bo'lmaydi (OpenAPI `GET /v1/return` da bor, pastda).
+7. Bitta sahifa (20 qator) bir yillik davrni qamraydi: `dateCreated` 2025-09-26 … 2026-09-18.
+
+Javob misoli (20 tadan 3 qator, niqoblangan: `id` lar, bron id'i, ombor `externalId` va manzili — to'qilgan yoki qisqartirilgan; kalitlar, tartibi, `null`lar, kodlar va vaqt tamg'alari — yozilganidek):
+
+```json
+{
+  "payload": [
+    {
+      "id": 1000000001, "dateCreated": 1758865224083, "status": "COMPLETED",
+      "stock": {
+        "id": 3, "externalId": "00000000-0000-4000-8000-000000000003",
+        "title": "Сергели", "address": "Ташкент, …",
+        "timeFrom": "06:00", "timeTo": "23:59", "poolSource": "SERGELI",
+        "dimensionalGroups": [
+          { "group": "MEDIUM", "title": "СГТ" },
+          { "group": "UNKNOWN", "title": "Неопределенная" },
+          { "group": "SMALL", "title": "МГТ" }
+        ]
+      },
+      "timeSlotReservation": {
+        "id": 7000004,
+        "timeSlots": [{ "timeFrom": 1759910400000, "timeTo": 1759917600000 }],
+        "status": "RESERVED", "timeFrom": 1759910400000, "timeTo": 1759917600000
+      },
+      "paidStorage": { "startDate": 1759734481210, "endDate": 1763049003771, "status": "COMPLETED" },
+      "executionDate": 1763049003771, "assembledDate": 1758870481210, "completedDate": 1763049003771,
+      "canceledDate": null, "externalNumber": null, "type": "DEFECTED",
+      "ettnInfo": null, "returnDropInfo": null
+    },
+    {
+      "id": 100002, "dateCreated": 1782963659987, "status": "COMPLETED",
+      "stock": { "id": 3, "…": "yuqoridagidek" },
+      "timeSlotReservation": null,
+      "paidStorage": { "startDate": 1783855840881, "endDate": 1783951874551, "status": "COMPLETED" },
+      "executionDate": 1783951874551, "assembledDate": 1782991840881, "completedDate": 1783951874551,
+      "canceledDate": null, "externalNumber": null, "type": "RETURN",
+      "ettnInfo": null, "returnDropInfo": null
+    },
+    {
+      "id": 100001, "dateCreated": 1781691676419, "status": "COMPLETED",
+      "stock": { "id": 3, "…": "yuqoridagidek" },
+      "timeSlotReservation": null,
+      "paidStorage": { "startDate": 1782566841379, "endDate": 1782483532662, "status": "COMPLETED" },
+      "executionDate": 1782483532662, "assembledDate": 1781702841379, "completedDate": 1782483532662,
+      "canceledDate": null, "externalNumber": null, "type": "RETURN",
+      "ettnInfo": null, "returnDropInfo": null
+    }
+  ],
+  "timestamp": "2026-11-16T12:11:07.060963973"
+}
+```
+
+#### Sahifalash
+
+`page` (yozilgani `0`) va `size` (`20`). Javob aynan `size` ta element qaytargan — keyingi sahifa bor bo'lishi mumkin, `page=1` yozib olinmagan. **Jami son hech qayerda yo'q**: konvertda faqat `payload` va `timestamp`, header'da ham yo'q. Tugash belgisi — `size` dan qisqa (yoki bo'sh) sahifa deb taxmin qilinadi; tekshirilmagan.
+
+#### Kuzatilgan xatolar
+
+Kuzatilmagan (bitta `200`).
+
+#### Kod/ENDPOINTS.md bilan farq
+
+Ziddiyat yo'q. Kengaytma bu yo'lni `returns.list` lookup'i bilan chaqiradi ([`returnsList.ts`](../extension/src/tools/returnsList.ts); ENDPOINTS.md 13.6). Kodning o'z qarorlari — dalil emas:
+
+1. **`SELLER_RETURN_READ` ruxsat kodi** so'rovdan oldin mahalliy tekshiriladi (nomidan o'qilgan faraz).
+2. **Chegaralar bizniki:** `size` 1…100 (standart 20 — yozib olingan qiymat), `page` 0…100 000. Kattaroq `size` va `page=1` ko'rilmagan.
+3. **Filtr yuborilmaydi:** yozib olingan so'rovda holat, tur, sana yoki saralash parametri yo'q, kod ham o'ylab topmaydi.
+4. **Faqat `{ payload: [...] }` konverti taniladi**; boshqa shakl (jumladan yalang'och massiv) shakldan mustaqil renderer bilan chiqadi va sarlavha buni aytadi.
+5. **Ustunlar tanlangan** (ro'yxati — texnik spetsifikatsiya 14.6): hamma vaqt maydoni javobdagidek va yonida `.utc` bilan; ombordan faqat `id` va `title`; `timeSlotReservation.id` va oynalar ro'yxati chiqmaydi. Javobning `timestamp` i sarlavhaga chiqadi.
+6. **Kuzatuvlar legendada**, dalil kuchi bilan: 1 (tartib), 2–3 (pullik saqlash — model haq haqida gapirmaydi), 4 (bosqichlar tartibi), 5 (oyna), 6 (tarkib yo'q). Kod pullik saqlash sanalarini o'zi kelgandek chiqaradi va ulardan hech narsa hisoblamaydi.
+
+OpenAPI `GET /v1/return?size=30&page=0` (2026-08-10 namunasi, 21 qator) bilan solishtiruv:
+
+| | Kabinet (shu karta) | OpenAPI `GET /v1/return` |
+|---|---|---|
+| Konvert | `{ payload, timestamp }` | yalang'och massiv |
+| Kalitlar | 14 kalit | o'sha 14 kalit, o'sha tartibda, **va yana 7 ta**: `shopId`, `shopTitle`, `returnItems`, `totalAmount`, `totalPackedAmount`, `countAllowedChange`, `maxCountAllowedChange` |
+| Tarkib va dona | yo'q | `returnItems[]`, `totalAmount`, `totalPackedAmount` |
+| `type`, `status` | `DEFECTED`, `RETURN`; `COMPLETED` | bir xil qiymatlar |
+| `dateCreated` | epoch ms | epoch ms — bir xil |
+| `paidStorage.startDate` − `assembledDate` = 10 kun | 20/20 | 20/21 |
+| Ombor | `id` `3` | `id` `3` — bir xil |
+
+OpenAPI'ning aynan do'kon kesimidagi egizagi (`GET /v1/shop/{shopId}/return`) yozib olinmagan, shuning uchun solishtiruv butun hisob ro'yxati bilan.
+
+#### Ochiq savollar
+
+- Qaytarilgan mahsulotlar va donasi kabinetda qaysi yo'ldan olinadi (bitta qaytarish tafsiloti — yozib olinmagan).
+- `status` ning boshqa kodlari (`COMPLETED` dan boshqasi ko'rilmagan); yakunlanmagan qaytarishda `executionDate`/`completedDate`/`paidStorage` qanday ko'rinadi.
+- `type` ning to'liq to'plami va ma'nosi; ikki id oilasi nimani anglatadi.
+- 10 kunlik moslik qoida ekani; `paidStorage.status` ning boshqa qiymatlari; pullik saqlash summasi qayerda.
+- `executionDate` va `completedDate` qachon farq qiladi.
+- `canceledDate`, `externalNumber`, `ettnInfo`, `returnDropInfo` ning to'ldirilgandagi shakli.
+- Sahifalash: `page=1`, `size` ning yuqori chegarasi, jami son, filtr bormi.
+- Ikkinchi do'kon (`1002`) va boshqa ombor uchun javob.
+
 ## 6. Ochiq savollar
 
 Kartalararo (umumiy) savollar:
 
 - Kabinet tokeni OpenAPI'da ishlaydimi va aksincha.
-- Token muddati: `exp: 2600000` ma'nosi (5.B.1).
+- Token muddati: `exp: 2600000` ma'nosi (5.B.1). Pastki chegara ma'lum: bitta token 79 daqiqa oralig'idagi ikki so'rovda ishlagan (§2).
 - Rate limit: header'lar kuzatilmadi, chegara noma'lum.
 - Xato tanalari: `401` / `403` / `429` hali ko'rilmagan.
 - `accept-language` o'zgartirilsa matn maydonlari (`category`, `status.title`, …) tili. Bilvosita dalil: nakladnoy matnlari kabinet javobida ruscha, OpenAPI egizagining namunasida o'zbekcha (5.B.10, kuzatuv 6) — lekin OpenAPI so'rovining `accept-language` i yozilmagan, shuning uchun sabab til header'i ekani isbotlanmagan.
 - Cookie umuman kerakmi (muddati o'tgan JWT bilan 200 kelgan kuzatuv, §2).
 - seller.uzum.uz dan boshqa origin CORS'dan o'tadimi (server origin'ni aks ettirishi mumkin).
 - Ikki backend servis (`Build` / `Build-Number`) taxmini tekshirilmagan.
-- `x-iid` qaysi so'rovlarda yuboriladi va qayerda majburiy: 2026-11-16 dagi `shop/` va `invoice` so'rovlarida yo'q edi, `200` keldi (5.B.3, 5.B.10, §2).
-- Kabinet `access-content-allow-origin: *` so'rov header'ini qaysi so'rovlarga qo'shadi va server uni qayerda talab qiladi: bitta sahifa yuklanishida `shop/` da bor, `invoice` da yo'q edi, ikkalasi `200` (§2).
+- `x-iid` qaysi so'rovlarda yuboriladi va qayerda majburiy: 2026-11-16 dagi `shop/`, `invoice` va `return` so'rovlarida yo'q edi, `200` keldi (5.B.3, 5.B.10, 5.B.11, §2).
+- Kabinet `access-content-allow-origin: *` so'rov header'ini qaysi so'rovlarga qo'shadi va server uni qayerda talab qiladi: bitta sahifa yuklanishida `shop/` da bor, `invoice` da yo'q edi, ikkalasi `200`; `return` da ham yo'q, `200` (§2).
