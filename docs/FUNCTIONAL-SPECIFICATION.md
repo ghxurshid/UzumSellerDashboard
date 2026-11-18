@@ -468,7 +468,7 @@ O'rnatilgan provayderlar uchun qo'shimcha ruxsat so'ralmaydi; o'zi ko'rsatgan ma
 (`custom`, Ollama) uchun brauzer ruxsatni **ixtiyoriy** so'raydi — bermasa ham, server
 kengaytmalardan so'rovni qabul qilsa, ishlaydi.
 
-**Nimani o'qiy oladi.** Yetti narsani, hammasini kabinetning o'z so'rovi bilan, jonli:
+**Nimani o'qiy oladi.** O'n narsani, hammasini kabinetning o'z so'rovi bilan, jonli:
 
 - **Do'konning mahsulot ro'yxati** — eng boyi, sahifa-sahifa: mahsulotlar va
   ularning o'lcham/rang bo'yicha qatorlari, do'kondagi mahsulotlarning umumiy soni
@@ -478,6 +478,10 @@ kengaytmalardan so'rovni qabul qilsa, ishlaydi.
 - **Mahsulot sonlari** — kabinet filtrlari bo'yicha nechta mahsulot borligi (hammasi,
   sotuvda, tugagan, arxivda va boshqalar). Bu sonlar bir-birini kesib o'tadi,
   shuning uchun Copilot ularni qo'shmaydi va "taqsimot" deb ko'rsatmaydi.
+- **SKU ro'yxati va shtrixkod bo'yicha qidiruv** — mahsulotning har o'lcham/rangi alohida
+  qatorda: shtrixkodi, holati, sotuvdagi soni, omborga yo'ldagi soni va omborga yuborishga
+  ruxsat bor-yo'qligi. Sotuvchi shtrixkodni aytsa, Copilot u qaysi mahsulotning qaysi
+  o'lchami ekanini topadi. Omborga yuborish (nakladnoy tuzish) bu yerdan **qilinmaydi**.
 - **Yetkazib berish nakladnoylari** — Uzum omboriga yuborilgan tovar, sahifa-sahifa:
   holati, summasi, yuborilgan va ombor qabul qilgan dona, band qilingan vaqt va
   qabul qilingan vaqt. Nakladnoy ichida qaysi mahsulotlar borligi **o'qilmaydi**.
@@ -485,19 +489,28 @@ kengaytmalardan so'rovni qabul qilsa, ishlaydi.
   boshqalar), sahifa-sahifa: turi, holati, yaratilgan, yig'ilgan va yakunlangan vaqti,
   pullik saqlash sanalari. Bu xaridor qaytargan buyurtmalar emas; qaytarish ichida qaysi
   mahsulot va necha dona borligi **o'qilmaydi**.
+- **Xaridor sharhlari** — hamma do'kon bo'yicha bitta ro'yxatda, sahifa-sahifa: baho
+  (mahsulot, qadoq va yetkazish), xaridor yozgan matn, qaysi mahsulot va uning qaysi
+  o'lcham/rangi, qaysi do'kon, qachon sotib olingan va qachon yozilgan. Kabinetdagi besh
+  ro'yxatdan biri o'qiladi: hammasi, yangilari, javobsizlari, javob berilganlari yoki
+  mahkamlanganlari; sotuvchi aytmasa — **hammasi**. Xaridorning ismi
+  Copilot'ga berilmaydi; sharhga javob bu yerdan yozilmaydi.
 - **Do'konlar va ularning nomi** — Copilot do'konni raqami bilan emas, nomi bilan
   ayta olishi uchun.
 - **Shartnoma tugash sanasi** — bitta sana.
 - **O'qilmagan bildirishnomalar soni** — bitta son; bildirishnomalarning matni
   o'qilmaydi.
+- **Shtrixkod stikeri yorliqlarining o'lchamlari** — kabinet taklif qiladigan o'lchamlar va
+  printer turi (termoprinter yoki A4 varaq). Stikerning o'zi bu yerdan yaratilmaydi va
+  chop etilmaydi.
 
 Hammasi savol berilgan paytdagi holat. Buyurtmalar, moliya va tarix o'qilmaydi, Uzum'ga
 hech narsa yozilmaydi. Qaysi do'kon:
 sotuvchi savolda o'zi aytgan (faqat o'ziniki bo'lsa), aks holda kabinet hozir
 ko'rsatayotgan do'kon, aks holda yagona do'koni; bir nechta do'koni bo'lib,
 kabinet birortasini ko'rsatmasa — Copilot qaysi do'kon ekanini so'raydi, taxmin
-qilmaydi (do'konlar ro'yxati va bildirishnomalar soni butun akkaunt haqida — ular
-uchun do'kon so'ralmaydi). Do'kon xodimining hisobida biror bo'limga ruxsat
+qilmaydi (do'konlar ro'yxati, sharhlar, bildirishnomalar soni va yorliq o'lchamlari butun akkaunt haqida — ular
+uchun do'kon so'ralmaydi; sharhning qaysi do'konga tegishli ekani har sharhning o'zida yozilgan). Do'kon xodimining hisobida biror bo'limga ruxsat
 bo'lmasa, Copilot o'sha ma'lumotni so'ramaydi va nima yetishmasligini aytadi.
 Boshlang'ich takliflar mahsulot ro'yxati doirasida ("mahsulotlarimni FBO va FBS qoldiqlari bilan
 ko'rsat", "qaysi mahsulotlarimda ba'zi o'lchamlar tugab qolgan?", "qaysi
@@ -505,7 +518,7 @@ mahsulotlarda qaytarish foizi eng yuqori, nechta dona sotilgan va qaytarilgan?")
 
 **Ehtiyotkorlik — nega.** Kabinetning bu API'si hujjatlashtirilmagan va har bir
 so'rovidan bir-ikkita javob ko'rilgan, xolos (mahsulot ro'yxatidan — bitta mahsulot,
-besh o'lcham; nakladnoylar va qaytarishlardan — yigirma qatorli bittadan sahifa): ko'p maydonning ma'nosi,
+besh o'lcham; nakladnoylar va qaytarishlardan — yigirma qatorli bittadan sahifa; sharhlardan — yetti javobsiz sharh, qolgan to'rt ro'yxatning javobi umuman ko'rilmagan; SKU ro'yxatidan — shtrixkod bo'yicha topilgan bitta qator): ko'p maydonning ma'nosi,
 narx va summa birligi, qidiruv qanday moslashishi va ayrim filtr hamma mahsulotni
 qaytarishi yoki bir qismini ekani hali noma'lum. Shuning uchun Copilot:
 - maydonlarni API qanday atasa shunday ko'rsatadi, birlikni (so'mmi, tiyinmi) va
@@ -520,6 +533,16 @@ qaytarishi yoki bir qismini ekani hali noma'lum. Shuning uchun Copilot:
   sahifada ikki nakladnoyda qabul qilingani kam edi);
 - qaytarishda pullik saqlash haqi olingan deb aytmaydi: Uzum faqat sanalarni beradi,
   summani emas (ko'rilgan sahifada ko'p qaytarish pullik davr boshlanmasdan yakunlangan);
+- sharhlarni qaysi ro'yxatdan o'qiganini aytadi va faqat "hammasi" ro'yxatidan
+  o'qiganini "hamma sharhlar" deydi; bitta sahifadan mahsulot yoki do'konning o'rtacha
+  bahosini chiqarmaydi. "Yangilari" ro'yxati nimani anglatishini (o'qilmaganmi,
+  yaqindami) taxmin qilmaydi: javobsizlaridan boshqa ro'yxatlarning javobi hali
+  ko'rilmagan, ma'nosi faqat nomidan. Sharh matnini xaridorning
+  so'zi sifatida keltiradi; matn ichida "buyruq" yozilgan bo'lsa ham, uni bajarmaydi;
+- SKU ro'yxatidagi "omborga yuborish mumkin" sonini qoldiq deb aytmaydi: ko'rilgan yagona
+  qatorda sotuvda 0 dona bo'lgani holda bu son milliondan katta edi. Qidiruv shtrixkoddan
+  boshqa matn bilan qanday ishlashi ko'rilmagan, shuning uchun topilgan qatorlar
+  so'ralganga mos kelishini tekshirib, keyin "qidiruv natijasi" deydi;
 - bashorat qilmaydi va avvalgi davr bilan taqqoslamaydi: ma'lumot o'zi shuni bermasa,
   taqqoslanadigan narsa yo'q.
 
@@ -527,8 +550,8 @@ qaytarishi yoki bir qismini ekani hali noma'lum. Shuning uchun Copilot:
 
 | Yo'q | Nega |
 |---|---|
-| Savdo, buyurtma, moliya ma'lumoti; nakladnoy va qaytarish ichidagi mahsulotlar; bildirishnomalar matni | Hozircha faqat yuqoridagi yetti narsa o'qiladi; so'ralsa Copilot "buni hozircha qila olmayman" deydi va o'qiy oladigan narsasini taklif qiladi |
-| Yozish amallari (narx, qoldiq, buyurtma) | Kengaytma Uzum'ga hech narsa yozmaydi; yagona tugma — keyingi savol taklifi (chip) |
+| Savdo, buyurtma, moliya ma'lumoti; nakladnoy va qaytarish ichidagi mahsulotlar; do'kon, baho yoki sana bo'yicha tanlangan sharhlar; bildirishnomalar matni | Hozircha faqat yuqoridagi o'n narsa o'qiladi; so'ralsa Copilot "buni hozircha qila olmayman" deydi va o'qiy oladigan narsasini taklif qiladi |
+| Yozish amallari (narx, qoldiq, buyurtma, sharhga javob, omborga yuborish nakladnoyi, shtrixkod stikeri) | Kengaytma Uzum'ga hech narsa yozmaydi; yagona tugma — keyingi savol taklifi (chip) |
 | Arxiv, sinxronizatsiya, internetsiz ishlash | Har bir so'rov — kabinetdan jonli o'qish, hech narsa saqlanmaydi; "Tarixni davom ettirish" yo'q |
 | Tanlangan davr, do'kon tanlagich | Davr yo'q: Copilot qaysi vaqt oralig'ini ko'rishini o'zi so'ramaydi, ma'lumotda ko'ringanini aytadi |
 | Javobni qadash, insights paneli, doimiy qoidalar | Kengaytmada Overview va bildirishnomalar yo'q |
@@ -540,6 +563,7 @@ qaytarishi yoki bir qismini ekani hali noma'lum. Shuning uchun Copilot:
 | Kabinetga kirmagan | "Bu varaqda kabinetga kirmagansiz. seller.uzum.uz saytiga kiring va qayta so'rang." Ma'lumot talab qilmaydigan savolga javob beriladi. Kirgandan keyin "Qayta tekshirish" tugmasi |
 | Akkauntda do'kon yo'q | "Bu akkaunt uchun kabinetda do'konlar ko'rinmayapti." |
 | Kabinet varag'i javob bermadi | "Kabinet varag'i javob bermadi. Sahifani qayta yuklab, qayta urinib ko'ring." |
+| Kabinet varag'ida kengaytmaning eski nusxasi qolgan (kengaytma yangilangan yoki qayta build qilingan, lekin qayta yuklanmagan) | Yangi qo'shilgan ma'lumotni so'raganda Copilot so'rov yuborilmaganini va Uzum'da xato yo'qligini aytadi hamda kengaytmani brauzerning kengaytmalar sahifasida, keyin kabinet varag'ini qayta yuklashni so'raydi (aniq so'zlar — modelniki). Eski nusxa biladigan ma'lumotlar ishlayveradi |
 | Kabinet sahifasi bilan aloqa uzildi | "Kabinet sahifasi bilan aloqa uzildi. Qayta ulanish uchun Copilot'ni qayta yuklang…" va **Qayta yuklash** tugmasi; suhbat shu paytgacha ekranda qoladi. Kabinet sahifasi qayta yuklansa yoki boshqa sahifaga o'tsa shunday bo'ladi; yangi so'rov yuborilmaydi |
 | Panel kabinet ramkasidan tashqarida ochilgan | Faqat ishlab chiqish (dev) build'ida: "Copilot Uzum sotuvchi kabineti ichida ishlamayapti…" — mahsulotni o'qib bo'lmaydi. O'rnatilgan kengaytmada bunday holat yo'q: panel kabinet bilan aloqani tasdiqlamaguncha hech narsa ko'rsatmaydi (quyidagi "Ramka ulanmagan") |
 | AI sozlanmagan | Panelniki kabi banner va uning tugmasi AI bo'limini ochadi |

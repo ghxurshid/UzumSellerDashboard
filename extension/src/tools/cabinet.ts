@@ -1,6 +1,7 @@
 import { ApiError } from '@core/errors/apiError';
 import { clip, compose, header } from '@core/tools/plaintext';
 import { BRIDGE_CLOSED_CODE } from '@ext/uzum/client';
+import { UNKNOWN_ROUTE_CODE, UNKNOWN_ROUTE_MESSAGE } from '@ext/uzum/protocol';
 import type { SellerSession } from '@ext/uzum/session';
 
 /**
@@ -190,6 +191,17 @@ export function explainFailure(error: unknown): string {
        panel did connect once, which is not what "unconfigured" means. */
     if (error.code === BRIDGE_CLOSED_CODE) {
       return 'No request was sent: the panel lost its connection to the cabinet page. The seller needs to reload the panel or the cabinet page.';
+    }
+    /* A lookup can only name a route the panel's own table holds, so the content
+       script that answers "unknown" is an older build than the panel: the two
+       are loaded at different moments. Said as what it is, because the bare
+       sentence reads as the Uzum API being broken, and a second try cannot
+       help. A content script from before the code existed says it in words. */
+    if (
+      error.code === UNKNOWN_ROUTE_CODE ||
+      (error.status === undefined && error.message === UNKNOWN_ROUTE_MESSAGE)
+    ) {
+      return "No request was sent, and nothing is wrong at Uzum: the cabinet page is running an older copy of this extension than the panel, and that copy does not know this lookup. Asking again will not help. The seller needs to reload the extension on the browser's extensions page, then reload the cabinet tab. Lookups the older copy knows still work.";
     }
     switch (error.kind) {
       case 'rateLimited': {

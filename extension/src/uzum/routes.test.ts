@@ -10,6 +10,11 @@ import {
   PRODUCTS_FILTER_DEFAULT,
   PRODUCTS_FILTERS,
   PRODUCTS_SEARCH_MAX_LENGTH,
+  REVIEWS_FILTER_DEFAULT,
+  REVIEWS_FILTER_RECORDED,
+  REVIEWS_FILTERS,
+  type ReviewsListParams,
+  SKUS_SEARCH_MAX_LENGTH,
   shopOfRoute,
   toApiUrl,
   UZUM_API_ORIGIN,
@@ -258,7 +263,86 @@ describe('the other shop routes', () => {
       expect(UZUM_ROUTES['returns.list'].parse({ shopId, page: 0, size: 20 }).ok).toBe(false);
       expect(UZUM_ROUTES['products.stats'].parse({ shopId }).ok).toBe(false);
       expect(UZUM_ROUTES['contract.end'].parse({ shopId }).ok).toBe(false);
+      expect(UZUM_ROUTES['skus.list'].parse({ shopId, page: 0, size: 20 }).ok).toBe(false);
     }
+  });
+});
+
+/* One recorded request: a page, a size and a barcode to search for. */
+describe('skus.list', () => {
+  const spec = UZUM_ROUTES['skus.list'];
+  const base = { shopId: 1001, page: 0, size: 20 };
+  const urlOf = (params: unknown): string => {
+    const parsed = spec.parse(params);
+    if (!parsed.ok) throw new Error(parsed.reason);
+    const url = toApiUrl(spec.target(parsed.value));
+    if (url === null) throw new Error('left the origin');
+    return url;
+  };
+
+  it('builds the recorded request: page, size and the barcode searched, in that order', () => {
+    expect(urlOf({ ...base, search: '1000060000018' })).toBe(
+      `${UZUM_API_ORIGIN}/api/seller/shop/1001/sku-list?page=0&size=20&search=1000060000018`,
+    );
+    expect(spec).toMatchObject({
+      scope: 'shop',
+      method: 'GET',
+      permission: 'SKU_READ',
+      source: 'GET /api/seller/shop/{shopId}/sku-list',
+    });
+    expect(spec.shopOf(base)).toBe(1001);
+    expect(spec).not.toHaveProperty('body');
+  });
+
+  it('sends no search parameter at all when none is asked: an empty one was never recorded', () => {
+    expect(urlOf({ shopId: 1001, page: 2, size: 50 })).toBe(
+      `${UZUM_API_ORIGIN}/api/seller/shop/1001/sku-list?page=2&size=50`,
+    );
+    expect(spec.parse({ ...base, search: undefined })).toEqual({ ok: true, value: base });
+    for (const search of ['', '   ']) {
+      expect(spec.parse({ ...base, search })).toEqual({
+        ok: false,
+        reason: 'search must not be empty: leave it out instead',
+      });
+    }
+  });
+
+  it('keeps a search text inside the query: trimmed, bounded, and unable to reach the path', () => {
+    expect(new URL(urlOf({ ...base, search: '  кофта 146  ' })).searchParams.get('search')).toBe('кофта 146');
+    for (const search of ['x&shopId=2', '../../admin', 'a#b', 'a?b=c', '%2e%2e/x', 'a b+c']) {
+      const url = new URL(urlOf({ ...base, search }));
+      expect(url.pathname).toBe('/api/seller/shop/1001/sku-list');
+      expect([...url.searchParams.keys()]).toEqual(['page', 'size', 'search']);
+      expect(url.searchParams.get('search')).toBe(search);
+      expect(url.hash).toBe('');
+    }
+    const bad: unknown[] = [1000060000018, null, ['a'], { q: 'a' }, 'a\nb', 'a\tb', 'x'.repeat(SKUS_SEARCH_MAX_LENGTH + 1)];
+    for (const search of bad) expect(spec.parse({ ...base, search }).ok).toBe(false);
+    expect(spec.parse({ ...base, search: 'x'.repeat(SKUS_SEARCH_MAX_LENGTH) }).ok).toBe(true);
+  });
+
+  it('bounds the page and refuses every key the recording did not show', () => {
+    const bad: unknown[] = [
+      null,
+      [],
+      {},
+      { shopId: 1001, page: 0 },
+      { shopId: 1001, size: 20 },
+      { page: 0, size: 20 },
+      { ...base, shopId: 0 },
+      { ...base, shopId: '1001' },
+      { ...base, page: -1 },
+      { ...base, page: PAGE_MAX + 1 },
+      { ...base, size: 0 },
+      { ...base, size: PAGE_MAX_SIZE + 1 },
+      { ...base, searchQuery: 'x' },
+      { ...base, barcode: '1000060000018' },
+      { ...base, filter: 'ALL' },
+      { ...base, sortBy: 'id' },
+    ];
+    for (const input of bad) expect(spec.parse(input).ok).toBe(false);
+    expect(spec.parse({ shopId: 1001, page: PAGE_MAX, size: PAGE_MAX_SIZE }).ok).toBe(true);
+    expect(spec.parse(base)).toEqual({ ok: true, value: base });
   });
 });
 
@@ -268,10 +352,14 @@ describe('the account routes', () => {
     expect(toApiUrl(UZUM_ROUTES['notifications.unread'].target({}))).toBe(
       `${UZUM_API_ORIGIN}/api/v1/seller/notification/unread-count`,
     );
+    expect(toApiUrl(UZUM_ROUTES['barcodes.types'].target({}))).toBe(
+      `${UZUM_API_ORIGIN}/api/seller/reports/barcodes/types`,
+    );
+    expect(UZUM_ROUTES['barcodes.types'].source).toBe('GET /api/seller/reports/barcodes/types');
   });
 
   it('name no shop and no permission', () => {
-    for (const id of ['shops.list', 'notifications.unread'] as const) {
+    for (const id of ['shops.list', 'notifications.unread', 'barcodes.types'] as const) {
       expect(UZUM_ROUTES[id].scope).toBe('account');
       expect(UZUM_ROUTES[id].method).toBe('GET');
       expect(UZUM_ROUTES[id]).not.toHaveProperty('permission');
@@ -280,7 +368,7 @@ describe('the account routes', () => {
   });
 
   it('take nothing at all', () => {
-    for (const id of ['shops.list', 'notifications.unread'] as const) {
+    for (const id of ['shops.list', 'notifications.unread', 'barcodes.types'] as const) {
       expect(UZUM_ROUTES[id].parse({})).toEqual({ ok: true, value: {} });
       for (const input of [null, undefined, [], 'x', { shopId: 1 }, { page: 0 }, { key: 'ONBOARDING' }]) {
         expect(UZUM_ROUTES[id].parse(input).ok).toBe(false);
@@ -289,33 +377,157 @@ describe('the account routes', () => {
   });
 });
 
+/* The one recorded POST: page and size in the query, the filter in a JSON body. */
+describe('reviews.list', () => {
+  const spec = UZUM_ROUTES['reviews.list'];
+  const bodyOf = (params: ReviewsListParams): string | undefined =>
+    spec.method === 'POST' ? spec.body(params) : undefined;
+  /** The body as the bridge gets it: written from what `parse` let through. */
+  const sentFor = (input: unknown): string | undefined => {
+    const parsed = spec.parse(input);
+    return parsed.ok ? bodyOf(parsed.value) : undefined;
+  };
+
+  it('builds the recorded request: the path and query, and a body of the recorded 21 bytes', () => {
+    expect(toApiUrl(spec.target({ page: 0, size: 20 }))).toBe(
+      `${UZUM_API_ORIGIN}/api/seller/product-reviews?page=0&size=20`,
+    );
+    expect(spec.method).toBe('POST');
+    expect(spec.source).toBe('POST /api/seller/product-reviews');
+    const recorded = { page: 0, size: 20, filter: REVIEWS_FILTER_RECORDED };
+    expect(REVIEWS_FILTER_RECORDED).toBe('NO_REPLY');
+    expect(bodyOf(recorded)).toBe('{"filter":"NO_REPLY"}');
+    expect(sentFor(recorded)).toBe('{"filter":"NO_REPLY"}');
+    /* The recorded request's content-length. */
+    expect(new TextEncoder().encode(bodyOf(recorded))).toHaveLength(21);
+  });
+
+  it('asks for every review when no filter is named: the default is not the recorded filter', () => {
+    expect(REVIEWS_FILTER_DEFAULT).toBe('ALL');
+    expect(REVIEWS_FILTER_DEFAULT).not.toBe(REVIEWS_FILTER_RECORDED);
+    expect(bodyOf({ page: 0, size: 20 })).toBe('{"filter":"ALL"}');
+    expect(sentFor({ page: 0, size: 20 })).toBe('{"filter":"ALL"}');
+  });
+
+  it('knows the five filters the seller reported, the recorded one among them, and no other', () => {
+    expect(REVIEWS_FILTERS).toEqual(['ALL', 'NEW', 'NO_REPLY', 'WITH_REPLY', 'PINNED']);
+    expect(REVIEWS_FILTERS).toContain(REVIEWS_FILTER_DEFAULT);
+    expect(REVIEWS_FILTERS).toContain(REVIEWS_FILTER_RECORDED);
+  });
+
+  it('writes a body of one key holding the filter asked, and the same query whatever the filter', () => {
+    for (const filter of REVIEWS_FILTERS) {
+      const parsed = spec.parse({ page: 0, size: 20, filter });
+
+      expect(parsed).toEqual({ ok: true, value: { page: 0, size: 20, filter } });
+      expect(sentFor({ page: 0, size: 20, filter })).toBe(`{"filter":"${filter}"}`);
+      expect(toApiUrl(spec.target({ page: 0, size: 20, filter }))).toBe(
+        `${UZUM_API_ORIGIN}/api/seller/product-reviews?page=0&size=20`,
+      );
+    }
+  });
+
+  it('writes the same body for any page: only the query follows page and size', () => {
+    expect(toApiUrl(spec.target({ page: 3, size: 50, filter: 'PINNED' }))).toBe(
+      `${UZUM_API_ORIGIN}/api/seller/product-reviews?page=3&size=50`,
+    );
+    expect(bodyOf({ page: 3, size: 50 })).toBe('{"filter":"ALL"}');
+    expect(bodyOf({ page: 3, size: 50, filter: 'PINNED' })).toBe('{"filter":"PINNED"}');
+  });
+
+  it('is about the account: no shop and no permission', () => {
+    expect(spec.scope).toBe('account');
+    expect(spec).not.toHaveProperty('permission');
+    expect(spec).not.toHaveProperty('shopOf');
+    expect(shopOfRoute('reviews.list', { page: 0, size: 20 })).toBeNull();
+  });
+
+  it('refuses a filter that is not one of the five, whole and as spelled: nothing else can reach the body', () => {
+    const base = { page: 0, size: 20 };
+    const bad: unknown[] = [
+      'UNANSWERED',
+      'no_reply',
+      'NO_REPLY ',
+      '',
+      null,
+      0,
+      true,
+      ['ALL'],
+      { filter: 'ALL' },
+      'ALL","shopId":1,"x":"',
+      'toString',
+      '__proto__',
+    ];
+    for (const filter of bad) {
+      const parsed = spec.parse({ ...base, filter });
+      expect(parsed).toEqual({ ok: false, reason: 'filter must be one of ALL, NEW, NO_REPLY, WITH_REPLY, PINNED' });
+    }
+    /* Left out is the default; `undefined` is the same as left out. */
+    expect(spec.parse({ ...base, filter: undefined })).toEqual({ ok: true, value: { ...base, filter: 'ALL' } });
+    expect(spec.parse(base)).toEqual({ ok: true, value: { ...base, filter: 'ALL' } });
+  });
+
+  it('takes a page, a size and a filter and nothing else: no shop, no body of the caller\'s', () => {
+    const base = { page: 0, size: 20 };
+    const bad: unknown[] = [
+      null,
+      [],
+      {},
+      { page: 0 },
+      { size: 20 },
+      { filter: 'ALL' },
+      { ...base, page: -1 },
+      { ...base, page: 1.5 },
+      { ...base, page: '0' },
+      { ...base, page: PAGE_MAX + 1 },
+      { ...base, size: 0 },
+      { ...base, size: PAGE_MAX_SIZE + 1 },
+      { ...base, shopId: 1 },
+      { ...base, filter: 'ALL', shopId: 1 },
+      { ...base, body: '{"filter":"ALL"}' },
+      { ...base, rating: 1 },
+      { ...base, filters: ['ALL'] },
+    ];
+    for (const input of bad) expect(spec.parse(input).ok).toBe(false);
+    expect(spec.parse({ page: PAGE_MAX, size: PAGE_MAX_SIZE }).ok).toBe(true);
+  });
+});
+
 describe('route table', () => {
   it('knows only its own ids', () => {
-    for (const id of ['products.list', 'products.stats', 'invoices.list', 'returns.list', 'shops.list', 'contract.end', 'notifications.unread']) {
+    for (const id of ['products.list', 'products.stats', 'skus.list', 'invoices.list', 'returns.list', 'reviews.list', 'shops.list', 'contract.end', 'notifications.unread', 'barcodes.types']) {
       expect(isRouteId(id)).toBe(true);
     }
-    for (const id of ['constructor', 'toString', '__proto__', 'x', 5, null, 'account', 'check_token', 'notifications.list']) {
+    for (const id of ['constructor', 'toString', '__proto__', 'x', 5, null, 'account', 'check_token', 'notifications.list', 'reviews.reply', 'skus.update', 'barcodes.print', 'invoices.create']) {
       expect(isRouteId(id)).toBe(false);
     }
   });
 
-  it('holds only GET routes under /api/ on the API origin', () => {
+  it('holds only reads under /api/ on the API origin: GET everywhere but the one recorded POST', () => {
     const samples: Record<string, unknown> = {
       'products.list': { shopId: 1, page: 0, size: 5 },
       'products.stats': { shopId: 1 },
+      'skus.list': { shopId: 1, page: 0, size: 20, search: 'x' },
       'invoices.list': { shopId: 1, page: 0, size: 20 },
       'returns.list': { shopId: 1, page: 0, size: 20 },
+      'reviews.list': { page: 0, size: 20 },
       'shops.list': {},
       'contract.end': { shopId: 1 },
       'notifications.unread': {},
+      'barcodes.types': {},
     };
     expect(Object.keys(UZUM_ROUTES).sort()).toEqual(Object.keys(samples).sort());
+    const posts: string[] = [];
     for (const [id, spec] of Object.entries(UZUM_ROUTES)) {
-      expect(spec.method).toBe('GET');
-      expect(spec.source.startsWith('GET /api/')).toBe(true);
+      expect(['GET', 'POST']).toContain(spec.method);
+      expect(spec.source.startsWith(`${spec.method} /api/`)).toBe(true);
+      /* A body exists exactly where the verb is POST, and nowhere else. */
+      if (spec.method === 'POST') posts.push(id);
+      else expect(spec).not.toHaveProperty('body');
       const url = toApiUrl((spec as { target(p: unknown): string }).target(samples[id]));
       expect(url?.startsWith(`${UZUM_API_ORIGIN}/api/`)).toBe(true);
     }
+    expect(posts).toEqual(['reviews.list']);
   });
 
   it('says which shop a call is for, and none for an account route', () => {
@@ -323,6 +535,8 @@ describe('route table', () => {
     expect(shopOfRoute('invoices.list', { shopId: 6, page: 0, size: 20 })).toBe(6);
     expect(shopOfRoute('returns.list', { shopId: 8, page: 0, size: 20 })).toBe(8);
     expect(shopOfRoute('contract.end', { shopId: 7 })).toBe(7);
+    expect(shopOfRoute('skus.list', { shopId: 9, page: 0, size: 20 })).toBe(9);
+    expect(shopOfRoute('barcodes.types', {})).toBeNull();
     expect(shopOfRoute('shops.list', {})).toBeNull();
     expect(shopOfRoute('notifications.unread', {})).toBeNull();
   });

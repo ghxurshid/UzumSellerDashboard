@@ -81,6 +81,21 @@ describe('content side: validation before any request', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('marks a route it does not know with a code: the panel reads it as an older content script', async () => {
+    const { svc, calls } = service(async () => response(200, '{}'));
+
+    /* What a panel newer than this script would send: a route added after the script was loaded. */
+    expect(await svc.handleRequest({ route: 'orders.list', method: 'GET', params: {} }, live)).toEqual({
+      ok: false,
+      kind: 'client',
+      message: 'Unknown cabinet route.',
+      code: 'UNKNOWN_ROUTE',
+    });
+    /* A refusal of a route it does know carries no such code. */
+    expect(await svc.handleRequest({ ...good, method: 'POST' }, live)).not.toHaveProperty('code');
+    expect(calls).toHaveLength(0);
+  });
+
   it('reports a shop outside the session and a missing permission as forbidden, unfetched', async () => {
     const { svc, calls } = service(async () => response(200, '{}'));
     const outside = await svc.handleRequest({ ...good, params: { shopId: 5, page: 0, size: 5 } }, live);
@@ -150,6 +165,29 @@ describe('content side: validation before any request', () => {
     }
     expect(signedOut.calls).toHaveLength(0);
   });
+
+  it('refuses the reviews route any verb but its own, a shop, a filter it does not list and a signed-out tab, unfetched', async () => {
+    const { svc, calls } = service(async () => response(200, '{"payload":[]}'));
+    const base = { route: 'reviews.list', method: 'POST', params: { page: 0, size: 20 } };
+    const cases = [
+      { ...base, method: 'GET' },
+      { ...base, method: 'PUT' },
+      { ...base, params: { page: 0, size: 20, shopId: 1001 } },
+      { ...base, params: { page: 0, size: 20, filter: 'UNANSWERED' } },
+      { ...base, params: { page: 0, size: 20, filter: 'ALL","shopId":1001,"x":"' } },
+      { ...base, params: { page: 0, size: 20, filter: { $ne: null } } },
+      { ...base, params: { page: 0, size: 20, body: '{"filter":"ALL"}' } },
+      { ...base, params: { page: 0, size: 500 } },
+    ];
+    for (const input of cases) {
+      expect(await svc.handleRequest(input, live)).toMatchObject({ ok: false, kind: 'client' });
+    }
+    expect(calls).toHaveLength(0);
+
+    const signedOut = service(async () => response(200, '{"payload":[]}'), null);
+    expect(await signedOut.svc.handleRequest(base, live)).toMatchObject({ ok: false, kind: 'unauthorized' });
+    expect(signedOut.calls).toHaveLength(0);
+  });
 });
 
 describe('content side: the request itself', () => {
@@ -186,7 +224,71 @@ describe('content side: the request itself', () => {
       expect(call.init.method).toBe('GET');
       expect(call.init.credentials).toBe('omit');
       expect(call.init.headers).toEqual({ accept: 'application/json', authorization: `Bearer ${TOKEN}` });
+      /* A GET carries nothing but its URL: no body, and no content-type to announce one. */
+      expect(call.init).not.toHaveProperty('body');
     }
+  });
+
+  it('sends the reviews POST with the body the table wrote, as JSON, on the sign-in alone', async () => {
+    const noShops = JSON.stringify({ user: { tokens: { access: TOKEN }, permissions: {} } });
+    const { svc, calls } = service(async () => response(200, '{"payload":[],"timestamp":"t"}'), noShops);
+    /* A body put beside the request is not a field the bridge reads. */
+    const smuggled = {
+      route: 'reviews.list',
+      method: 'POST',
+      params: { page: 2, size: 20 },
+      body: '{"filter":"PINNED","shopId":1001}',
+    };
+
+    expect(await svc.handleRequest(smuggled, live)).toEqual({
+      ok: true,
+      status: 200,
+      data: { payload: [], timestamp: 't' },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('https://api-seller.uzum.uz/api/seller/product-reviews?page=2&size=20');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(calls[0]?.init.credentials).toBe('omit');
+    /* No filter was named, so the table's default — not a word of the smuggled text. */
+    expect(calls[0]?.init.body).toBe('{"filter":"ALL"}');
+    expect(calls[0]?.init.headers).toEqual({
+      accept: 'application/json',
+      authorization: `Bearer ${TOKEN}`,
+      'content-type': 'application/json',
+    });
+  });
+
+  it('writes the filter the panel named into the body: one of the table\'s five, as one key', async () => {
+    const { svc, calls } = service(async () => response(200, '{"payload":[]}'));
+
+    for (const filter of ['ALL', 'NEW', 'NO_REPLY', 'WITH_REPLY', 'PINNED']) {
+      await svc.handleRequest({ route: 'reviews.list', method: 'POST', params: { page: 0, size: 20, filter } }, live);
+    }
+
+    expect(calls.map((call) => call.init.body)).toEqual([
+      '{"filter":"ALL"}',
+      '{"filter":"NEW"}',
+      '{"filter":"NO_REPLY"}',
+      '{"filter":"WITH_REPLY"}',
+      '{"filter":"PINNED"}',
+    ]);
+    /* The filter is in the body alone; the address is the recorded one for all five. */
+    for (const call of calls) {
+      expect(call.url).toBe('https://api-seller.uzum.uz/api/seller/product-reviews?page=0&size=20');
+      expect(call.init.method).toBe('POST');
+    }
+  });
+
+  it('classifies a refused POST like any other request and never quotes its body', async () => {
+    const { svc } = service(async () => response(400, `bad filter ${TOKEN}`));
+    const result = await svc.handleRequest(
+      { route: 'reviews.list', method: 'POST', params: { page: 0, size: 20 } },
+      live,
+    );
+
+    expect(result).toMatchObject({ ok: false, kind: 'client', status: 400 });
+    expect(JSON.stringify(result)).not.toContain(TOKEN);
+    expect(JSON.stringify(result)).not.toContain('bad filter');
   });
 
   it('builds each shop route\'s recorded URL once the shop carries its permission', async () => {
@@ -209,6 +311,57 @@ describe('content side: the request itself', () => {
       'https://api-seller.uzum.uz/api/seller/shop/1001/return?page=0&size=20',
       'https://api-seller.uzum.uz/api/seller/committent/contract/end-date?shopId=1001',
     ]);
+  });
+
+  it('builds the SKU list\'s recorded URL with SKU_READ, and sends nothing without it', async () => {
+    const state = JSON.stringify({
+      user: { tokens: { access: TOKEN }, permissions: { '1001': ['SKU_READ'], '2002': ['PRODUCT_READ'] } },
+    });
+    const { svc, calls } = service(async () => response(200, '{"skuList":[],"totalPages":0}'), state);
+    const request = (params: unknown) => svc.handleRequest({ route: 'skus.list', method: 'GET', params }, live);
+
+    expect(await request({ shopId: 1001, page: 0, size: 20, search: '1000060000018' })).toEqual({
+      ok: true,
+      status: 200,
+      data: { skuList: [], totalPages: 0 },
+    });
+    await request({ shopId: 1001, page: 1, size: 20 });
+
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://api-seller.uzum.uz/api/seller/shop/1001/sku-list?page=0&size=20&search=1000060000018',
+      'https://api-seller.uzum.uz/api/seller/shop/1001/sku-list?page=1&size=20',
+    ]);
+    for (const call of calls) {
+      expect(call.init.method).toBe('GET');
+      expect(call.init).not.toHaveProperty('body');
+    }
+
+    /* A shop that reads products but not SKUs: refused here, with the code named, and never fetched. */
+    expect(await request({ shopId: 2002, page: 0, size: 20 })).toMatchObject({
+      ok: false,
+      kind: 'forbidden',
+      message: 'The seller lacks SKU_READ on shop 2002.',
+    });
+    expect(await request({ shopId: 1001, page: 0, size: 20, search: '' })).toMatchObject({ ok: false, kind: 'client' });
+    expect(calls).toHaveLength(2);
+  });
+
+  it('serves the label sizes as an account route: no shop, no parameters', async () => {
+    const noShops = JSON.stringify({ user: { tokens: { access: TOKEN }, permissions: {} } });
+    const { svc, calls } = service(async () => response(200, '{"barcodeLabelTypes":[]}'), noShops);
+
+    expect(await svc.handleRequest({ route: 'barcodes.types', method: 'GET', params: {} }, live)).toEqual({
+      ok: true,
+      status: 200,
+      data: { barcodeLabelTypes: [] },
+    });
+    expect(calls[0]?.url).toBe('https://api-seller.uzum.uz/api/seller/reports/barcodes/types');
+    expect(calls[0]?.init.method).toBe('GET');
+
+    expect(
+      await svc.handleRequest({ route: 'barcodes.types', method: 'GET', params: { shopId: 1001 } }, live),
+    ).toMatchObject({ ok: false, kind: 'client' });
+    expect(calls).toHaveLength(1);
   });
 
   it('classifies statuses and never quotes the body or the token', async () => {
@@ -362,6 +515,32 @@ describe('handshake and request/response over the private port', () => {
       shopId: null,
       route: 'GET /api/seller/shop/',
     });
+  });
+
+  it('serves the reviews POST end to end: the panel names the route, the content side writes the body', async () => {
+    const sent: Array<{ url: string; init: RequestInit }> = [];
+    fetchImpl = async (url, init) => {
+      sent.push({ url, init });
+      return response(200, '{"payload":[]}');
+    };
+    const client = await mount();
+    const result = await client.uzumRequest('reviews.list', { page: 0, size: 20 });
+
+    expect(result).toEqual({
+      status: 200,
+      data: { payload: [] },
+      shopId: null,
+      route: 'POST /api/seller/product-reviews',
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.url).toBe('https://api-seller.uzum.uz/api/seller/product-reviews?page=0&size=20');
+    expect(sent[0]?.init.method).toBe('POST');
+    expect(sent[0]?.init.body).toBe('{"filter":"ALL"}');
+
+    /* A filter the panel names crosses the port as a param and comes out as the body. */
+    await client.uzumRequest('reviews.list', { page: 1, size: 20, filter: 'WITH_REPLY' });
+    expect(sent[1]?.url).toBe('https://api-seller.uzum.uz/api/seller/product-reviews?page=1&size=20');
+    expect(sent[1]?.init.body).toBe('{"filter":"WITH_REPLY"}');
   });
 
   it('turns failures into ApiError with the right kind', async () => {

@@ -44,6 +44,18 @@ export const WIRE_FAILURE_KINDS = [
 ] as const;
 export type WireFailureKind = (typeof WIRE_FAILURE_KINDS)[number];
 
+/**
+ * The one refusal that means the two halves of the extension are not the same
+ * build. The panel can only name a route its own copy of the table holds, so a
+ * content script that does not know the route is an older copy: the browser
+ * serves `panel.html` afresh, but keeps the content script it loaded with the
+ * extension until the extension itself is reloaded. The sentence is kept beside
+ * the code because a content script from before the code existed says it in
+ * words alone.
+ */
+export const UNKNOWN_ROUTE_CODE = 'UNKNOWN_ROUTE';
+export const UNKNOWN_ROUTE_MESSAGE = 'Unknown cabinet route.';
+
 export interface WireFailure {
   readonly ok: false;
   readonly kind: WireFailureKind;

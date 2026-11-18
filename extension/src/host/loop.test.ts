@@ -140,11 +140,14 @@ describe('a question on the extension toolkit', () => {
       'open_toolkit',
       'products_list',
       'products_stats',
+      'skus_list',
       'invoices_list',
       'returns_list',
+      'reviews_list',
       'shops_list',
       'contract_end',
       'notifications_unread',
+      'barcodes_types',
       'copilot_ask',
     ]);
 

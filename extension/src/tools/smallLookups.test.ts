@@ -13,10 +13,10 @@ vi.mock('@ext/uzum/client', () => ({ uzumRequest, BRIDGE_CLOSED_CODE: 'BRIDGE_CL
 const { EXT_TOOLS } = await import('./index');
 
 /**
- * The three lookups whose whole answer is a handful of values: `products.stats`,
- * `contract.end` and `notifications.unread`. The bodies are the masked samples
- * of the request/response catalogue (cards 5.B.9, 5.B.7 and 5.B.5); shop ids
- * are invented.
+ * The four lookups whose whole answer is a handful of values: `products.stats`,
+ * `contract.end`, `notifications.unread` and `barcodes.types`. The bodies are
+ * the masked samples of the request/response catalogue (cards 5.B.9, 5.B.7,
+ * 5.B.5 and 5.B.14); shop ids are invented.
  */
 
 const session = (over: Partial<SellerSession> = {}): SellerSession => ({
@@ -246,5 +246,98 @@ describe('notifications.unread', () => {
 
     expect(uzumRequest).not.toHaveBeenCalled();
     expect(result.text).toContain('[notifications.unread] not signed in · no request was made');
+  });
+});
+
+describe('barcodes.types', () => {
+  const ROUTE = 'GET /api/seller/reports/barcodes/types';
+  /* The five label sizes of the recorded response, in its order. The first title's
+     separator is the Cyrillic letter the recording held; the other four are Latin. */
+  const BODY = {
+    barcodeLabelTypes: [
+      { id: 5, title: '43 \u0445 25', printType: 'ThermalPrinter', length: 43, width: 25 },
+      { id: 4, title: '70 x 37', printType: 'A4', length: 70, width: 37 },
+      { id: 3, title: '48.5 x 25.4', printType: 'A4', length: 48.5, width: 25.4 },
+      { id: 2, title: '38 x 21.2', printType: 'A4', length: 38, width: 21.2 },
+      { id: 1, title: '30 x 20', printType: 'ThermalPrinter', length: 30, width: 20 },
+    ],
+  };
+  const ok = (data: unknown) => ({ status: 200, data, shopId: null, route: ROUTE });
+
+  it('asks for no shop and prints the sizes as the response held them', async () => {
+    uzumRequest.mockResolvedValue(ok(BODY));
+    const result = await run('barcodes.types', {}, context({ session: session({ currentShopId: null }) }));
+
+    expect(uzumRequest).toHaveBeenCalledWith('barcodes.types', {}, expect.any(AbortSignal));
+    expect(headerOf(result.text)).toBe(`[barcodes.types] 5 label sizes · live from ${ROUTE}`);
+    expect(result.text.split('\n').slice(2)).toEqual([
+      'id|title|printType|length|width',
+      '5|43 \u0445 25|ThermalPrinter|43|25',
+      '4|70 x 37|A4|70|37',
+      '3|48.5 x 25.4|A4|48.5|25.4',
+      '2|38 x 21.2|A4|38|21.2',
+      '1|30 x 20|ThermalPrinter|30|20',
+    ]);
+    expect(result.routes).toEqual([ROUTE]);
+    expect(result.trace).toBe('5 label sizes');
+  });
+
+  it('ignores a shop the model adds: the route takes none', async () => {
+    uzumRequest.mockResolvedValue(ok(BODY));
+    await run('barcodes.types', { shopId: 11 });
+
+    expect(uzumRequest).toHaveBeenCalledWith('barcodes.types', {}, expect.any(AbortSignal));
+  });
+
+  it('says on every result that the unit is a guess and that nothing is printed', async () => {
+    uzumRequest.mockResolvedValue(ok(BODY));
+    const units = (await run('barcodes.types', {})).text.split('\n')[1] ?? '';
+
+    expect(units).toContain('no unit is stated');
+    expect(units).toContain('probably millimetres');
+    expect(units).toContain('sizes only: nothing is printed from here');
+  });
+
+  it('counts one size as one, skips what is not an object and prints an empty list as empty', async () => {
+    uzumRequest.mockResolvedValue(ok({ barcodeLabelTypes: [BODY.barcodeLabelTypes[0], null, 'x'] }));
+    const some = await run('barcodes.types', {});
+    expect(headerOf(some.text)).toContain(
+      '1 label size · unexpected: 2 of 3 barcodeLabelTypes entries are not objects and were skipped',
+    );
+    expect(some.trace).toBe('1 label size');
+
+    uzumRequest.mockResolvedValue(ok({ barcodeLabelTypes: [] }));
+    const none = await run('barcodes.types', {});
+    expect(headerOf(none.text)).toContain('0 label sizes');
+    expect(none.text).toContain('barcodeLabelTypes — 0 rows');
+  });
+
+  it('prints a body that is not the recorded envelope generically', async () => {
+    uzumRequest.mockResolvedValue(ok(BODY.barcodeLabelTypes));
+    const bare = await run('barcodes.types', {});
+    expect(headerOf(bare.text)).toContain(
+      'shape not recognised (expected an object holding barcodeLabelTypes): printed generically',
+    );
+    expect(bare.text).toContain('ThermalPrinter');
+    expect(bare.trace).toBe('barcodes.types: shape not recognised');
+
+    uzumRequest.mockResolvedValue(ok({ barcodeLabelTypes: null }));
+    expect(headerOf((await run('barcodes.types', {})).text)).toContain('shape not recognised');
+  });
+
+  it('says what the API answered when the request fails', async () => {
+    uzumRequest.mockRejectedValue(new ApiError('The cabinet API answered HTTP 403.', { kind: 'forbidden', status: 403 }));
+    const result = await run('barcodes.types', {});
+
+    expect(headerOf(result.text)).toBe('[barcodes.types] FAILED');
+    expect(result.text).toContain('The Uzum API answered HTTP 403');
+    expect(result.routes).toBeUndefined();
+  });
+
+  it('makes no request in a tab that is not signed in', async () => {
+    const result = await run('barcodes.types', {}, SIGNED_OUT);
+
+    expect(uzumRequest).not.toHaveBeenCalled();
+    expect(result.text).toContain('[barcodes.types] not signed in · no request was made');
   });
 });

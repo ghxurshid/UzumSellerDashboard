@@ -22,6 +22,15 @@
  * sent from here with a real token, and no recorded response carried an
  * `X-RateLimit-*` or `Retry-After` header (see `queue.ts`).
  *
+ * One route is a POST: the cabinet reads its reviews that way. Its body is the
+ * JSON text the route table wrote, never something the panel sent, and it goes
+ * out with `content-type: application/json` beside the two headers above. The
+ * one recorded response to that request allowed POST and listed `content-type`
+ * and `authorization` among the allowed headers. Its preflight has one sample
+ * too, sent by hand without a token: asked for POST with those two headers, the
+ * server allowed the cabinet origin, the verb and both. The POST itself has
+ * never been sent from here with a real token.
+ *
  * ## Starting the frame
  *
  * The frame's URL carries no secret. The caller makes a nonce, awaits
@@ -45,6 +54,8 @@ import {
   type HandshakeMessage,
   isAppMessage,
   isRecord,
+  UNKNOWN_ROUTE_CODE,
+  UNKNOWN_ROUTE_MESSAGE,
   type WireFailure,
   type WireFailureKind,
   type WireResult,
@@ -123,7 +134,8 @@ export function createCabinetService(deps: CabinetServiceDeps) {
     return readCabinetState(deps.storage, deps.pathname()).session;
   }
 
-  async function perform(url: string, signal: AbortSignal): Promise<WireResult> {
+  /** `body` is the route table's own text for a POST route, and undefined for a GET. */
+  async function perform(url: string, body: string | undefined, signal: AbortSignal): Promise<WireResult> {
     /* Read at the last moment: a token the cabinet refreshed while we queued is used. */
     const { token } = readCabinetState(deps.storage, deps.pathname());
     if (token === null) return failure('unauthorized', 'The seller is not signed in to the cabinet.');
@@ -139,12 +151,19 @@ export function createCabinetService(deps: CabinetServiceDeps) {
     else signal.addEventListener('abort', relay, { once: true });
 
     try {
-      const response = await deps.fetch(url, {
-        method: 'GET',
-        headers: { accept: 'application/json', authorization: `Bearer ${token}` },
-        credentials: 'omit',
-        signal: controller.signal,
-      });
+      const headers = { accept: 'application/json', authorization: `Bearer ${token}` };
+      const response = await deps.fetch(
+        url,
+        body === undefined
+          ? { method: 'GET', headers, credentials: 'omit', signal: controller.signal }
+          : {
+              method: 'POST',
+              headers: { ...headers, 'content-type': 'application/json' },
+              body,
+              credentials: 'omit',
+              signal: controller.signal,
+            },
+      );
 
       if (!response.ok) {
         const retryAfterMs =
@@ -185,7 +204,7 @@ export function createCabinetService(deps: CabinetServiceDeps) {
     method: unknown;
     params: unknown;
   }, signal: AbortSignal): Promise<WireResult> {
-    if (!isRouteId(raw.route)) return failure('client', 'Unknown cabinet route.');
+    if (!isRouteId(raw.route)) return failure('client', UNKNOWN_ROUTE_MESSAGE, { code: UNKNOWN_ROUTE_CODE });
     const spec = UZUM_ROUTES[raw.route];
     if (raw.method !== spec.method) return failure('client', `Route only allows ${spec.method}.`);
 
@@ -213,9 +232,12 @@ export function createCabinetService(deps: CabinetServiceDeps) {
 
     const url = toApiUrl(spec.target(params));
     if (url === null) return failure('client', 'Route target left the API origin.');
+    /* Written by the table from the params it just validated; the message from
+       the panel has no field a body could arrive in. */
+    const body = spec.method === 'POST' ? spec.body(params) : undefined;
 
     try {
-      return await queue.enqueue(signal, (s) => perform(url, s));
+      return await queue.enqueue(signal, (s) => perform(url, body, s));
     } catch (error) {
       if (error instanceof QueueCancelled) return failure('cancelled', 'Request cancelled.');
       return failure('network', 'The cabinet request failed.');
@@ -235,8 +257,9 @@ export function createCabinetService(deps: CabinetServiceDeps) {
  * outage without a browser, so a throw is answered with the next way once; if
  * that one gets any HTTP answer the first is dropped for the rest of the page,
  * and if every way throws it is a network failure. Our own cancel and timeout
- * are never retried. The cost of the guess is one repeated GET during a real
- * outage.
+ * are never retried. The cost of the guess is one repeated request during a
+ * real outage; every route is a read (the one POST sends a filter), so the
+ * repeat only asks the same question twice.
  */
 export function withFallback(candidates: readonly FetchLike[]): FetchLike {
   let first = 0;
